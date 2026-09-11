@@ -8,6 +8,8 @@ timing when that is known.
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-09-11
+
 ### Fixed
 - ExtractBench page/word grounding: one-page windows remap model `page=1` /
   missing pages onto the document page the prompt actually contained, and
@@ -337,7 +339,8 @@ timing when that is known.
 ## [0.1.1] - 2025-09-10
 - Merge pull request #12 from Mellow-Artificial-Intelligence/new-release.
 
-[Unreleased]: https://github.com/Mellow-Artificial-Intelligence/openextract/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/Mellow-Artificial-Intelligence/openextract/compare/v0.13.1...HEAD
+[0.13.1]: https://github.com/Mellow-Artificial-Intelligence/openextract/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/Mellow-Artificial-Intelligence/openextract/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/Mellow-Artificial-Intelligence/openextract/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/Mellow-Artificial-Intelligence/openextract/compare/v0.10.0...v0.11.0
