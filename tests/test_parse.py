@@ -15,6 +15,7 @@ from openextract._parse import (
     ParsedPage,
     ParsedSpan,
     _bbox_for_quote,
+    _bbox_on_page,
     _bitmap_to_png,
     _channels_for_mode,
     _char_box,
@@ -23,23 +24,30 @@ from openextract._parse import (
     _encode_png,
     _find_in_text,
     _flush_word,
+    _fold_alnum,
     _ground_one,
     _iter_field_values,
     _luma_pixels,
+    _needle_covers,
     _normalized_coco,
+    _numeric_in_text,
     _page_size,
     _page_text,
     _pages_prompt_len,
     _parse_pdf_page,
     _pdf_box_to_coco,
+    _rebind_field,
     _render_page_png,
     _render_scale,
     _split_page,
+    _strip_indexes,
+    _try_number,
     _union_coco,
     _union_pdf_boxes,
     _value_needles,
     _walk_fields,
     _word_spans,
+    align_citations_to_window,
     find_span,
     ground_citations,
     maybe_parsed_inputs,
@@ -47,6 +55,7 @@ from openextract._parse import (
     parsed_image_inputs,
     parsed_run_inputs,
     parsed_window_inputs,
+    parsed_window_pairs,
     try_parse_document,
 )
 from tests.pdf_fixture import synthetic_pdf
@@ -111,6 +120,136 @@ def test_grounding_stamps_page_and_backfills_field_value():
     assert fields["total"].bbox == pytest.approx((0.4, 0.1, 0.2, 0.05))
     assert fields["label"].quote == "Total"
     assert fields["label"].bbox == pytest.approx((0.1, 0.1, 0.2, 0.05))
+
+
+def test_grounding_uses_field_value_when_quote_and_page_are_wrong():
+    parsed = ParsedDocument(
+        pages=(
+            _page("Total 99", ParsedSpan("99", 1, (0.1, 0.1, 0.1, 0.05)), page=1),
+            _page(
+                "Acme Corp",
+                ParsedSpan("Acme", 2, (0.2, 0.2, 0.2, 0.05)),
+                ParsedSpan("Corp", 2, (0.4, 0.2, 0.2, 0.05)),
+                page=2,
+            ),
+        )
+    )
+    grounded = ground_citations(
+        (Citation("vendor", "the supplier name", page=1),),
+        parsed,
+        {"vendor": "Acme Corp"},
+    )
+    assert grounded[0].field == "vendor"
+    assert grounded[0].page == 2
+    assert grounded[0].bbox == pytest.approx((0.2, 0.2, 0.4, 0.05))
+
+
+def test_grounding_prefers_value_page_over_common_quote_on_hint():
+    parsed = ParsedDocument(
+        pages=(
+            _page("Total 1", ParsedSpan("Total", 1, (0.1, 0.1, 0.2, 0.05)), page=1),
+            _page(
+                "Total 12.50",
+                ParsedSpan("12.50", 2, (0.4, 0.1, 0.2, 0.05)),
+                page=2,
+            ),
+        )
+    )
+    grounded = ground_citations(
+        (Citation("total", "Total", page=1),),
+        parsed,
+        {"total": "12.50"},
+    )
+    assert grounded[0].page == 2
+    assert grounded[0].bbox == pytest.approx((0.4, 0.1, 0.2, 0.05))
+
+
+def test_numeric_span_attaches_box_for_plain_extracted_number():
+    parsed = ParsedDocument(
+        pages=(
+            _page(
+                "Paid $1,234.00",
+                ParsedSpan("$1,234.00", 1, (0.2, 0.1, 0.3, 0.05)),
+            ),
+        )
+    )
+    grounded = ground_citations(
+        (Citation("amount", "1234", page=1),),
+        parsed,
+        {"amount": 1234},
+    )
+    assert grounded[0].page == 1
+    assert grounded[0].bbox == pytest.approx((0.2, 0.1, 0.3, 0.05))
+
+
+def test_rebind_drops_missing_array_index_and_dedupes_boxes():
+    parsed = ParsedDocument(
+        pages=(
+            _page(
+                "qty 3",
+                ParsedSpan("3", 1, (0.5, 0.1, 0.05, 0.05)),
+            ),
+        )
+    )
+    grounded = ground_citations(
+        (
+            Citation("qty", "3", page=1),
+            Citation("lines[0].qty", "3", page=1, bbox=None),
+        ),
+        parsed,
+        {"lines": [{"qty": 3}]},
+    )
+    assert [item.field for item in grounded] == ["lines[0].qty"]
+    assert grounded[0].bbox == pytest.approx((0.5, 0.1, 0.05, 0.05))
+    duped = ground_citations(
+        (
+            Citation("ghost", "nope", page=1),
+            Citation("ghost", "3", page=1),
+            Citation("ghost", "still-nope", page=1),
+        ),
+        parsed,
+    )
+    ghosts = [item for item in duped if item.field == "ghost"]
+    assert len(ghosts) == 1
+    assert ghosts[0].bbox == pytest.approx((0.5, 0.1, 0.05, 0.05))
+
+
+def test_align_citations_to_window_stamps_single_page():
+    window = ParsedDocument(pages=(_page("Acme Corp", page=5),))
+    citations = (
+        Citation("vendor", "Acme Corp", page=1),
+        Citation("total", "12", page=None),
+        Citation("ok", "x", page=5),
+    )
+    aligned = align_citations_to_window(citations, window)
+    assert aligned[0].page == 5
+    assert aligned[1].page == 5
+    assert aligned[2].page == 5
+    assert align_citations_to_window(citations, None) == citations
+    empty = ParsedDocument(pages=())
+    assert align_citations_to_window(citations, empty) == citations
+    multi = ParsedDocument(pages=(_page("a", page=2), _page("b", page=3)))
+    assert align_citations_to_window(citations, multi) == citations
+
+
+def test_parsed_window_pairs_and_mismatch_fallback(monkeypatch):
+    parsed = ParsedDocument(pages=(_page("hello", page=1),))
+    pairs = parsed_window_pairs(parsed, ["fallback"])
+    assert len(pairs) == 1
+    assert pairs[0][1] is parsed
+    assert parsed_window_pairs(None, ["fallback"]) == [(["fallback"], None)]
+    assert parsed_window_pairs(ParsedDocument(pages=()), ["fallback"]) == [(["fallback"], None)]
+    calls = {"n": 0}
+
+    def _windows(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return (parsed,)
+        return ()
+
+    monkeypatch.setattr("openextract._parse.parse_windows", _windows)
+    mismatched = parsed_window_pairs(parsed, ["fallback"])
+    assert mismatched == [(["fallback"], parsed)]
 
 
 def test_maybe_parsed_inputs_swaps_in_page_text():
@@ -221,6 +360,9 @@ def test_find_span_exact_fuzzy_and_hint():
     assert _find_in_text("abc", "x") is None
     assert _find_in_text("abc", "z") is None
     assert find_span(parsed, "zzz", hinted_page=2) == (2, None)
+    value_page, value_bbox = find_span(parsed, None, field_value="revenue beat")
+    assert value_page == 2
+    assert value_bbox is not None
 
 
 def test_ground_citations_without_parse_drops_model_bbox():
@@ -307,7 +449,8 @@ def test_walk_nested_fields_and_short_quote():
     )
     from_int = ground_citations((), money, {"amount": 1234})
     from_float = ground_citations((), money, {"amount": 1234.0})
-    assert from_int[0].page == 1 and from_int[0].quote == "1,234"
+    assert from_int[0].page == 1
+    assert from_int[0].quote in {"1234", "1,234"}
     assert from_float[0].page == 1
     assert "1,234" in _value_needles("1234.0")
     assert _value_needles("Acme") == ("Acme",)
@@ -333,7 +476,33 @@ def test_walk_nested_fields_and_short_quote():
         ParsedSpan("Acme", 1, (0.2, 0.2, 0.2, 0.1)),
     )
     assert _bbox_for_quote(fuzzy_page, "Acmee") == pytest.approx((0.2, 0.2, 0.2, 0.1))
+    punct = _page(
+        "Acme, Inc.",
+        ParsedSpan("Acme,", 1, (0.1, 0.1, 0.2, 0.05)),
+        ParsedSpan("Inc.", 1, (0.3, 0.1, 0.15, 0.05)),
+    )
+    assert _bbox_for_quote(punct, "Acme Inc") is not None
     assert list(_walk_fields(object(), "x")) == []
+    assert _rebind_field("vendor", None, {"vendor": "Acme"}) == "vendor"
+    assert _rebind_field("qty", "3", {"lines[0].qty": "3", "other": "x"}) == "lines[0].qty"
+    assert _rebind_field("qty", "3", {"lines[0].qty": "1", "lines[1].qty": "3"}) == "lines[1].qty"
+    assert _rebind_field("qty", "zzz", {"lines[0].qty": "1", "lines[1].qty": "2"}) == "qty"
+    assert _rebind_field("qty", None, {"lines[0].qty": "1", "lines[1].qty": "2"}) == "qty"
+    assert _strip_indexes("lines[0].qty") == "lines[].qty"
+    assert _strip_indexes("items[12]") == "items[]"
+    assert _strip_indexes("arr[") == "arr["
+    assert _strip_indexes("arr[x]") == "arr[x]"
+    assert _try_number("(12.5)") == pytest.approx(-12.5)
+    assert _try_number("inf") is None
+    assert _try_number("not-a-number") is None
+    assert _numeric_in_text("Paid $1,234.00", "1234")
+    assert not _numeric_in_text("hello", "1234")
+    assert not _numeric_in_text("1,234", "abc")
+    assert _needle_covers("acme,", "Acme")
+    assert not _needle_covers("acme", "")
+    assert not _needle_covers("$$$", "!!!")
+    assert _fold_alnum("Acme,") == "acme"
+    assert _bbox_on_page(ParsedDocument(pages=(_page("x"),)), 9, ("x",)) is None
 
 
 def test_word_span_space_and_missing_box():

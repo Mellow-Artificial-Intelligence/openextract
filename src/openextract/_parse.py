@@ -218,6 +218,50 @@ def parsed_window_inputs(
     return [parsed_run_inputs(window) for window in windows]
 
 
+def parsed_window_pairs(
+    parsed: ParsedDocument | None,
+    fallback_inputs: list,
+    *,
+    max_chars: int | None = None,
+    max_pages: int | None = None,
+) -> list[tuple[list, ParsedDocument | None]]:
+    """Pair each window's model inputs with the parse slice the model saw."""
+    inputs = parsed_window_inputs(parsed, fallback_inputs, max_chars=max_chars, max_pages=max_pages)
+    if parsed is None or not parsed.pages:
+        return [(item, None) for item in inputs]
+    windows = parse_windows(parsed, max_chars=max_chars, max_pages=max_pages)
+    if len(inputs) != len(windows):
+        return [(item, parsed) for item in inputs]
+    return list(zip(inputs, windows, strict=True))
+
+
+def align_citations_to_window(
+    citations: tuple[Citation, ...],
+    window: ParsedDocument | None,
+) -> tuple[Citation, ...]:
+    """Map model page numbers onto the single document page a window contained.
+
+    ExtractBench uses one page per window. Models often emit ``page=1`` (or omit
+    page) even when the prompt is marked ``--- Page N ---``. Multi-page windows
+    are left unchanged so document-level pages stay intact.
+    """
+    if window is None or not window.pages:
+        return citations
+    window_pages = {page.page for page in window.pages}
+    if len(window_pages) != 1:
+        return citations
+    only = next(iter(window_pages))
+    return tuple(
+        Citation(
+            field=item.field,
+            quote=item.quote,
+            page=only if item.page is None or item.page not in window_pages else item.page,
+            bbox=item.bbox,
+        )
+        for item in citations
+    )
+
+
 def maybe_parsed_inputs(
     file_bytes: bytes,
     file_type: str,
@@ -252,16 +296,25 @@ def ground_citations(
 
     Model-supplied boxes are ignored. A citation with a valid page is kept even
     when the quote is short. Unmatched spans omit ``bbox`` rather than guessing.
+    When the model quotes a paraphrase or the wrong page, the extracted field
+    value is used to locate evidence already in the parse.
     """
     if parsed is None:
         return tuple(
             Citation(field=item.field, quote=item.quote, page=item.page, bbox=None)
             for item in citations
         )
-    grounded = [_ground_one(item, parsed) for item in citations]
+    values = dict(_iter_field_values(output))
+    grounded: list[Citation] = []
+    for item in citations:
+        field = _rebind_field(item.field, item.quote, values)
+        if field != item.field:
+            item = Citation(field=field, quote=item.quote, page=item.page, bbox=item.bbox)
+        grounded.append(_ground_one(item, parsed, values.get(field)))
+    grounded = _dedupe_citations(grounded)
     seen = {item.field for item in grounded}
     extras: list[Citation] = []
-    for field, value in _iter_field_values(output):
+    for field, value in values.items():
         if field in seen:
             continue
         extra = _citation_from_value(field, value, parsed)
@@ -554,8 +607,14 @@ def _normalized_coco(
     return (x, y, width, height)
 
 
-def _ground_one(citation: Citation, parsed: ParsedDocument) -> Citation:
-    page, bbox = find_span(parsed, citation.quote, hinted_page=citation.page)
+def _ground_one(
+    citation: Citation,
+    parsed: ParsedDocument,
+    field_value: str | None = None,
+) -> Citation:
+    page, bbox = find_span(
+        parsed, citation.quote, field_value=field_value, hinted_page=citation.page
+    )
     if page is None:
         page = citation.page if citation.page is not None and citation.page >= 1 else None
     return Citation(field=citation.field, quote=citation.quote, page=page, bbox=bbox)
@@ -569,15 +628,78 @@ def find_span(
     hinted_page: int | None = None,
 ) -> tuple[int | None, tuple[float, float, float, float] | None]:
     """Locate ``quote`` (then ``field_value``) on the parse: exact, then fuzzy."""
-    needles = [text for text in (quote, field_value) if text and str(text).strip()]
-    if not needles:
+    quote_needles = _needles_of(quote)
+    value_needles = _value_needles(field_value) if field_value else ()
+    if not quote_needles and not value_needles:
         return _valid_page(hinted_page), None
+    hint = _valid_page(hinted_page)
+    quote_hit = _first_hit(parsed, quote_needles, hinted_page, fuzzy=False)
+    value_hit = _first_hit(parsed, value_needles, hinted_page, fuzzy=False)
+    chosen = _choose_page(quote_hit, value_hit, hint)
+    if chosen is None:
+        quote_hit = _first_hit(parsed, quote_needles, hinted_page, fuzzy=True)
+        value_hit = _first_hit(parsed, value_needles, hinted_page, fuzzy=True)
+        chosen = _choose_page(quote_hit, value_hit, hint)
+    if chosen is None:
+        return hint, None
+    bbox = _bbox_on_page(parsed, chosen, value_needles) or _bbox_on_page(
+        parsed, chosen, quote_needles
+    )
+    return chosen, bbox
+
+
+def _needles_of(text: str | None) -> tuple[str, ...]:
+    if text is None:
+        return ()
+    stripped = str(text).strip()
+    return (stripped,) if stripped else ()
+
+
+def _first_hit(
+    parsed: ParsedDocument,
+    needles: tuple[str, ...],
+    hinted_page: int | None,
+    *,
+    fuzzy: bool,
+) -> tuple[int, tuple[float, float, float, float] | None] | None:
+    if not needles:
+        return None
     pages = _pages_for_hint(parsed, hinted_page)
     for needle in needles:
         for page in pages:
-            if _haystack_has(page.text, needle):
+            if _haystack_has(page.text, needle, fuzzy=fuzzy):
                 return page.page, _bbox_for_quote(page, needle)
-    return _valid_page(hinted_page), None
+    return None
+
+
+def _choose_page(
+    quote_hit: tuple[int, tuple[float, float, float, float] | None] | None,
+    value_hit: tuple[int, tuple[float, float, float, float] | None] | None,
+    hint: int | None,
+) -> int | None:
+    """Prefer the extracted value when a short/common quote hits the hinted page."""
+    quote_page = quote_hit[0] if quote_hit is not None else None
+    value_page = value_hit[0] if value_hit is not None else None
+    if value_page is not None and quote_page is not None:
+        if hint is not None and quote_page == hint and value_page != hint:
+            return value_page
+        return quote_page
+    return quote_page if quote_page is not None else value_page
+
+
+def _bbox_on_page(
+    parsed: ParsedDocument,
+    page_no: int,
+    needles: tuple[str, ...],
+) -> tuple[float, float, float, float] | None:
+    page = next((item for item in parsed.pages if item.page == page_no), None)
+    if page is None:
+        return None
+    for needle in needles:
+        box = _bbox_for_quote(page, needle)
+        if box is not None:
+            return box
+    return None
 
 
 def _pages_for_hint(parsed: ParsedDocument, hinted_page: int | None) -> tuple[ParsedPage, ...]:
@@ -592,11 +714,11 @@ def _valid_page(page: int | None) -> int | None:
     return page if isinstance(page, int) and not isinstance(page, bool) and page >= 1 else None
 
 
-def _haystack_has(haystack: str, needle: str) -> bool:
-    return _find_in_text(haystack, needle) is not None
+def _haystack_has(haystack: str, needle: str, *, fuzzy: bool = True) -> bool:
+    return _find_in_text(haystack, needle, fuzzy=fuzzy) is not None
 
 
-def _find_in_text(haystack: str, needle: str) -> int | None:
+def _find_in_text(haystack: str, needle: str, *, fuzzy: bool = True) -> int | None:
     norm_h = _normalize(haystack)
     norm_n = _normalize(needle)
     if not norm_n:
@@ -604,7 +726,9 @@ def _find_in_text(haystack: str, needle: str) -> int | None:
     index = norm_h.find(norm_n)
     if index >= 0:
         return index
-    if len(norm_n) < 2:
+    if _numeric_in_text(haystack, needle):
+        return 0
+    if not fuzzy or len(norm_n) < 2:
         return None
     window = len(norm_n)
     step = max(1, window // 4)
@@ -617,6 +741,17 @@ def _find_in_text(haystack: str, needle: str) -> int | None:
             best_ratio = ratio
             best_index = start
     return best_index
+
+
+def _numeric_in_text(haystack: str, needle: str) -> bool:
+    want = _try_number(needle)
+    if want is None:
+        return False
+    for token in haystack.split():
+        got = _try_number(token.strip(".;:()[]"))
+        if got is not None and got == want:
+            return True
+    return False
 
 
 def _bbox_for_quote(page: ParsedPage, quote: str) -> tuple[float, float, float, float] | None:
@@ -635,9 +770,9 @@ def _bbox_for_quote(page: ParsedPage, quote: str) -> tuple[float, float, float, 
             if span.bbox is not None:
                 boxes.append(span.bbox)
             joined = " ".join(parts)
-            if joined == needle or needle in joined:
+            if _needle_covers(joined, needle):
                 return _union_coco(boxes)
-            if not (needle.startswith(joined) or joined in needle):
+            if not _needle_can_grow(joined, needle):
                 break
     best_box: tuple[float, float, float, float] | None = None
     best_ratio = _FUZZY_RATIO
@@ -651,6 +786,57 @@ def _bbox_for_quote(page: ParsedPage, quote: str) -> tuple[float, float, float, 
     return best_box
 
 
+def _needle_covers(joined: str, needle: str) -> bool:
+    if not needle:
+        return False
+    if joined == needle or needle in joined:
+        return True
+    if _numbers_match(joined, needle):
+        return True
+    folded_j, folded_n = _fold_alnum(joined), _fold_alnum(needle)
+    if not folded_n:
+        return False
+    if _try_number(joined) is not None or _try_number(needle) is not None:
+        return False
+    return folded_j == folded_n or folded_n in folded_j
+
+
+def _needle_can_grow(joined: str, needle: str) -> bool:
+    if needle.startswith(joined) or joined in needle:
+        return True
+    folded_j, folded_n = _fold_alnum(joined), _fold_alnum(needle)
+    if folded_n and (folded_n.startswith(folded_j) or folded_j in folded_n):
+        return True
+    return _try_number(joined) is not None and _try_number(needle) is not None
+
+
+def _fold_alnum(text: str) -> str:
+    return "".join(ch for ch in text.casefold() if ch.isalnum())
+
+
+def _try_number(text: str) -> float | None:
+    stripped = (
+        text.replace(",", "")
+        .replace("$", "")
+        .replace("£", "")
+        .replace("€", "")
+        .replace("%", "")
+        .strip()
+    )
+    if stripped.startswith("(") and stripped.endswith(")"):
+        stripped = f"-{stripped[1:-1].strip()}"
+    try:
+        number = float(stripped)
+    except ValueError:
+        return None
+    return number if math.isfinite(number) else None
+
+
+def _numbers_match(left: str, right: str) -> bool:
+    left_n, right_n = _try_number(left), _try_number(right)
+    return left_n is not None and right_n is not None and left_n == right_n
+
+
 def _union_coco(
     boxes: list[tuple[float, float, float, float]],
 ) -> tuple[float, float, float, float] | None:
@@ -661,6 +847,73 @@ def _union_coco(
     x1 = max(box[0] + box[2] for box in boxes)
     y1 = max(box[1] + box[3] for box in boxes)
     return _normalized_coco(x0, y0, x1 - x0, y1 - y0)
+
+
+def _rebind_field(field: str, quote: str | None, values: dict[str, str]) -> str:
+    """Map a model field path onto an extracted path when indexes were dropped."""
+    if field in values:
+        return field
+    key = _strip_indexes(field)
+    matches = [
+        path
+        for path in values
+        if (stripped := _strip_indexes(path)) == key or stripped.endswith(f".{key}")
+    ]
+    if len(matches) == 1:
+        return matches[0]
+    quote_n = _normalize(quote) if quote else ""
+    if not quote_n:
+        return field
+    for path in matches:
+        value_n = _normalize(values[path])
+        if value_n and (value_n == quote_n or value_n in quote_n or quote_n in value_n):
+            return path
+    return field
+
+
+def _strip_indexes(field: str) -> str:
+    out: list[str] = []
+    index = 0
+    length = len(field)
+    while index < length:
+        char = field[index]
+        if char == "[":
+            close = index + 1
+            while close < length and field[close].isdigit():
+                close += 1
+            if close < length and field[close] == "]" and close > index + 1:
+                out.append("[]")
+                index = close + 1
+                continue
+        out.append(char)
+        index += 1
+    return "".join(out)
+
+
+def _dedupe_citations(citations: list[Citation]) -> list[Citation]:
+    """Keep one citation per field+page, preferring a parser box."""
+    best: dict[tuple[str, int | None], Citation] = {}
+    order: list[tuple[str, int | None]] = []
+    for item in citations:
+        key = (item.field, item.page)
+        previous = best.get(key)
+        if previous is None:
+            order.append(key)
+            best[key] = item
+            continue
+        best[key] = item if _citation_rank(item) > _citation_rank(previous) else previous
+    return [best[key] for key in order]
+
+
+def _citation_rank(citation: Citation) -> tuple[int, int, int]:
+    area = 0
+    if citation.bbox is not None:
+        area = -int(citation.bbox[2] * citation.bbox[3] * 1_000_000)
+    return (
+        1 if citation.bbox is not None else 0,
+        1 if citation.quote else 0,
+        area,
+    )
 
 
 def _citation_from_value(field: str, value: str, parsed: ParsedDocument) -> Citation | None:
