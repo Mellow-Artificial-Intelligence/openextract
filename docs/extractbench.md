@@ -104,8 +104,10 @@ one extra attempt). Request timeouts and token-limit errors are not
 retried at file level. Scanned / empty-text PDFs are rendered to compact grayscale page images
 (long edge ≤ 768px) locally and are
 never uploaded for provider document-parse. Citations are collected from
-every window before reduce. When a window
-returns values but no cites, pages are backfilled from the local parse
+every window before reduce. One-page windows remap model `page=1` / missing
+pages onto the document page in that window. When a window
+returns values but no cites — or a cite whose quote is paraphrased — pages
+are located from the extracted values in the local parse
 (including numeric display variants). Boxes are never invented and are never
 taken from the model: if a parser span matches the quote (exact, then simple
 fuzzy), a normalized COCO `[x, y, width, height]` in `[0, 1]` is attached; if
@@ -126,8 +128,10 @@ full run is 370 documents / 4,869 pages and is metered API usage.
 Local 6-document `--test` on OpenRouter `z-ai/glm-5.3-flash` (citations on,
 package `0.13.0`) finished 6/6 inference. Successful-only page F1 was 0.24,
 below the maintainer gate (6/6 finish **and** successful-only page F1 > 0.37).
-The full 370-document run has not been run. Listing this pipeline on the
-official ExtractBench leaderboard is a later change in
+Page and word grounding (window page assignment and parser box attachment) is
+in progress in this repository; that smoke number is from before this work and
+is not a new run. The full 370-document run has not been run. Listing this
+pipeline on the official ExtractBench leaderboard is a later change in
 [run-llama/ExtractBench](https://github.com/run-llama/ExtractBench), not this
 repository.
 

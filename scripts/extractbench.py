@@ -51,7 +51,12 @@ from openextract._citations import (
 )
 from openextract._errors import _is_output_retry_error
 from openextract._media import _get_media_type
-from openextract._parse import ground_citations, maybe_parsed_inputs, parse_windows
+from openextract._parse import (
+    align_citations_to_window,
+    ground_citations,
+    maybe_parsed_inputs,
+    parse_windows,
+)
 from openextract._types import _sum_usage
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -427,7 +432,7 @@ def _extract_parse_windows(
     max_input_bytes: int | None,
     timeout: float | None,
     window_concurrency: int,
-) -> tuple[list[dict[str, Any]], Usage]:
+) -> tuple[list[tuple[dict[str, Any], object]], Usage]:
     """Extract each parse window and sum usage. Citations are unwrapped later.
 
     Hung windows are not retried and must not burn the 1800s per-file budget
@@ -456,11 +461,14 @@ def _extract_parse_windows(
 
     budget = window_pool_timeout(len(sources), workers, timeout)
     if budget is None:
-        pairs = [_run(source, media_type) for source, media_type in sources]
+        pairs = [
+            (*_run(source, media_type), window)
+            for (source, media_type), window in zip(sources, windows, strict=True)
+        ]
     else:
-        pairs = _run_window_pool(_run, sources, workers, budget)
-    return [as_extracted_dict(part) for part, _usage in pairs], _sum_usage(
-        usage for _part, usage in pairs
+        pairs = _run_window_pool(_run, sources, workers, budget, windows)
+    return [(as_extracted_dict(part), window) for part, _usage, window in pairs], _sum_usage(
+        usage for _part, usage, _window in pairs
     )
 
 
@@ -490,16 +498,18 @@ def _run_window_with_output_retries(
 
 def _finished_window_pairs(
     futures: list,
-) -> list[tuple[ExtractedDocument, Usage]]:
+    windows: tuple,
+) -> list[tuple[ExtractedDocument, Usage, object]]:
     """Collect successful window results; skip cancelled and failed futures."""
-    pairs: list[tuple[ExtractedDocument, Usage]] = []
-    for future in futures:
+    pairs: list[tuple[ExtractedDocument, Usage, object]] = []
+    for future, window in zip(futures, windows, strict=True):
         if not future.done() or future.cancelled():
             continue
         try:
-            pairs.append(future.result())
+            part, usage = future.result()
         except Exception:
             continue
+        pairs.append((part, usage, window))
     return pairs
 
 
@@ -508,7 +518,8 @@ def _run_window_pool(
     sources: list[tuple[bytes, str]],
     workers: int,
     budget: float,
-) -> list[tuple[ExtractedDocument, Usage]]:
+    windows: tuple,
+) -> list[tuple[ExtractedDocument, Usage, object]]:
     """Run windows concurrently; merge leftovers when the budget expires."""
     pool = ThreadPoolExecutor(max_workers=workers)
     try:
@@ -516,7 +527,7 @@ def _run_window_pool(
         _done, pending = wait(futures, timeout=budget)
         if pending:
             _extra, pending = wait(pending, timeout=window_pool_leftover_grace(budget))
-        pairs = _finished_window_pairs(futures)
+        pairs = _finished_window_pairs(futures, windows)
         if pending:
             for future in pending:
                 future.cancel()
@@ -550,13 +561,18 @@ def _extractbench_retryable(exc: ModelError) -> bool:
 
 
 def _merge_window_payloads(
-    payloads: list[dict[str, Any]], *, cite: bool
+    payloads: list[dict[str, Any] | tuple[dict[str, Any], object]], *, cite: bool
 ) -> tuple[dict[str, Any], tuple[Citation, ...]]:
     """Reduce window extractions and keep every window's citations."""
     data_parts: list[ExtractedDocument] = []
     citations: list[Citation] = []
     for payload in payloads:
+        window = None
+        if isinstance(payload, tuple):
+            payload, window = payload
         data, cites = _unwrap_cited_document(payload, cite=cite)
+        if cite and window is not None:
+            cites = align_citations_to_window(cites, window)
         data_parts.append(ExtractedDocument.model_validate(data))
         citations.extend(cites)
     merged = as_extracted_dict(reduce_outputs(data_parts)) if data_parts else {}

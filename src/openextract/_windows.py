@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Sequence
 
 from ._citations import split_cited_output
-from ._parse import ParsedDocument, ground_citations, parsed_window_inputs
+from ._parse import ParsedDocument, ground_citations, parsed_window_pairs
 from ._reduce import reduce_outputs
 from ._retry import _run_with_retries_async, _run_with_retries_sync
 from ._types import Citation, T, Usage, _sum_usage
@@ -26,17 +26,20 @@ def extract_windows_sync(
     retry_max_backoff: float,
 ) -> tuple[T, Usage, tuple[Citation, ...]]:
     """Extract each parse window (or the one-window fast path) and merge."""
-    windows = parsed_window_inputs(parsed, inputs)
+    windows = parsed_window_pairs(parsed, inputs)
     outputs: list[T] = []
     usages: list[Usage] = []
     citations: list[Citation] = []
-    for window in windows:
+    for window, window_parse in windows:
 
         def _once(
             window: list = window,
+            window_parse: ParsedDocument | None = window_parse,
         ) -> tuple[T, Usage, tuple[Citation, ...]]:
             raw, usage = run(window)
-            output, cites = split_cited_output(raw, schema, cite=cite, parsed=parsed)
+            output, cites = split_cited_output(
+                raw, schema, cite=cite, parsed=parsed, window=window_parse
+            )
             return output, usage, cites
 
         output, usage, cites = _run_with_retries_sync(
@@ -63,17 +66,20 @@ async def extract_windows_async(
     retry_max_backoff: float,
 ) -> tuple[T, Usage, tuple[Citation, ...]]:
     """Async sibling of :func:`extract_windows_sync`."""
-    windows = parsed_window_inputs(parsed, inputs)
+    windows = parsed_window_pairs(parsed, inputs)
     outputs: list[T] = []
     usages: list[Usage] = []
     citations: list[Citation] = []
-    for window in windows:
+    for window, window_parse in windows:
 
         async def _once(
             window: list = window,
+            window_parse: ParsedDocument | None = window_parse,
         ) -> tuple[T, Usage, tuple[Citation, ...]]:
             raw, usage = await run(window)
-            output, cites = split_cited_output(raw, schema, cite=cite, parsed=parsed)
+            output, cites = split_cited_output(
+                raw, schema, cite=cite, parsed=parsed, window=window_parse
+            )
             return output, usage, cites
 
         output, usage, cites = await _run_with_retries_async(

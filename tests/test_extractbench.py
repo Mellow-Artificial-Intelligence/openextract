@@ -726,6 +726,58 @@ def test_run_window_with_output_retries_reraises_other_errors():
         extractbench._run_window_with_output_retries(_boom, attempts=2)
 
 
+def test_window_page_one_citation_stamps_document_page(tmp_path):
+    from tests.pdf_fixture import synthetic_pdf
+
+    schema = {
+        "type": "object",
+        "properties": {"vendor": {"type": "string"}},
+        "required": ["vendor"],
+    }
+    pdf = synthetic_pdf(pages=["AAAA noise", "Acme Corp"])
+    path = tmp_path / "windowed.pdf"
+    path.write_bytes(pdf)
+    data, _usage, citations = extractbench.extract_document_with_citations(
+        path,
+        schema,
+        TestModel(
+            custom_output_args={
+                "output": {"vendor": "Acme Corp"},
+                "citations": [{"field": "vendor", "quote": "the supplier", "page": 1}],
+            }
+        ),
+        max_retries=0,
+        cite=True,
+    )
+    assert data["vendor"] == "Acme Corp"
+    vendor = next(item for item in citations if item.field == "vendor")
+    assert vendor.page == 2
+    assert vendor.bbox is not None
+    mapped = extractbench.field_citations_for_extractbench(citations)
+    assert mapped[0]["page"] == 2
+    assert mapped[0]["bbox"] == list(vendor.bbox)
+
+
+def test_merge_window_payloads_aligns_single_page_window():
+    from openextract._parse import ParsedDocument, ParsedPage
+
+    window = ParsedDocument(pages=(ParsedPage(2, "Acme Corp", 1, 1, ()),))
+    data, citations = extractbench._merge_window_payloads(
+        [
+            (
+                {
+                    "output": {"vendor": "Acme Corp"},
+                    "citations": [{"field": "vendor", "quote": "Acme Corp", "page": 1}],
+                },
+                window,
+            )
+        ],
+        cite=True,
+    )
+    assert data["vendor"] == "Acme Corp"
+    assert citations[0].page == 2
+
+
 def test_merge_window_payloads_keeps_later_citations():
     data, citations = extractbench._merge_window_payloads(
         [

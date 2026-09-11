@@ -8,6 +8,15 @@ timing when that is known.
 
 ## [Unreleased]
 
+### Fixed
+- ExtractBench page/word grounding: one-page windows remap model `page=1` /
+  missing pages onto the document page the prompt actually contained, and
+  citation grounding locates evidence from the extracted field value when the
+  quote is paraphrased or the hinted page is wrong. Parser boxes now match
+  numeric/punctuation variants (`$1,234.00` vs `1234`) and prefer the value
+  span. Model field paths that drop array indexes (`qty` → `lines[0].qty`) are
+  rebound onto the extracted output. Boxes are still never invented.
+
 ### Removed
 - ExtractBench per-SHA smoke lab log (`docs/extractbench-smokes.md`). Latest
   6-doc smoke status now lives in `docs/extractbench.md`.

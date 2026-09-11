@@ -179,6 +179,22 @@ class TestSchemaWrap:
         assert output == Person(name="Ada", age=36)
         assert citations[0].field == "name"
 
+    def test_split_aligns_citations_to_one_page_window(self):
+        from openextract._parse import ParsedDocument, ParsedPage
+
+        window = ParsedDocument(pages=(ParsedPage(4, "Ada", 1, 1, ()),))
+        output, citations = split_cited_output(
+            {
+                "output": {"name": "Ada", "age": 36},
+                "citations": [{"field": "name", "quote": "Ada"}],
+            },
+            Person,
+            cite=True,
+            window=window,
+        )
+        assert output == Person(name="Ada", age=36)
+        assert citations[0].page == 4
+
 
 class TestExtractCite:
     def test_default_extract_does_not_wrap_or_add_instructions(self):

@@ -8,7 +8,7 @@ from typing import Any, cast
 
 from pydantic import BaseModel, Field, create_model
 
-from ._parse import ParsedDocument, ground_citations
+from ._parse import ParsedDocument, align_citations_to_window, ground_citations
 from ._types import Citation, T
 
 _MAX_QUOTE = 2000
@@ -108,19 +108,24 @@ def split_cited_output(
     *,
     cite: bool,
     parsed: ParsedDocument | None = None,
+    window: ParsedDocument | None = None,
 ) -> tuple[T, tuple[Citation, ...]]:
     """Unwrap a cited model payload into ``(schema instance, citations)``.
 
     When ``cite`` is false the raw output is returned unchanged and citations
     are empty, matching the default extract path. When a local parse is
     provided, pages are stamped from it and boxes come only from parser spans.
+    ``window`` remaps page=1 / missing pages onto the single page the model saw.
     """
     if not cite:
         return cast(T, raw), ()
     wrapper_type = cited_output_schema(schema)
     wrapper = cast(Any, raw if isinstance(raw, wrapper_type) else wrapper_type.model_validate(raw))
     output = cast(T, wrapper.output)
-    citations = ground_citations(citations_from_payload(wrapper.citations), parsed, output)
+    citations = citations_from_payload(wrapper.citations)
+    if window is not None:
+        citations = align_citations_to_window(citations, window)
+    citations = ground_citations(citations, parsed, output)
     return output, citations
 
 
