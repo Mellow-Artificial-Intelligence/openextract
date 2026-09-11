@@ -8,6 +8,11 @@ timing when that is known.
 
 ## [Unreleased]
 
+### Fixed
+- Release publish accepts hatchling wheels that emit Metadata-Version 2.5
+  (`pypa/gh-action-pypi-publish` v1.14.2 / Twine 7). 0.13.1 build succeeded
+  but PyPI upload failed on the older action pin.
+
 ## [0.13.1] - 2026-09-11
 
 ### Fixed
