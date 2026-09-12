@@ -29,6 +29,7 @@ ALL_MODULES = [
     "examples.batch.stream_batch_extract",
     "examples.async.async_extract",
     "examples.advanced.extract_with_usage",
+    "examples.advanced.extract_with_citations",
     "examples.advanced.retry_extract",
     "examples.advanced.reusable_sessions",
     "examples.advanced.extraction_styles",
@@ -93,6 +94,14 @@ def test_extraction_styles_example() -> None:
     result = _run("examples.advanced.extraction_styles")
     assert result.returncode == 0, result.stderr
     assert "Q4 notes" in result.stdout
+
+
+def test_extract_with_citations_example() -> None:
+    result = _run("examples.advanced.extract_with_citations")
+    assert result.returncode == 0, result.stderr
+    assert "Acme Corp" in result.stdout
+    assert "citations:" in result.stdout
+    assert "ExtractBench:" in result.stdout
 
 
 def test_stream_batch_extract_example() -> None:

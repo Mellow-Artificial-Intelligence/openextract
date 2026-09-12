@@ -12,6 +12,7 @@ load_dotenv()
 
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 DOCUMENT_PAGE = FIXTURES_DIR / "document_page.png"
+ACME_SNIPPET = FIXTURES_DIR / "acme_snippet.pdf"
 
 OPENAI_MODEL = "openai:gpt-5.5"
 ANTHROPIC_MODEL = "anthropic:claude-opus-4-8"

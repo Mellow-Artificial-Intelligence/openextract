@@ -16,6 +16,10 @@ timing when that is known.
   path (parse-then-extract when the PDF extra is available). JSON and JSONL
   include a `citations` array of `{field, quote, page}` objects with optional
   `bbox`. An injected agent still raises `ValueError`, as in the library.
+- Example and guide notes for `cite=True`:
+  `examples/advanced/extract_with_citations.py` shows `extract_with_usage` /
+  `extract_many_with_results`. Citation docs spell out parser-backed boxes
+  (never invented) and the ExtractBench `FieldCitation` mapping.
 
 ### Changed
 - ExtractBench docs: latest smoke notes that `0.13.1+` includes page/word

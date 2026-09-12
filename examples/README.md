@@ -50,6 +50,7 @@ uv run python -m examples.run_all
 | `batch/` | `stream_batch_extract.py` | TestModel | `iter_extract_many_async` completion order vs `extract_many` input order |
 | `async/` | `async_extract.py` | Anthropic | `extract_async()` |
 | `advanced/` | `extract_with_usage.py` | xAI | `extract_with_usage()` and token counts |
+| `advanced/` | `extract_with_citations.py` | TestModel | `cite=True` on `extract_with_usage` / `extract_many_with_results` |
 | `advanced/` | `retry_extract.py` | OpenAI | `max_retries` / `retry_backoff` |
 | `advanced/` | `reusable_sessions.py` | TestModel | Sync/async sessions and dependency-injected agents |
 | `advanced/` | `extraction_styles.py` | TestModel | `style='direct'` vs `search` / `code` |
@@ -71,6 +72,9 @@ uv run python -m examples.basic.url_extract
 
 # xAI — token usage
 uv run python -m examples.advanced.extract_with_usage --fixture
+
+# TestModel — cite=True (no API key; parser-backed bbox needs openextract[pdf])
+uv run python -m examples.advanced.extract_with_citations
 
 # OpenAI — batch
 uv run python -m examples.batch.batch_extract
