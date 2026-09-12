@@ -160,7 +160,7 @@ results = extract_many_with_results(
     schema=Invoice, model="openai:gpt-5", input_files=["bill.pdf"], cite=True
 )
 for citation in results[0].citations:
-    print(citation.field, citation.page, citation.quote)
+    print(citation.as_dict())
 ```
 
 Default is off: no extra instructions or schema wrap. Citations never retain

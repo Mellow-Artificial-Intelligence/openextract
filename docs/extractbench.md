@@ -75,7 +75,9 @@ scans are not rejected by openextract's 50 MiB library default.
 ## Grounding
 
 The runner asks the model for per-field citations by default (`--cite`, disable
-with `--no-cite`) and maps them onto ExtractBench `FieldCitation`:
+with `--no-cite`). Raw `citations` in the result JSON use
+`Citation.as_dict()` (`field`, `quote`, `page`, `bbox` as four floats or
+`null`). ExtractBench scoring still uses `as_field_citation()` / `FieldCitation`:
 
 | ExtractBench field | openextract `Citation` | When it scores |
 | --- | --- | --- |

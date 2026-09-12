@@ -799,15 +799,7 @@ def register_openextract_pipeline(
                 ) + out_tok / 1_000_000 * float(cfg.get("output_price_per_1m", 0.0))
                 raw_output = {
                     "data": extracted,
-                    "citations": [
-                        {
-                            "field": citation.field,
-                            "quote": citation.quote,
-                            "page": citation.page,
-                            "bbox": list(citation.bbox) if citation.bbox is not None else None,
-                        }
-                        for citation in citations
-                    ],
+                    "citations": [citation.as_dict() for citation in citations],
                     "field_citations": field_citations_for_extractbench(citations),
                     "model": cfg["model"],
                     "usage": {
