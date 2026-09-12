@@ -84,6 +84,21 @@ class Citation:
     page: int | None = None
     bbox: tuple[float, float, float, float] | None = None
 
+    def as_dict(self) -> dict[str, object]:
+        """JSON-stable citation: ``field``, ``quote``, ``page``, ``bbox``.
+
+        ``bbox`` is a list of four floats when a local parser located the
+        span, otherwise ``None``. Boxes are never invented. Quote-only
+        citations are included; :meth:`as_field_citation` still requires a
+        page for ExtractBench scoring.
+        """
+        return {
+            "field": self.field,
+            "quote": self.quote,
+            "page": self.page,
+            "bbox": list(self.bbox) if self.bbox is not None else None,
+        }
+
     def as_field_citation(self) -> dict[str, object] | None:
         """ExtractBench ``FieldCitation`` payload, or ``None`` without a page.
 
@@ -93,11 +108,12 @@ class Citation:
         """
         if self.page is None:
             return None
+        dumped = self.as_dict()
         return {
-            "field_path": self.field,
-            "page": self.page,
-            "bbox": list(self.bbox) if self.bbox is not None else None,
-            "reference_text": self.quote,
+            "field_path": dumped["field"],
+            "page": dumped["page"],
+            "bbox": dumped["bbox"],
+            "reference_text": dumped["quote"],
         }
 
 

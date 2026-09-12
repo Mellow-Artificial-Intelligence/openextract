@@ -360,8 +360,11 @@ A frozen dataclass for one field's source evidence. Mapped onto ExtractBench
 | `page` | `int \| None` | 1-indexed page. Required to emit an ExtractBench citation. |
 | `bbox` | `tuple[float, float, float, float] \| None` | Normalized COCO `(x, y, width, height)` in `[0, 1]`. Kept only when a local parser matched the span; never invented. |
 
-`as_field_citation()` returns `None` when `page` is missing (quote-only
-citations stay on `ExtractionResult` but cannot be scored by ExtractBench).
+`as_dict()` is the JSON shape for CLI and other consumers:
+`{field, quote, page, bbox}` with `bbox` as a list of four floats or `null`.
+Quote-only citations are included. `as_field_citation()` returns `None` when
+`page` is missing (those citations stay on `ExtractionResult` but cannot be
+scored by ExtractBench).
 
 ### `ExtractionResult`
 

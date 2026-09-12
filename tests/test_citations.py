@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from pydantic import BaseModel
 from pydantic_ai.models.test import TestModel
 
@@ -43,6 +45,33 @@ def _cited_model(**kwargs: object) -> TestModel:
 
 
 class TestCitationMapping:
+    def test_as_dict_is_json_stable(self):
+        citation = Citation(
+            field="lines[0].qty",
+            quote="3",
+            page=1,
+            bbox=(0.1, 0.2, 0.3, 0.05),
+        )
+        dumped = citation.as_dict()
+        assert dumped == {
+            "field": "lines[0].qty",
+            "quote": "3",
+            "page": 1,
+            "bbox": [0.1, 0.2, 0.3, 0.05],
+        }
+        assert json.loads(json.dumps(dumped)) == dumped
+
+    def test_as_dict_includes_quote_only_without_inventing_bbox(self):
+        quote_only = Citation(field="vendor", quote="Acme")
+        assert quote_only.as_dict() == {
+            "field": "vendor",
+            "quote": "Acme",
+            "page": None,
+            "bbox": None,
+        }
+        assert quote_only.as_field_citation() is None
+        assert field_citations_for_extractbench([quote_only]) == []
+
     def test_as_field_citation_requires_page(self):
         quote_only = Citation(field="vendor", quote="Acme")
         assert quote_only.as_field_citation() is None

@@ -8,6 +8,11 @@ timing when that is known.
 
 ## [Unreleased]
 
+### Added
+- `Citation.as_dict()` returns a JSON-stable `{field, quote, page, bbox}`
+  payload (`bbox` is a list of four floats or `null`). Boxes stay
+  parser-backed; `as_field_citation()` ExtractBench mapping is unchanged.
+
 ### Changed
 - ExtractBench docs: latest smoke notes that `0.13.1+` includes page/word
   grounding fixes (#220); the published 6-doc numbers remain the pre-fix
