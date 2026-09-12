@@ -155,7 +155,7 @@ def reduce_citations(
             return items[0][1]
         case SwarmReduce.MERGE | SwarmReduce.VOTE:
             return _citations_matching_output(items, output)
-    assert_never(strategy)
+    assert_never(strategy)  # pragma: no cover - exhaustive SwarmReduce
 
 
 def _citations_matching_output(

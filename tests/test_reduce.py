@@ -10,7 +10,7 @@ from openextract import (
     normalize_reduce,
     reduce_outputs,
 )
-from openextract._reduce import merge_values, reduce_citations, vote_values
+from openextract._reduce import _MISSING, _lookup_field, merge_values, reduce_citations, vote_values
 
 
 class Person(BaseModel):
@@ -229,3 +229,18 @@ class TestReduceCitations:
     def test_rejects_unknown_strategy(self):
         with pytest.raises(ValueError, match="reduce must be one of"):
             reduce_citations([(Person(name="Ada"), ())], Person(name="Ada"), "average")
+
+    def test_lookup_field_reads_dotted_and_indexed_paths(self):
+        data = {"address": {"city": "NYC"}, "lines": ["a"], "name": "Ada"}
+        assert _lookup_field(data, "address.city") == "NYC"
+        assert _lookup_field(data, "lines[0]") == "a"
+
+    def test_lookup_field_returns_missing_for_unusable_paths(self):
+        data = {"lines": ["a"], "name": "Ada"}
+        assert _lookup_field(data, "missing") is _MISSING
+        assert _lookup_field(data, "lines[5]") is _MISSING
+        assert _lookup_field(data, "lines[0") is _MISSING
+        assert _lookup_field(data, "name[0]") is _MISSING
+        assert _lookup_field(data, "name.extra") is _MISSING
+        assert _lookup_field(["x"], "name") is _MISSING
+        assert _lookup_field({"a": 1}, "[0]") is _MISSING
