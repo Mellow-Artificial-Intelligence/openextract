@@ -13,6 +13,8 @@ timing when that is known.
   grounding fixes (#220); the published 6-doc numbers remain the pre-fix
   `0.13.0` run (page F1 0.24). A fresh smoke has not been published; the
   gate is still unmet until that run.
+- Docs: citation guidance in the guide and agent contract now covers page
+  remap, value-backfill, and parser-backed boxes (`openextract[pdf]`).
 
 ### Fixed
 - Release publish accepts hatchling wheels that emit Metadata-Version 2.5

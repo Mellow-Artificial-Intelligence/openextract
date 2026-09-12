@@ -141,10 +141,17 @@ print(usage.input_tokens, usage.output_tokens, usage.total_tokens)
 
 `cite=True` asks the model for per-field source evidence (a quote and
 1-indexed page). PDFs are parsed locally first; long documents are chunked by
-page so the model never sees the whole parse as one prompt. `bbox` is attached
-only when the parser matches the quoted span. `extract()` still returns the
-schema instance. Read citations from `ExtractionResult.citations` on
-`extract_many_with_results*` / `extract_swarm_with_results*`.
+page so the model never sees the whole parse as one prompt.
+
+One-page windows remap `page=1` / missing pages onto the document page the
+model actually saw. If the quote is paraphrased or the page is wrong, the page
+is backfilled from the extracted field value. `bbox` is parser-backed only —
+attached when the local parser matches the span, never invented. Boxes need
+`openextract[pdf]`.
+
+`extract()` still returns the schema instance. Read citations from
+`ExtractionResult.citations` on `extract_many_with_results*` /
+`extract_swarm_with_results*`.
 
 ```python
 from openextract import extract_many_with_results
