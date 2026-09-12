@@ -12,6 +12,10 @@ timing when that is known.
 - `Citation.as_dict()` returns a JSON-stable `{field, quote, page, bbox}`
   payload (`bbox` is a list of four floats or `null`). Boxes stay
   parser-backed; `as_field_citation()` ExtractBench mapping is unchanged.
+- CLI `--cite` requests per-field citations via the same `cite=True` library
+  path (parse-then-extract when the PDF extra is available). JSON and JSONL
+  include a `citations` array of `{field, quote, page}` objects with optional
+  `bbox`. An injected agent still raises `ValueError`, as in the library.
 
 ### Changed
 - ExtractBench docs: latest smoke notes that `0.13.1+` includes page/word

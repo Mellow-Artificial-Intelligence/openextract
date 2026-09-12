@@ -532,6 +532,8 @@ cat ./reports/q4.pdf | openextract - \
   display names; mutually exclusive with positional inputs.
 - `--usage` prints `result` and `usage` for a single input; batches report
   per-item usage plus an aggregate.
+- `--cite` requests per-field citations (`{field, quote, page}`, optional
+  `bbox`) in JSON/jsonl via the same `cite=True` library path.
 - `--output` is `json` (default), `jsonl` (one record per completed input,
   written incrementally in completion order with an `index` field), or `repr`.
 - `--max-concurrency` bounds in-flight extractions for batches (default 5).

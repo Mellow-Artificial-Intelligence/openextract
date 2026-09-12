@@ -195,6 +195,40 @@ openextract ./invoices/a.pdf ./invoices/b.pdf \
 The aggregate sums successful items only. With `--output jsonl`, usage appears
 on each success record and in the final `summary` line instead.
 
+## `--cite` output
+
+`--cite` asks the model for per-field source evidence, the same as
+`cite=True` on the Python API. PDFs are parsed locally first when
+`openextract[pdf]` is installed. Default is off; non-cite JSON shapes are
+unchanged.
+
+```bash
+openextract ./reports/q4.pdf \
+  --schema mypkg.schemas:Invoice \
+  --model xai:grok-4.3 \
+  --cite
+```
+
+```json
+{
+  "result": { "...": "schema fields" },
+  "citations": [
+    { "field": "vendor", "quote": "Acme", "page": 1 },
+    { "field": "total", "quote": "12.50", "page": 1, "bbox": [0.1, 0.2, 0.3, 0.05] }
+  ]
+}
+```
+
+Each citation is `{field, quote, page}` with optional `bbox` (normalized COCO,
+parser-backed only). `quote` / `page` may be `null`. Combine with `--usage` to
+keep `{result, usage, citations}`.
+
+- Batch JSON array: `[{ "result", "citations" }, ...]` in input order.
+- JSONL success records add `"citations"`; failure records are unchanged.
+- Swarms merge citations from successful agents.
+- An injected Pydantic AI agent cannot be used with `--cite` (exit `1`, same
+  `ValueError` as `Extractor(agent=..., cite=True)`).
+
 ## `--output json`, `--output jsonl`, and `--output repr`
 
 | Flag | Behavior |

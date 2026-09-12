@@ -366,6 +366,8 @@ openextract ./bill.pdf \
 - `--schema` is `module:ClassName` on `PYTHONPATH`.
 - Batch: pass multiple paths. `--continue-on-error` emits per-item errors inline and exits `7` if any failed.
 - `--usage` is single-input only.
+- `--cite` adds a `citations` array to JSON/jsonl (`field`, `quote`, `page`,
+  optional `bbox`). Same as `cite=True` on the Python API.
 - `--style`, `--max-retries`, `--max-input-bytes` match the Python API.
 
 Full stdout/stderr/exit-code contract: [CLI](cli.md).
