@@ -139,33 +139,49 @@ print(usage.input_tokens, usage.output_tokens, usage.total_tokens)
 
 ## Citations
 
-`cite=True` asks the model for per-field source evidence (a quote and
-1-indexed page). PDFs are parsed locally first; long documents are chunked by
-page so the model never sees the whole parse as one prompt.
-
-One-page windows remap `page=1` / missing pages onto the document page the
-model actually saw. If the quote is paraphrased or the page is wrong, the page
-is backfilled from the extracted field value. `bbox` is parser-backed only —
-attached when the local parser matches the span, never invented. Boxes need
-`openextract[pdf]`.
-
-`extract()` still returns the schema instance. Read citations from
+`cite=True` asks the model for per-field source evidence (`field`, a verbatim
+`quote`, and a 1-indexed `page`). `extract()` / `extract_with_usage()` still
+return the schema instance (and usage). Read citations from
 `ExtractionResult.citations` on `extract_many_with_results*` /
 `extract_swarm_with_results*`.
 
-```python
-from openextract import extract_many_with_results
+PDFs are parsed locally (`openextract[pdf]` / `openextract[all]`) and chunked
+by page so the model never sees the whole parse as one prompt. One-page
+windows remap `page=1` / missing pages onto the document page the model
+actually saw. If the quote is paraphrased or the page is wrong, the page is
+backfilled from the extracted field value.
 
+`bbox` is a normalized COCO `(x, y, width, height)` in `[0, 1]` attached
+**only** when that local parser matches the quoted span. Boxes are never
+invented and never taken from the model; if no span matches, `bbox` is
+omitted (page-level grounding can still score).
+
+`Citation.as_dict()` is the JSON-stable `{field, quote, page, bbox}` dump
+(`bbox` is a four-float list or `null`). `Citation.as_field_citation()` maps
+onto ExtractBench `FieldCitation` (`field` → `field_path`, `quote` →
+`reference_text`). ExtractBench requires `page >= 1`; quote-only citations
+stay on `ExtractionResult` but cannot be scored.
+
+```python
+from openextract import extract_many_with_results, extract_with_usage
+
+invoice, usage = extract_with_usage(
+    schema=Invoice, model="openai:gpt-5", input_file="bill.pdf", cite=True
+)
 results = extract_many_with_results(
     schema=Invoice, model="openai:gpt-5", input_files=["bill.pdf"], cite=True
 )
 for citation in results[0].citations:
     print(citation.as_dict())
+    print(citation.as_field_citation())
 ```
 
 Default is off: no extra instructions or schema wrap. Citations never retain
-raw media or credentials. See [ExtractBench](extractbench.md) for how these
-map onto grounding scores.
+raw media or credentials. CLI `--cite` uses the same path and adds a
+`citations` array to JSON/jsonl — see [CLI](cli.md). See
+[ExtractBench](extractbench.md) for grounding scores, and
+[`examples/advanced/extract_with_citations.py`](https://github.com/Mellow-Artificial-Intelligence/openextract/blob/main/examples/advanced/extract_with_citations.py)
+for a runnable `cite=True` walkthrough.
 
 ## Batch
 
