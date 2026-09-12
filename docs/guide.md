@@ -142,7 +142,8 @@ print(usage.input_tokens, usage.output_tokens, usage.total_tokens)
 `cite=True` asks the model for per-field source evidence (`field`, a verbatim
 `quote`, and a 1-indexed `page`). `extract()` / `extract_with_usage()` still
 return the schema instance (and usage). Read citations from
-`ExtractionResult.citations` on `extract_many_with_results*` /
+`ExtractionResult.citations` on `extract_many_with_results*`, or from
+`SwarmResult.citations` (and each agent's `ExtractionResult`) on
 `extract_swarm_with_results*`.
 
 PDFs are parsed locally (`openextract[pdf]` / `openextract[all]`) and chunked
@@ -252,7 +253,9 @@ print(swarm.output, swarm.usage, swarm.reduce)
 `reduce` is `merge` (union lists, fill fields), `vote` (majority per field), or
 `first`. A swarm survives partial failure: agents that raised appear in
 `swarm.agents`, and only every agent failing raises. `size` is capped at 16,
-and `max_concurrency` defaults to `min(5, agents)`.
+and `max_concurrency` defaults to `min(5, agents)`. `cite=True` fills
+`swarm.citations` for the reduced `output`; each agent's own cites stay on
+that agent's `ExtractionResult`.
 
 Reach for a swarm when one pass under-recalls — a long document, a wide schema,
 or a result worth cross-checking with a second model. One document one model

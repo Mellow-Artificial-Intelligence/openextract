@@ -3,8 +3,14 @@
 import pytest
 from pydantic import BaseModel
 
-from openextract import SchemaValidationError, SwarmReduce, normalize_reduce, reduce_outputs
-from openextract._reduce import merge_values, vote_values
+from openextract import (
+    Citation,
+    SchemaValidationError,
+    SwarmReduce,
+    normalize_reduce,
+    reduce_outputs,
+)
+from openextract._reduce import _MISSING, _lookup_field, merge_values, reduce_citations, vote_values
 
 
 class Person(BaseModel):
@@ -161,3 +167,80 @@ class TestReduceOutputs:
 
         with pytest.raises(SchemaValidationError):
             reduce_outputs([Strict(), Strict()], "merge")
+
+
+class TestReduceCitations:
+    def test_empty_items_are_empty(self):
+        assert reduce_citations([], Person(name="Ada")) == ()
+
+    def test_single_item_keeps_its_citations(self):
+        cites = (Citation("name", "Ada", 1),)
+        assert reduce_citations([(Person(name="Ada"), cites)], Person(name="Ada")) is cites
+
+    def test_first_keeps_the_leading_agent(self):
+        first = (Citation("name", "Ada", 1),)
+        later = (Citation("name", "Grace", 2),)
+        assert (
+            reduce_citations(
+                [(Person(name="Ada"), first), (Person(name="Grace"), later)],
+                Person(name="Ada"),
+                "first",
+            )
+            is first
+        )
+
+    def test_merge_keeps_cites_for_fields_that_survived(self):
+        merged = reduce_citations(
+            [
+                (Person(name="Ada"), (Citation("name", "Ada", 1),)),
+                (Person(name="Ada", age=36), (Citation("age", "36", 1),)),
+            ],
+            Person(name="Ada", age=36),
+            "merge",
+        )
+        assert merged == (Citation("name", "Ada", 1), Citation("age", "36", 1))
+
+    def test_vote_drops_the_minority_citation(self):
+        voted = reduce_citations(
+            [
+                (Person(name="Ada"), (Citation("name", "Ada", 1),)),
+                (Person(name="Grace"), (Citation("name", "Grace", 2),)),
+                (Person(name="Grace"), (Citation("name", "Grace Hopper", 3),)),
+            ],
+            Person(name="Grace"),
+            SwarmReduce.VOTE,
+        )
+        assert voted == (Citation("name", "Grace", 2),)
+
+    def test_nested_paths_compare_the_indexed_value(self):
+        left = Invoices(vendor="Acme", lines=["a"])
+        right = Invoices(lines=["b"])
+        merged = reduce_outputs([left, right], "merge")
+        cites = reduce_citations(
+            [
+                (left, (Citation("lines[0]", "a", 1), Citation("vendor", "Acme", 1))),
+                (right, (Citation("lines[0]", "b", 2),)),
+            ],
+            merged,
+            "merge",
+        )
+        assert cites == (Citation("lines[0]", "a", 1), Citation("vendor", "Acme", 1))
+
+    def test_rejects_unknown_strategy(self):
+        with pytest.raises(ValueError, match="reduce must be one of"):
+            reduce_citations([(Person(name="Ada"), ())], Person(name="Ada"), "average")
+
+    def test_lookup_field_reads_dotted_and_indexed_paths(self):
+        data = {"address": {"city": "NYC"}, "lines": ["a"], "name": "Ada"}
+        assert _lookup_field(data, "address.city") == "NYC"
+        assert _lookup_field(data, "lines[0]") == "a"
+
+    def test_lookup_field_returns_missing_for_unusable_paths(self):
+        data = {"lines": ["a"], "name": "Ada"}
+        assert _lookup_field(data, "missing") is _MISSING
+        assert _lookup_field(data, "lines[5]") is _MISSING
+        assert _lookup_field(data, "lines[0") is _MISSING
+        assert _lookup_field(data, "name[0]") is _MISSING
+        assert _lookup_field(data, "name.extra") is _MISSING
+        assert _lookup_field(["x"], "name") is _MISSING
+        assert _lookup_field({"a": 1}, "[0]") is _MISSING

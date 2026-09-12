@@ -171,8 +171,12 @@ configured pydantic-ai `Model` is accepted anywhere a `SwarmMember` is.
 
 Returned by `extract_swarm_with_results*`. `output` is the reduced instance,
 `agents` holds each agent's [`ExtractionResult`](#extractionresult) or the
-exception it raised in agent order, `usage` sums the successful agents, and
-`reduce` is the strategy that produced `output`.
+exception it raised in agent order, `usage` sums the successful agents,
+`reduce` is the strategy that produced `output`, and `citations` are the
+reduced per-field spans when `cite=True` (empty otherwise). `first` keeps the
+leading agent's citations; `merge` and `vote` keep the first citation whose
+agent's field value equals `output`. Per-agent citations remain on each
+`ExtractionResult`.
 
 ### `resolve_swarm_members(agents, size=None)`
 
@@ -187,6 +191,8 @@ Run the agents concurrently over one input and return the reduced schema
 instance. `max_concurrency` defaults to `min(5, agents)`. Agent failures are
 tolerated as long as one agent succeeds; if every agent fails, the first
 failure is raised. Raises `RuntimeError` from a running event loop.
+`cite=True` asks each agent for per-field source spans; citations land on
+[`SwarmResult`](#swarmresult) from `extract_swarm_with_results*`.
 
 ### `extract_swarm_async(schema, agents, input_file, instructions=None, *, size=None, style='direct', reduce='merge', media_type=None, max_input_bytes=None, max_concurrency=None, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, cite=False)`
 

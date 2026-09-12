@@ -17,12 +17,14 @@ from openextract import (
     ExtractionInput,
     ExtractionResult,
     ExtractionStyle,
+    SwarmResult,
     Usage,
     extract,
     extract_many,
     extract_many_async,
     extract_many_with_results,
     extract_many_with_results_async,
+    extract_swarm_with_results,
     extract_with_usage,
     total_usage,
 )
@@ -76,6 +78,13 @@ _field: dict[str, object] | None = _cite.as_field_citation()
 _ = cited
 _ = _dumped
 _ = _field
+
+# extract_swarm_with_results returns SwarmResult with reduced citations.
+swarm: SwarmResult[Invoice] = extract_swarm_with_results(
+    Invoice, "openai:gpt-5", Path("/tmp/x.pdf"), cite=True
+)
+_swarm_cite: tuple[Citation, ...] = swarm.citations
+_ = _swarm_cite
 
 # extract_many_with_results returns ExtractionResult[Invoice] (or + Exception).
 results: list[ExtractionResult[Invoice]] = extract_many_with_results(
