@@ -8,6 +8,12 @@ timing when that is known.
 
 ## [Unreleased]
 
+### Changed
+- ExtractBench docs: latest smoke notes that `0.13.1+` includes page/word
+  grounding fixes (#220); the published 6-doc numbers remain the pre-fix
+  `0.13.0` run (page F1 0.24). A fresh smoke has not been published; the
+  gate is still unmet until that run.
+
 ### Fixed
 - Release publish accepts hatchling wheels that emit Metadata-Version 2.5
   (`pypa/gh-action-pypi-publish` v1.14.2 / Twine 7). 0.13.1 build succeeded
