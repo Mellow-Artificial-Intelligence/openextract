@@ -20,6 +20,11 @@ timing when that is known.
   `examples/advanced/extract_with_citations.py` shows `extract_with_usage` /
   `extract_many_with_results`. Citation docs spell out parser-backed boxes
   (never invented) and the ExtractBench `FieldCitation` mapping.
+- `SwarmResult.citations` when `cite=True`: reduced per-field spans that
+  support `output`. `first` keeps the leading agent's citations; `merge` and
+  `vote` keep the first citation whose agent's field value equals `output`.
+  Per-agent citations stay on each `ExtractionResult`. `extract_swarm*` still
+  returns the schema instance.
 
 ### Changed
 - ExtractBench docs: latest smoke notes that `0.13.1+` includes page/word

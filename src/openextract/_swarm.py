@@ -31,10 +31,11 @@ from ._config import (
 from ._errors import _extraction_errors
 from ._media import _get_media_async, _item_source_label
 from ._parse import maybe_parsed_inputs
-from ._reduce import SwarmReduce, normalize_reduce, reduce_outputs
+from ._reduce import SwarmReduce, normalize_reduce, reduce_citations, reduce_outputs
 from ._remote import run_remote_extraction
 from ._styles import ExtractionStyle, normalize_style, prepared_style_run
 from ._types import (
+    Citation,
     ExtractionInputLike,
     ExtractionResult,
     T,
@@ -64,12 +65,18 @@ class SwarmResult[T]:
             raised, in agent order.
         usage: Token usage summed across the agents that succeeded.
         reduce: The strategy that produced ``output``.
+        citations: Per-field source spans for ``output`` when ``cite=True``;
+            empty otherwise. Each successful agent's own citations remain on
+            that :class:`ExtractionResult`. ``first`` keeps the leading agent's
+            citations; ``merge`` and ``vote`` keep the first citation whose
+            agent's field value equals ``output``.
     """
 
     output: T
     agents: tuple[ExtractionResult[T] | Exception, ...]
     usage: Usage
     reduce: SwarmReduce
+    citations: tuple[Citation, ...] = ()
 
 
 def resolve_swarm_members(
@@ -304,11 +311,17 @@ async def _run_swarm(
     successes = [item for item in results if not isinstance(item, Exception)]
     if not successes:
         raise cast(Exception, results[0])
+    output = reduce_outputs([item.output for item in successes], strategy)
     return SwarmResult(
-        output=reduce_outputs([item.output for item in successes], strategy),
+        output=output,
         agents=tuple(results),
         usage=total_usage(successes),
         reduce=strategy,
+        citations=reduce_citations(
+            [(item.output, item.citations) for item in successes],
+            output,
+            strategy,
+        ),
     )
 
 
@@ -364,6 +377,10 @@ def extract_swarm(
         max_retries: Per-agent retries after a transient ``ModelError``.
         retry_backoff: Base backoff seconds between per-agent retries.
         retry_max_backoff: Maximum per-agent retry delay in seconds.
+        cite: When ``True``, each agent is asked for per-field source spans.
+            ``extract_swarm`` still returns the reduced schema instance;
+            citations land on :class:`SwarmResult` from the ``*_with_results``
+            APIs.
 
     Returns:
         The reduced schema instance.
@@ -461,10 +478,10 @@ def extract_swarm_with_results(
     """Run a swarm and return the reduced output plus per-agent diagnostics.
 
     Mirrors :func:`extract_swarm` and additionally reports every agent's
-    :class:`ExtractionResult` (or its exception), the summed token usage, and
-    the reduce strategy that produced the output. ``on_agent_start`` and
-    ``on_agent`` are called with ``(index, total)`` and
-    ``(index, total, result)`` for progress reporting.
+    :class:`ExtractionResult` (or its exception), the summed token usage, the
+    reduce strategy that produced the output, and reduced ``citations`` when
+    ``cite=True``. ``on_agent_start`` and ``on_agent`` are called with
+    ``(index, total)`` and ``(index, total, result)`` for progress reporting.
     """
     return cast(
         "SwarmResult[T]",

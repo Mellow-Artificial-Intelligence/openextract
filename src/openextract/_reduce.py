@@ -5,10 +5,12 @@ from __future__ import annotations
 import json
 from collections.abc import Sequence
 from enum import StrEnum
-from typing import Any
+from typing import Any, assert_never
 
 from ._errors import _extraction_errors
-from ._types import T
+from ._types import Citation, T
+
+_MISSING = object()
 
 
 class SwarmReduce(StrEnum):
@@ -129,3 +131,82 @@ def reduce_outputs(values: Sequence[T], reduce: SwarmReduce | str = "merge") -> 
     combined = merge_values(payloads) if strategy is SwarmReduce.MERGE else vote_values(payloads)
     with _extraction_errors():
         return schema.model_validate(combined)
+
+
+def reduce_citations(
+    items: Sequence[tuple[T, tuple[Citation, ...]]],
+    output: T,
+    reduce: SwarmReduce | str = "merge",
+) -> tuple[Citation, ...]:
+    """Fold per-agent citations onto the reduced swarm ``output``.
+
+    ``first`` keeps the leading agent's citations. ``merge`` and ``vote`` keep
+    the first citation whose agent's field value equals ``output`` at that
+    path, so a discarded minority vote does not survive. Per-agent citations
+    are not mutated.
+    """
+    strategy = normalize_reduce(reduce)
+    if not items:
+        return ()
+    if len(items) == 1:
+        return items[0][1]
+    match strategy:
+        case SwarmReduce.FIRST:
+            return items[0][1]
+        case SwarmReduce.MERGE | SwarmReduce.VOTE:
+            return _citations_matching_output(items, output)
+    assert_never(strategy)
+
+
+def _citations_matching_output(
+    items: Sequence[tuple[T, tuple[Citation, ...]]],
+    output: T,
+) -> tuple[Citation, ...]:
+    """Keep the first citation whose agent value equals ``output`` at that path."""
+    reduced = output.model_dump()
+    chosen: dict[str, Citation] = {}
+    for value, citations in items:
+        dumped = value.model_dump()
+        for citation in citations:
+            if citation.field in chosen:
+                continue
+            if _field_values_match(dumped, reduced, citation.field):
+                chosen[citation.field] = citation
+    return tuple(chosen.values())
+
+
+def _field_values_match(agent: object, reduced: object, field: str) -> bool:
+    """True when ``field`` exists on both dumps and the values are equal."""
+    left = _lookup_field(agent, field)
+    right = _lookup_field(reduced, field)
+    return left is not _MISSING and right is not _MISSING and left == right
+
+
+def _lookup_field(data: object, field: str) -> object:
+    """Return the dumped value at a dotted/indexed citation path, if present."""
+    node: object = data
+    index = 0
+    length = len(field)
+    while index < length:
+        if field[index] == ".":
+            index += 1
+            continue
+        if field[index] == "[":
+            close = field.find("]", index)
+            if close < 0 or not isinstance(node, list):
+                return _MISSING
+            pos = int(field[index + 1 : close])
+            if pos >= len(node):
+                return _MISSING
+            node = node[pos]
+            index = close + 1
+            continue
+        end = index
+        while end < length and field[end] not in ".[":
+            end += 1
+        key = field[index:end]
+        if not isinstance(node, dict) or key not in node:
+            return _MISSING
+        node = node[key]
+        index = end
+    return node

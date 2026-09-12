@@ -17,6 +17,7 @@ from openextract import (
     extract_async,
     extract_many,
     extract_many_with_results,
+    extract_swarm,
     extract_swarm_with_results,
     extract_with_usage,
     extract_with_usage_async,
@@ -330,6 +331,7 @@ class TestExtractCite:
         swarm = extract_swarm_with_results(Person, model, b"x", media_type="text/plain", cite=True)
         assert swarm.output == Person(name="Ada", age=36)
         assert swarm.agents[0].citations[0].page == 1
+        assert swarm.citations[0].page == 1
 
     async def test_async_usage_cite(self):
         model = _cited_model(output={"name": "Ada", "age": 36}, citations=[])
@@ -396,3 +398,90 @@ class TestExtractCite:
             session_pair = await extractor.extract_with_usage(pdf, media_type="application/pdf")
         assert session_out == Person(name="Ada", age=36)
         assert session_pair[0] == Person(name="Ada", age=36)
+
+
+class PartialPerson(BaseModel):
+    name: str | None = None
+    age: int | None = None
+
+
+class TestSwarmCiteReduce:
+    def test_merge_collects_surviving_field_citations(self):
+        left = _cited_model(
+            output={"name": "Ada", "age": None},
+            citations=[{"field": "name", "quote": "Ada", "page": 1}],
+        )
+        right = _cited_model(
+            output={"name": None, "age": 36},
+            citations=[{"field": "age", "quote": "36", "page": 1}],
+        )
+        swarm = extract_swarm_with_results(
+            PartialPerson, [left, right], b"Ada is 36", media_type="text/plain", cite=True
+        )
+        assert swarm.output == PartialPerson(name="Ada", age=36)
+        assert [(item.field, item.page) for item in swarm.citations] == [
+            ("name", 1),
+            ("age", 1),
+        ]
+        assert swarm.agents[0].citations[0].field == "name"
+        assert swarm.agents[1].citations[0].field == "age"
+
+    def test_vote_keeps_majority_citation_not_the_minority(self):
+        minority = _cited_model(
+            output={"name": "Ada", "age": None},
+            citations=[{"field": "name", "quote": "Ada", "page": 1}],
+        )
+        majority_a = _cited_model(
+            output={"name": "Grace", "age": None},
+            citations=[{"field": "name", "quote": "Grace", "page": 2}],
+        )
+        majority_b = _cited_model(
+            output={"name": "Grace", "age": None},
+            citations=[{"field": "name", "quote": "Grace Hopper", "page": 3}],
+        )
+        swarm = extract_swarm_with_results(
+            PartialPerson,
+            [minority, majority_a, majority_b],
+            b"Grace",
+            media_type="text/plain",
+            reduce="vote",
+            cite=True,
+        )
+        assert swarm.output.name == "Grace"
+        assert swarm.citations == (Citation("name", "Grace", 2),)
+        assert swarm.agents[0].citations[0].page == 1
+
+    def test_first_keeps_the_leading_agent_citations(self):
+        first = _cited_model(
+            output={"name": "Ada", "age": None},
+            citations=[{"field": "name", "quote": "Ada", "page": 1}],
+        )
+        later = _cited_model(
+            output={"name": "Grace", "age": 36},
+            citations=[{"field": "name", "quote": "Grace", "page": 2}],
+        )
+        swarm = extract_swarm_with_results(
+            PartialPerson,
+            [first, later],
+            b"names",
+            media_type="text/plain",
+            reduce="first",
+            cite=True,
+        )
+        assert swarm.output == PartialPerson(name="Ada")
+        assert swarm.citations == swarm.agents[0].citations
+        assert swarm.citations[0].page == 1
+
+    def test_bare_extract_swarm_still_returns_the_schema(self):
+        model = _cited_model(
+            output={"name": "Ada", "age": 36},
+            citations=[{"field": "name", "quote": "Ada", "page": 1}],
+        )
+        result = extract_swarm(Person, model, b"x", media_type="text/plain", cite=True)
+        assert result == Person(name="Ada", age=36)
+
+    def test_cite_false_leaves_reduced_citations_empty(self):
+        model = TestModel(custom_output_args={"name": "Ada", "age": 36})
+        swarm = extract_swarm_with_results(Person, model, b"x", media_type="text/plain")
+        assert swarm.citations == ()
+        assert swarm.agents[0].citations == ()
