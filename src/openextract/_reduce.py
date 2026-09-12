@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Sequence
 from enum import StrEnum
-from typing import Any, assert_never
+from typing import Any, assert_never, cast
 
 from ._errors import _extraction_errors
 from ._types import Citation, T
@@ -205,8 +205,11 @@ def _lookup_field(data: object, field: str) -> object:
         while end < length and field[end] not in ".[":
             end += 1
         key = field[index:end]
-        if not isinstance(node, dict) or key not in node:
+        if not isinstance(node, dict):
             return _MISSING
-        node = node[key]
+        mapping = cast(dict[str, object], node)
+        if key not in mapping:
+            return _MISSING
+        node = mapping[key]
         index = end
     return node
