@@ -14,14 +14,14 @@ from typing import Any, BinaryIO, cast
 from dotenv import load_dotenv
 from pydantic import BaseModel
 
-from ._agents import DefinedAgent, RemoteAgent, load_agent, load_agents
-from ._batch import _BatchOptions, _iter_extractions
+from ._agents import DefinedAgent, RemoteAgent, is_agent, load_agent, load_agents
+from ._batch import _BatchOptions, _iter_extractions, extract_many_with_results
 from ._config import _validate_max_concurrency
-from ._extract import extract, extract_with_usage
+from ._extract import _plan_agent, extract, extract_with_usage
 from ._reduce import SwarmReduce
 from ._styles import ExtractionStyle
 from ._swarm import extract_swarm, extract_swarm_with_results
-from ._types import ExtractionInput, ExtractionInputLike, ExtractionResult
+from ._types import Citation, ExtractionInput, ExtractionInputLike, ExtractionResult
 from .exceptions import (
     ExtractionError,
     ModelError,
@@ -211,6 +211,41 @@ def _usage_payload(usage) -> dict[str, int]:
     }
 
 
+def _citations_payload(citations: Sequence[Citation]) -> list[dict[str, Any]]:
+    """Serialize citations as ``{field, quote, page}`` plus optional ``bbox``."""
+    payload: list[dict[str, Any]] = []
+    for citation in citations:
+        item: dict[str, Any] = {
+            "field": citation.field,
+            "quote": citation.quote,
+            "page": citation.page,
+        }
+        if citation.bbox is not None:
+            item["bbox"] = list(citation.bbox)
+        payload.append(item)
+    return payload
+
+
+def _result_dump(result: object) -> dict[str, Any]:
+    if isinstance(result, ExtractionResult):
+        return cast(BaseModel, result.output).model_dump()
+    return cast(BaseModel, result).model_dump()
+
+
+def _result_citations(result: object) -> list[dict[str, Any]]:
+    if isinstance(result, ExtractionResult):
+        return _citations_payload(result.citations)
+    return []
+
+
+def _swarm_citations(swarm: Any) -> list[dict[str, Any]]:
+    citations: list[Citation] = []
+    for agent in swarm.agents:
+        if isinstance(agent, ExtractionResult):
+            citations.extend(agent.citations)
+    return _citations_payload(citations)
+
+
 def _failure_record(label: str, error: BaseException) -> dict[str, Any]:
     return {
         "input": label,
@@ -219,25 +254,37 @@ def _failure_record(label: str, error: BaseException) -> dict[str, Any]:
     }
 
 
-def _item_record(label: str, result: object, *, with_usage: bool) -> dict[str, Any]:
+def _item_record(
+    label: str,
+    result: object,
+    *,
+    with_usage: bool,
+    with_citations: bool,
+) -> dict[str, Any]:
     """Build the labeled record for one completed batch item."""
     if isinstance(result, BaseException):
         return _failure_record(label, result)
+    record: dict[str, Any] = {"input": label, "result": _result_dump(result)}
     if with_usage:
-        rich = cast(ExtractionResult[Any], result)
-        return {
-            "input": label,
-            "result": rich.output.model_dump(),
-            "usage": _usage_payload(rich.usage),
-        }
-    return {"input": label, "result": cast(BaseModel, result).model_dump()}
+        record["usage"] = _usage_payload(cast(ExtractionResult[Any], result).usage)
+    if with_citations:
+        record["citations"] = _result_citations(result)
+    return record
 
 
-def _array_entry(label: str, result: object, *, with_usage: bool) -> Any:
+def _array_entry(
+    label: str,
+    result: object,
+    *,
+    with_usage: bool,
+    with_citations: bool,
+) -> Any:
     """Build one JSON-array entry, keeping the legacy bare shape for successes."""
     if with_usage or isinstance(result, BaseException):
-        return _item_record(label, result, with_usage=with_usage)
-    return cast(BaseModel, result).model_dump()
+        return _item_record(label, result, with_usage=with_usage, with_citations=with_citations)
+    if with_citations:
+        return {"result": _result_dump(result), "citations": _result_citations(result)}
+    return _result_dump(result)
 
 
 def _print_json(payload: Any, *, as_repr: bool) -> None:
@@ -268,12 +315,19 @@ def _print_batch_payload(
     usage_totals: dict[str, int],
     *,
     with_usage: bool,
+    with_citations: bool,
     as_repr: bool,
 ) -> None:
     """Emit the buffered batch payload in input order."""
     ordered.sort(key=lambda pair: pair[0])
     entries = [
-        _array_entry(labels[index], result, with_usage=with_usage) for index, result in ordered
+        _array_entry(
+            labels[index],
+            result,
+            with_usage=with_usage,
+            with_citations=with_citations,
+        )
+        for index, result in ordered
     ]
     payload: Any = {"results": entries, "usage": usage_totals} if with_usage else entries
     _print_json(payload, as_repr=as_repr)
@@ -288,7 +342,8 @@ async def _run_batch_async(
     model: str,
 ) -> int:
     """Stream the batch, emitting records (JSONL) or buffering them (array)."""
-    with_usage = options.rich
+    with_usage = args.usage
+    with_citations = args.cite
     jsonl = args.output == "jsonl"
     # _iter_extractions is an async generator function; its AsyncIterator return
     # annotation hides the aclose() needed for deterministic finalization.
@@ -312,7 +367,12 @@ async def _run_batch_async(
                 usage_totals["output_tokens"] += usage.output_tokens
                 usage_totals["total_tokens"] += usage.total_tokens
             if jsonl:
-                record = _item_record(labels[index], result, with_usage=with_usage)
+                record = _item_record(
+                    labels[index],
+                    result,
+                    with_usage=with_usage,
+                    with_citations=with_citations,
+                )
                 _emit_json_line({"index": index, **record})
             else:
                 ordered.append((index, result))
@@ -336,6 +396,7 @@ async def _run_batch_async(
             labels,
             usage_totals,
             with_usage=with_usage,
+            with_citations=with_citations,
             as_repr=args.output == "repr",
         )
 
@@ -366,7 +427,8 @@ def _run_batch(
         max_retries=args.max_retries,
         retry_backoff=args.retry_backoff,
         retry_max_backoff=args.retry_max_backoff,
-        rich=args.usage,
+        rich=args.usage or args.cite,
+        cite=args.cite,
     )
     return asyncio.run(_run_batch_async(schema_cls, items, labels, options, args, model))
 
@@ -388,32 +450,43 @@ def _run_single(
     model: str | DefinedAgent | RemoteAgent,
 ) -> int:
     """Run a single extraction with the legacy output shapes."""
-    if args.usage:
+    shared: dict[str, Any] = {
+        "instructions": args.instructions,
+        "style": args.style,
+        "media_type": args.media_type,
+        "max_input_bytes": args.max_input_bytes,
+        "max_retries": args.max_retries,
+        "retry_backoff": args.retry_backoff,
+        "retry_max_backoff": args.retry_max_backoff,
+        "cite": args.cite,
+    }
+    if args.cite:
+        run_model: Any = model
+        if is_agent(model):
+            run_model, shared["instructions"], shared["style"], use_swarm = _plan_agent(
+                model, args.instructions, args.style
+            )
+            if use_swarm:
+                return _run_swarm(schema_cls, [model], input_file, args)
+        rich = extract_many_with_results(schema_cls, run_model, [input_file], **shared)[0]
+        payload: Any = {"result": rich.output.model_dump()}
+        if args.usage:
+            payload["usage"] = _usage_payload(rich.usage)
+        payload["citations"] = _citations_payload(rich.citations)
+    elif args.usage:
         result, usage = extract_with_usage(
             schema=schema_cls,
             model=model,
             input_file=input_file,
-            instructions=args.instructions,
-            style=args.style,
-            media_type=args.media_type,
-            max_input_bytes=args.max_input_bytes,
-            max_retries=args.max_retries,
-            retry_backoff=args.retry_backoff,
-            retry_max_backoff=args.retry_max_backoff,
+            **shared,
         )
-        payload: Any = {"result": result.model_dump(), "usage": _usage_payload(usage)}
+        payload = {"result": result.model_dump(), "usage": _usage_payload(usage)}
     else:
         payload = extract(
             schema=schema_cls,
             model=model,
             input_file=input_file,
-            instructions=args.instructions,
-            style=args.style,
-            media_type=args.media_type,
-            max_input_bytes=args.max_input_bytes,
-            max_retries=args.max_retries,
-            retry_backoff=args.retry_backoff,
-            retry_max_backoff=args.retry_max_backoff,
+            **shared,
         )
 
     _print_single_payload(payload, args)
@@ -437,15 +510,17 @@ def _run_swarm(
         "max_retries": args.max_retries,
         "retry_backoff": args.retry_backoff,
         "retry_max_backoff": args.retry_max_backoff,
+        "cite": args.cite,
     }
-    if args.usage:
+    if args.usage or args.cite:
         swarm = extract_swarm_with_results(schema_cls, swarm_agents, input_file, **options)
-        payload: Any = {
-            "result": swarm.output.model_dump(),
-            "usage": _usage_payload(swarm.usage),
-            "agents": len(swarm.agents),
-            "reduce": swarm.reduce.value,
-        }
+        payload: Any = {"result": swarm.output.model_dump()}
+        if args.usage:
+            payload["usage"] = _usage_payload(swarm.usage)
+            payload["agents"] = len(swarm.agents)
+            payload["reduce"] = swarm.reduce.value
+        if args.cite:
+            payload["citations"] = _swarm_citations(swarm)
     else:
         payload = extract_swarm(schema_cls, swarm_agents, input_file, **options)
     _print_single_payload(payload, args)
@@ -548,6 +623,14 @@ def _build_parser() -> argparse.ArgumentParser:
         help=(
             "Include token usage: single inputs keep the {result, usage} shape; "
             "batches report per-item and aggregate usage."
+        ),
+    )
+    parser.add_argument(
+        "--cite",
+        action="store_true",
+        help=(
+            "Request per-field source citations (field, quote, page, optional bbox). "
+            "JSON/jsonl include a citations array. Same cite=True path as the library."
         ),
     )
     parser.add_argument(

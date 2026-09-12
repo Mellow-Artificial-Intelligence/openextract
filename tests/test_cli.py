@@ -9,6 +9,7 @@ import pytest
 from pydantic import BaseModel
 
 from openextract import (
+    Citation,
     ExtractionError,
     ExtractionInput,
     ExtractionResult,
@@ -20,7 +21,13 @@ from openextract import (
     UrlFetchError,
     Usage,
 )
-from openextract._cli import _discard_stdout, _resolve_schema, main
+from openextract._cli import (
+    _citations_payload,
+    _discard_stdout,
+    _resolve_schema,
+    _result_citations,
+    main,
+)
 
 
 class _FixtureSchema(BaseModel):
@@ -62,7 +69,7 @@ def _patch_iter_extractions(mocker, events=(), error=None):
     return mocker.patch("openextract._cli._iter_extractions", side_effect=_stream)
 
 
-def _rich_result(output, input_tokens=10, output_tokens=5):
+def _rich_result(output, input_tokens=10, output_tokens=5, citations=()):
     return ExtractionResult(
         output=output,
         usage=Usage(input_tokens, output_tokens, input_tokens + output_tokens),
@@ -71,7 +78,17 @@ def _rich_result(output, input_tokens=10, output_tokens=5):
         model="xai:grok-4.3",
         media_type=None,
         source="fixture",
+        citations=citations,
     )
+
+
+def _patch_extract_many_with_results(mocker, return_value=None, side_effect=None):
+    mock_fn = mocker.patch("openextract._cli.extract_many_with_results")
+    if side_effect is not None:
+        mock_fn.side_effect = side_effect
+    else:
+        mock_fn.return_value = return_value
+    return mock_fn
 
 
 _BASE_ARGS = ["--schema", "tests.test_cli:_FixtureSchema", "--model", "xai:grok-4.3"]
@@ -190,6 +207,7 @@ class TestMainSuccess:
             max_retries=0,
             retry_backoff=1.0,
             retry_max_backoff=60.0,
+            cite=False,
         )
 
     def test_repr_output(self, mocker, capsys):
@@ -1010,3 +1028,218 @@ class TestRemoteAgentExit:
 
         assert main(["input.txt", *_BASE_ARGS, "--model", "test:a"]) == 8
         assert "agent unreachable" in capsys.readouterr().err
+
+
+_CITE_NAME = Citation(field="name", quote="Ada", page=1)
+_CITE_AGE = Citation(field="age", quote="36", page=1, bbox=(0.1, 0.2, 0.3, 0.05))
+
+
+class TestCite:
+    def test_citations_payload_omits_missing_bbox(self):
+        assert _citations_payload((_CITE_NAME, _CITE_AGE)) == [
+            {"field": "name", "quote": "Ada", "page": 1},
+            {"field": "age", "quote": "36", "page": 1, "bbox": [0.1, 0.2, 0.3, 0.05]},
+        ]
+        assert _result_citations(_FixtureSchema(name="Ada", age=36)) == []
+
+    def test_cite_flag_is_forwarded_to_results_api(self, mocker, capsys):
+        mock_fn = _patch_extract_many_with_results(
+            mocker,
+            return_value=[
+                _rich_result(_FixtureSchema(name="Ada", age=36), citations=(_CITE_NAME,))
+            ],
+        )
+
+        assert main(["input.txt", *_BASE_ARGS, "--cite"]) == 0
+
+        assert mock_fn.call_args.kwargs["cite"] is True
+        payload = json.loads(capsys.readouterr().out)
+        assert payload == {
+            "result": {"name": "Ada", "age": 36},
+            "citations": [{"field": "name", "quote": "Ada", "page": 1}],
+        }
+
+    def test_cite_json_includes_optional_bbox(self, mocker, capsys):
+        _patch_extract_many_with_results(
+            mocker,
+            return_value=[
+                _rich_result(_FixtureSchema(name="Ada", age=36), citations=(_CITE_NAME, _CITE_AGE))
+            ],
+        )
+
+        assert main(["input.txt", *_BASE_ARGS, "--cite"]) == 0
+
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["citations"][1]["bbox"] == [0.1, 0.2, 0.3, 0.05]
+        assert "bbox" not in payload["citations"][0]
+
+    def test_cite_with_usage_keeps_usage_shape(self, mocker, capsys):
+        _patch_extract_many_with_results(
+            mocker,
+            return_value=[
+                _rich_result(
+                    _FixtureSchema(name="Ada", age=36),
+                    input_tokens=10,
+                    output_tokens=5,
+                    citations=(_CITE_NAME,),
+                )
+            ],
+        )
+
+        assert main(["input.txt", *_BASE_ARGS, "--cite", "--usage"]) == 0
+
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["usage"] == {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15}
+        assert payload["citations"] == [{"field": "name", "quote": "Ada", "page": 1}]
+
+    def test_cite_json_payload_with_test_model(self, mocker, tmp_path, capsys):
+        from pydantic_ai.models.test import TestModel
+
+        from openextract._batch import extract_many_with_results
+
+        source = tmp_path / "doc.txt"
+        source.write_text("Ada Lovelace, 36", encoding="utf-8")
+
+        def _run(schema, model, input_files, **kwargs):
+            return extract_many_with_results(
+                schema,
+                TestModel(
+                    custom_output_args={
+                        "output": {"name": "Ada", "age": 36},
+                        "citations": [{"field": "name", "quote": "Ada Lovelace", "page": 1}],
+                    }
+                ),
+                input_files,
+                **kwargs,
+            )
+
+        mocker.patch("openextract._cli.extract_many_with_results", side_effect=_run)
+
+        assert main([str(source), *_BASE_ARGS, "--cite"]) == 0
+
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["result"] == {"name": "Ada", "age": 36}
+        assert payload["citations"] == [
+            {"field": "name", "quote": "Ada Lovelace", "page": 1},
+        ]
+
+    def test_cite_without_flag_does_not_change_output(self, mocker, capsys):
+        _patch_extract(mocker, return_value=_FixtureSchema(name="Ada", age=36))
+
+        assert main(["input.txt", *_BASE_ARGS]) == 0
+
+        assert json.loads(capsys.readouterr().out) == {"name": "Ada", "age": 36}
+
+    def test_injected_agent_error_exits_one(self, mocker, capsys):
+        _patch_extract_many_with_results(
+            mocker,
+            side_effect=ValueError("cite cannot be used with an injected agent."),
+        )
+
+        assert main(["input.txt", *_BASE_ARGS, "--cite"]) == 1
+        assert "cite cannot be used with an injected agent" in capsys.readouterr().err
+
+    def test_batch_cite_wraps_results_and_forwards_flag(self, mocker, capsys):
+        ada = _rich_result(_FixtureSchema(name="Ada", age=36), citations=(_CITE_NAME,))
+        mock_stream = _patch_iter_extractions(mocker, events=[(0, ada), (1, ada)])
+
+        assert main(["a.pdf", "b.pdf", *_BASE_ARGS, "--cite"]) == 0
+
+        options = mock_stream.call_args.args[3]
+        assert options.cite is True
+        assert options.rich is True
+        payload = json.loads(capsys.readouterr().out)
+        assert payload == [
+            {
+                "result": {"name": "Ada", "age": 36},
+                "citations": [{"field": "name", "quote": "Ada", "page": 1}],
+            },
+            {
+                "result": {"name": "Ada", "age": 36},
+                "citations": [{"field": "name", "quote": "Ada", "page": 1}],
+            },
+        ]
+
+    def test_jsonl_cite_adds_citations_to_records(self, mocker, capsys):
+        ada = _rich_result(_FixtureSchema(name="Ada", age=36), citations=(_CITE_NAME,))
+        _patch_iter_extractions(mocker, events=[(0, ada)])
+
+        assert main(["a.pdf", *_BASE_ARGS, "--output", "jsonl", "--cite"]) == 0
+
+        lines = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+        assert lines == [
+            {
+                "index": 0,
+                "input": "a.pdf",
+                "result": {"name": "Ada", "age": 36},
+                "citations": [{"field": "name", "quote": "Ada", "page": 1}],
+            }
+        ]
+
+    def test_batch_cite_with_usage_keeps_usage_envelope(self, mocker, capsys):
+        ada = _rich_result(
+            _FixtureSchema(name="Ada", age=36),
+            input_tokens=10,
+            output_tokens=5,
+            citations=(_CITE_NAME,),
+        )
+        _patch_iter_extractions(mocker, events=[(0, ada)])
+
+        assert main(["a.pdf", "b.pdf", *_BASE_ARGS, "--cite", "--usage"]) == 0
+
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["results"][0]["citations"] == [{"field": "name", "quote": "Ada", "page": 1}]
+        assert payload["results"][0]["usage"]["total_tokens"] == 15
+
+    def test_swarm_cite_merges_agent_citations(self, mocker, capsys):
+        cited = _rich_result(_FixtureSchema(name="Ada", age=36), citations=(_CITE_NAME,))
+        stub = _SwarmResultStub()
+        stub.agents = (cited, ModelError("boom"))
+        _patch_swarm(mocker, usage_result=stub)
+
+        assert main(["input.txt", *_BASE_ARGS, "--swarm", "2", "--cite"]) == 0
+
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["result"] == {"name": "Ada", "age": 36}
+        assert payload["citations"] == [{"field": "name", "quote": "Ada", "page": 1}]
+        assert "usage" not in payload
+
+    def test_fanning_agent_with_cite_uses_swarm(self, mocker, tmp_path, capsys):
+        first = _write_agent(tmp_path / "a.py", description="First")
+        second = _write_agent(tmp_path / "b.py", description="Second")
+        parent = tmp_path / "parent.py"
+        parent.write_text(
+            "from openextract import define_agent, load_agent\n"
+            "from tests.test_cli import _FixtureSchema\n"
+            f"agent = define_agent('Parent', output_schema=_FixtureSchema, "
+            f"subagents=[load_agent({first!r}), load_agent({second!r})])\n",
+            encoding="utf-8",
+        )
+        stub = _SwarmResultStub()
+        stub.agents = (_rich_result(_FixtureSchema(name="Ada", age=36), citations=(_CITE_AGE,)),)
+        _, rich = _patch_swarm(mocker, usage_result=stub)
+
+        assert main(["input.txt", "--agent", str(parent), "--cite"]) == 0
+
+        rich.assert_called_once()
+        assert rich.call_args.kwargs["cite"] is True
+        assert json.loads(capsys.readouterr().out)["citations"][0]["bbox"] == [
+            0.1,
+            0.2,
+            0.3,
+            0.05,
+        ]
+
+    def test_single_agent_with_cite_stays_oneshot(self, mocker, tmp_path, capsys):
+        path = _write_agent(tmp_path / "invoices.py")
+        mock_fn = _patch_extract_many_with_results(
+            mocker,
+            return_value=[_rich_result(_FixtureSchema(name="Ada", age=36))],
+        )
+        swarm = mocker.patch("openextract._cli.extract_swarm_with_results")
+
+        assert main(["input.txt", "--agent", path, "--cite"]) == 0
+
+        swarm.assert_not_called()
+        assert mock_fn.call_args.kwargs["cite"] is True
+        capsys.readouterr()
