@@ -86,7 +86,7 @@ python-version = "3.12"
 # This bought us protection during the Mistral package compromise. The date is
 # bumped forward daily by the `.github/workflows/embargo-bump.yml` workflow so
 # the rolling 24h window holds without manual maintenance.
-exclude-newer = "2026-09-05T00:00:00Z"
+exclude-newer = "2026-09-12T00:00:00Z"
 
 [tool.ruff]
 line-length = 100
