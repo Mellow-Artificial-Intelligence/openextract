@@ -68,7 +68,7 @@ Always define a real `pydantic.BaseModel` subclass. Do not ask the library for f
 
 ## Styles
 
-Default `style='direct'`. `table` is for invoices, statements, receipts, and other line-item documents: same media path as `direct`, plus row-oriented instructions. PDFs reuse the local parse-then-window path so rows across pages merge. Boxes are still never invented — emit `cite=True` when the caller needs parser-backed citations. `search` and `code` are **text-only** (`text/*`, JSON, XML, YAML). Do not emit `style='search'` for PDFs, images, audio, or video. Those styles need `pydantic-ai-harness` / `pydantic-ai-harness[codemode]` and raise `ProviderNotInstalledError` if the extra is missing. Do not combine `search`/`code`/`table` with an injected `agent=`.
+Default `style='direct'`. `table` is for invoices, statements, and other line-item documents: same media path as `direct`, plus row-oriented instructions. `form` is for forms, receipts, and other labeled key-value documents: same media path plus labeled-field instructions. PDFs reuse the local parse-then-window path so rows and fields across pages merge. Boxes are still never invented — emit `cite=True` when the caller needs parser-backed citations. `search` and `code` are **text-only** (`text/*`, JSON, XML, YAML). Do not emit `style='search'` for PDFs, images, audio, or video. Those styles need `pydantic-ai-harness` / `pydantic-ai-harness[codemode]` and raise `ProviderNotInstalledError` if the extra is missing. Do not combine `search`/`code`/`table`/`form` with an injected `agent=`.
 
 ## Errors to catch
 

@@ -54,7 +54,7 @@ uv run python -m examples.run_all
 | `advanced/` | `extract_with_citations.py` | TestModel | `cite=True` on `extract_with_usage` / `extract_many_with_results` |
 | `advanced/` | `retry_extract.py` | OpenAI | `max_retries` / `retry_backoff` |
 | `advanced/` | `reusable_sessions.py` | TestModel | Sync/async sessions and dependency-injected agents |
-| `advanced/` | `extraction_styles.py` | TestModel | `style='direct'` vs `table` / `search` / `code` |
+| `advanced/` | `extraction_styles.py` | TestModel | `style='direct'` vs `table` / `form` / `search` / `code` |
 | `advanced/` | `error_handling.py` | — | Catching `UrlFetchError` (no model call) |
 | `audio/` | `meeting_notes.py` | xAI | Audio → structured meeting notes (bring your own file) |
 | `cli/` | `schemas.py` | — | Pydantic models for CLI `--schema` |

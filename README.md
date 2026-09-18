@@ -78,10 +78,11 @@ print(result.language)
 `style` selects how the model inspects the input. The default, `direct`, is the
 current behavior: the resolved media is passed to the LLM in one shot.
 `table` is the same media path with row-oriented instructions for invoices,
-statements, and other line-item documents; PDFs reuse the local
-parse-then-window path so rows across pages merge. For **text** documents you
-can instead use agentic search or code execution, both powered by
-[Pydantic AI Harness](https://pydantic.dev/docs/ai/harness/).
+statements, and other line-item documents; `form` is the sibling for
+receipts, forms, and labeled key-value documents. PDFs reuse the local
+parse-then-window path so rows and fields across pages merge. For **text**
+documents you can instead use agentic search or code execution, both powered
+by [Pydantic AI Harness](https://pydantic.dev/docs/ai/harness/).
 
 ```python
 from openextract import extract, ExtractionStyle
@@ -95,6 +96,14 @@ extract(
     model="openai:gpt-5",
     input_file="statement.pdf",
     style="table",  # or ExtractionStyle.TABLE
+)
+
+# Forms / receipts (labeled key-value). PDFs parse by page.
+extract(
+    schema=PdfInfo,
+    model="openai:gpt-5",
+    input_file="w9.pdf",
+    style="form",  # or ExtractionStyle.FORM
 )
 
 # Grep/read the text with sandboxed file tools (needs pydantic-ai-harness).
@@ -115,8 +124,8 @@ extract(
 ```
 
 `search` and `code` require UTF-8 text (`text/*`, JSON, XML, YAML, and similar).
-PDFs, Office documents, images, audio, and video stay on `direct` or `table`.
-`table` does not invent bounding boxes; pass `cite=True` for parser-backed
+PDFs, Office documents, images, audio, and video stay on `direct`, `table`, or `form`.
+`table` and `form` do not invent bounding boxes; pass `cite=True` for parser-backed
 citations. Missing packages raise `ProviderNotInstalledError` with a `pip install pydantic-ai-harness`
 or `pip install 'pydantic-ai-harness[codemode]'` hint. The integration was
 written against `pydantic-ai-harness` 0.18.x. The CLI flag is `--style`.
@@ -546,7 +555,8 @@ cat ./reports/q4.pdf | openextract - \
 - `--model` is a `pydantic-ai` model identifier.
 - `--instructions` is optional natural-language guidance.
 - `--style` is `direct` (default), `table` (line items; PDFs parse by page),
-  `search` (file tools on text), or `code` (write Python against text).
+  `form` (labeled fields; PDFs parse by page), `search` (file tools on text),
+  or `code` (write Python against text).
   `search` needs `pydantic-ai-harness`; `code` needs
   `pydantic-ai-harness[codemode]`.
 - `--media-type` sets MIME type for stdin, overrides guessing for paths/URLs,
@@ -659,7 +669,7 @@ below even though it is not exported from `__all__`.
 
 | API | Status for 1.0 | Notes |
 | --- | --- | --- |
-| `ExtractionStyle` | Provisional | `direct`, `table`, `search`, or `code` extraction strategy. `table` is line-item oriented (PDFs parse-then-window). `search`/`code` are text-only and require `pydantic-ai-harness`. |
+| `ExtractionStyle` | Provisional | `direct`, `table`, `form`, `search`, or `code` extraction strategy. `table` is line-item oriented; `form` is labeled key-value (both PDFs parse-then-window). `search`/`code` are text-only and require `pydantic-ai-harness`. |
 | `extract` | Stable | Primary synchronous API. Signature, return type, media input forms (`str`, `os.PathLike`, `bytes`, file-like, `ExtractionInput`), retry behavior, and public exception categories are intended to carry into 1.0 unchanged. `style` is additive. |
 | `extract_async` | Stable | Async sibling of `extract`; same input contract and retry behavior, with `Agent.run` instead of `run_sync`. |
 | `extract_with_usage` | Stable | Usage-returning sync API. The `(output, Usage)` tuple shape is stable; exact token values depend on provider reporting. |

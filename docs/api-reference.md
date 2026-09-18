@@ -25,7 +25,7 @@ default; a per-call `on_progress` overrides it. See
 
 `model` accepts either a known model string or a configured
 `pydantic_ai.models.Model`. `style` selects how the model inspects the input
-(`direct`, `table`, `search`, or `code`; see [Common arguments](#common-arguments)) and
+(`direct`, `table`, `form`, `search`, or `code`; see [Common arguments](#common-arguments)) and
 applies to every call in the session; `search` and `code` sessions build their
 harness agent and temporary workspace once on enter and remove both on exit.
 As an advanced alternative, `agent` accepts a fully
@@ -51,12 +51,14 @@ one-shot function arguments.
 ### ExtractionStyle
 
 `direct` (default) sends resolved media to the model in one shot. `table` uses
-the same media path with row-oriented instructions; PDFs reuse the local
-parse-then-window path so line items across pages merge. Boxes are still never
-invented (`cite=True` for parser-backed citations). `search` and `code` are
+the same media path with row-oriented instructions; `form` uses it with
+labeled-field instructions. PDFs reuse the local parse-then-window path so
+rows and fields across pages merge. Boxes are still never invented
+(`cite=True` for parser-backed citations). `search` and `code` are
 text-only agentic styles powered by
 [Pydantic AI Harness](https://pydantic.dev/docs/ai/harness/). Pass the enum
-(`ExtractionStyle.TABLE`) or the string (`"table"`). Non-text inputs on
+(`ExtractionStyle.TABLE`, `ExtractionStyle.FORM`) or the string (`"table"`,
+`"form"`). Non-text inputs on
 `search`/`code` and a missing harness extra fail before the model call.
 
 ### `extract(schema, model, input_file=None, instructions=None, *, style='direct', media_type=None, max_input_bytes=None, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, cite=False, on_progress=None)`
@@ -425,7 +427,7 @@ single `current=1, total=1` event with empty pages.
 | `model` | `str \| Model` | `pydantic-ai` model identifier or configured model instance. |
 | `input_file` | `str \| os.PathLike[str] \| bytes \| BinaryIO \| ExtractionInput` | Local path, HTTP(S) URL, `Path`, bytes, binary file-like object, or `ExtractionInput`. |
 | `instructions` | `str \| None` | Optional model guidance. |
-| `style` | `ExtractionStyle \| str` | How the model inspects the input. `direct` (default) sends media in one shot. `table` adds line-item guidance and parses PDFs by page so rows merge (no extra package; boxes still never invented). `search` gives the model sandboxed file tools (read/grep) against a text document. `code` lets the model write Python against a text document via [Pydantic AI Harness](https://pydantic.dev/docs/ai/harness/). `search` needs `pydantic-ai-harness`; `code` needs `pydantic-ai-harness[codemode]`. |
+| `style` | `ExtractionStyle \| str` | How the model inspects the input. `direct` (default) sends media in one shot. `table` adds line-item guidance and parses PDFs by page so rows merge. `form` adds labeled-field guidance and parses PDFs by page so fields merge. Neither extra package; boxes still never invented. `search` gives the model sandboxed file tools (read/grep) against a text document. `code` lets the model write Python against a text document via [Pydantic AI Harness](https://pydantic.dev/docs/ai/harness/). `search` needs `pydantic-ai-harness`; `code` needs `pydantic-ai-harness[codemode]`. |
 | `media_type` | `str \| None` | Required for bytes and file-like inputs without a per-item type; overrides inference for paths and URLs. Item-level `ExtractionInput.media_type` wins in batch calls. |
 | `max_input_bytes` | `int \| None` | Per-input byte cap; `None` uses `OPENEXTRACT_MAX_INPUT_BYTES` or the 50 MiB default. |
 | `max_retries` | `int` | Extra attempts after transient `ModelError`; defaults to `0`. |
