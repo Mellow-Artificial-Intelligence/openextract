@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import time
 from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import BinaryIO, TypeVar
@@ -170,14 +171,31 @@ def total_usage(results: Iterable[ExtractionResult[T]]) -> Usage:
     :func:`extract_many_with_results_async`. Only successful items carry a
     :class:`Usage`, so totals reflect the successful calls in the batch.
     """
-    input_tokens = 0
-    output_tokens = 0
-    total_tokens = 0
-    for result in results:
-        input_tokens += result.usage.input_tokens
-        output_tokens += result.usage.output_tokens
-        total_tokens += result.usage.total_tokens
-    return Usage(input_tokens, output_tokens, total_tokens)
+    return _sum_usage(result.usage for result in results)
+
+
+def _extraction_result(
+    output: T,
+    usage: Usage,
+    *,
+    attempts: int,
+    started: float,
+    model: str | None,
+    media_type: str | None,
+    source: str | None,
+    citations: tuple[Citation, ...] = (),
+) -> ExtractionResult[T]:
+    """Build the diagnostics wrapper shared by batch and swarm successes."""
+    return ExtractionResult(
+        output=output,
+        usage=usage,
+        attempts=attempts,
+        duration=time.perf_counter() - started,
+        model=model,
+        media_type=media_type,
+        source=source,
+        citations=citations,
+    )
 
 
 def _sum_usage(usages: Iterable[Usage]) -> Usage:

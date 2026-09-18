@@ -69,7 +69,7 @@ from openextract._media import (
     _safe_source_context,
 )
 from openextract._retry import _retry_delay
-from openextract._types import _resolve_item
+from openextract._types import _extraction_result, _resolve_item
 
 
 def _build_response(
@@ -3578,6 +3578,21 @@ class TestTotalUsage:
 
     def test_empty_results_sum_to_zero(self):
         assert total_usage([]) == Usage(0, 0, 0)
+
+    def test_extraction_result_records_elapsed_time(self, mocker):
+        mocker.patch("openextract._types.time.perf_counter", return_value=10.5)
+        result = _extraction_result(
+            _Person(name="a", age=1),
+            Usage(1, 2, 3),
+            attempts=2,
+            started=10.0,
+            model="m",
+            media_type="text/plain",
+            source="doc",
+        )
+        assert result.duration == pytest.approx(0.5)
+        assert result.citations == ()
+        assert result.warnings == ()
 
 
 # ---------------------------------------------------------------------------

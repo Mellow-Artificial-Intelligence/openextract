@@ -74,6 +74,7 @@ from ._swarm import (
     extract_swarm_with_results_async,
 )
 from ._types import (
+    Citation,
     ExtractionInput,
     ExtractionInputLike,
     ExtractionResult,
@@ -92,24 +93,17 @@ T = TypeVar("T", bound=BaseModel)
 
 
 @contextmanager
-def _prepare_extraction(
+def _bind_agent_inputs(
     schema: type[BaseModel],
     model: str | Model,
-    input_file: ExtractionInputLike,
     instructions: str | None,
-    media_type: str | None,
-    max_input_bytes: int,
+    file_bytes: bytes,
+    file_type: str,
     style: ExtractionStyle,
-    cite: bool = False,
+    cite: bool,
 ) -> Iterator[tuple[PydanticAgent, list, ParsedDocument | None]]:
-    """Prepare one extraction while applying the public exception mapping."""
+    """Build the agent and run inputs after media has already been loaded."""
     run_schema, run_instructions = prepare_cited_run(schema, instructions, cite)
-    with _extraction_errors():
-        file_bytes, file_type = _get_media(
-            input_file,
-            media_type=media_type,
-            max_input_bytes=max_input_bytes,
-        )
     parsed_inputs, parsed = maybe_parsed_inputs(file_bytes, file_type, parse=cite)
     with prepared_style_run(style, file_bytes, file_type) as (capabilities, style_inputs):
         with _extraction_errors():
@@ -125,6 +119,30 @@ def _prepare_extraction(
             else _resolve_run_inputs(file_bytes, file_type, style_inputs)
         )
         yield agent, inputs, parsed
+
+
+@contextmanager
+def _prepare_extraction(
+    schema: type[BaseModel],
+    model: str | Model,
+    input_file: ExtractionInputLike,
+    instructions: str | None,
+    media_type: str | None,
+    max_input_bytes: int,
+    style: ExtractionStyle,
+    cite: bool = False,
+) -> Iterator[tuple[PydanticAgent, list, ParsedDocument | None]]:
+    """Prepare one extraction while applying the public exception mapping."""
+    with _extraction_errors():
+        file_bytes, file_type = _get_media(
+            input_file,
+            media_type=media_type,
+            max_input_bytes=max_input_bytes,
+        )
+    with _bind_agent_inputs(
+        schema, model, instructions, file_bytes, file_type, style, cite
+    ) as prepared:
+        yield prepared
 
 
 @asynccontextmanager
@@ -140,7 +158,6 @@ async def _prepare_extraction_async(
     client: httpx.AsyncClient | None = None,
 ) -> AsyncIterator[tuple[PydanticAgent, list, ParsedDocument | None]]:
     """Prepare one async extraction while applying public exception mapping."""
-    run_schema, run_instructions = prepare_cited_run(schema, instructions, cite)
     with _extraction_errors():
         file_bytes, file_type = await _get_media_async(
             input_file,
@@ -148,21 +165,10 @@ async def _prepare_extraction_async(
             media_type=media_type,
             max_input_bytes=max_input_bytes,
         )
-    parsed_inputs, parsed = maybe_parsed_inputs(file_bytes, file_type, parse=cite)
-    with prepared_style_run(style, file_bytes, file_type) as (capabilities, style_inputs):
-        with _extraction_errors():
-            agent = _build_agent(
-                run_schema,
-                model,
-                run_instructions,
-                extra_capabilities=capabilities,
-            )
-        inputs = (
-            parsed_inputs
-            if parsed_inputs is not None and style_inputs is None
-            else _resolve_run_inputs(file_bytes, file_type, style_inputs)
-        )
-        yield agent, inputs, parsed
+    with _bind_agent_inputs(
+        schema, model, instructions, file_bytes, file_type, style, cite
+    ) as prepared:
+        yield prepared
 
 
 def _extract_once(
@@ -238,6 +244,179 @@ def _oneshot_options(
     )
 
 
+def _resolve_oneshot(
+    schema: Any,
+    model: Any,
+    input_file: Any,
+    instructions: str | None,
+    style: ExtractionStyle | str,
+) -> tuple[type[T], Any, ExtractionInputLike, str | None, ExtractionStyle | str, bool]:
+    """Resolve agent call forms and decide whether this run is a swarm."""
+    schema, model, input_file = _resolve_agent_call(schema, model, input_file)
+    model, instructions, style, use_swarm = _plan_agent(model, instructions, style)
+    return schema, model, input_file, instructions, style, use_swarm
+
+
+def _swarm_kwargs(
+    *,
+    style: ExtractionStyle | str,
+    media_type: str | None,
+    max_input_bytes: int | None,
+    max_retries: int,
+    retry_backoff: float,
+    retry_max_backoff: float,
+    cite: bool,
+) -> dict[str, Any]:
+    """Keyword arguments shared by every oneshot-to-swarm dispatch."""
+    return {
+        "style": style,
+        "media_type": media_type,
+        "max_input_bytes": max_input_bytes,
+        "max_retries": max_retries,
+        "retry_backoff": retry_backoff,
+        "retry_max_backoff": retry_max_backoff,
+        "cite": cite,
+    }
+
+
+def _extract_sync(
+    schema: type[T] | DefinedAgent | RemoteAgent,
+    model: str | Model | DefinedAgent | RemoteAgent | ExtractionInputLike,
+    input_file: ExtractionInputLike | None,
+    instructions: str | None,
+    *,
+    style: ExtractionStyle | str,
+    media_type: str | None,
+    max_input_bytes: int | None,
+    max_retries: int,
+    retry_backoff: float,
+    retry_max_backoff: float,
+    cite: bool,
+    with_usage: bool,
+) -> tuple[T, Usage, tuple[Citation, ...]]:
+    """Shared sync oneshot path used by ``extract`` and ``extract_with_usage``."""
+    schema, model, input_file, instructions, style, use_swarm = _resolve_oneshot(
+        schema, model, input_file, instructions, style
+    )
+    if use_swarm:
+        swarm_kw = _swarm_kwargs(
+            style=style,
+            media_type=media_type,
+            max_input_bytes=max_input_bytes,
+            max_retries=max_retries,
+            retry_backoff=retry_backoff,
+            retry_max_backoff=retry_max_backoff,
+            cite=cite,
+        )
+        if with_usage:
+            swarm = extract_swarm_with_results(schema, model, input_file, instructions, **swarm_kw)
+            return swarm.output, swarm.usage, swarm.citations
+        return (
+            extract_swarm(schema, model, input_file, instructions, **swarm_kw),
+            Usage(0, 0, 0),
+            (),
+        )
+    style, limit, max_retries, retry_backoff, retry_max_backoff = _oneshot_options(
+        style, max_retries, retry_backoff, retry_max_backoff, max_input_bytes
+    )
+    with _prepare_extraction(
+        schema,
+        model,
+        input_file,
+        instructions,
+        media_type,
+        limit,
+        style,
+        cite,
+    ) as (agent, inputs, parsed):
+
+        def _run(window: list) -> tuple[object, Usage]:
+            if with_usage:
+                result = _run_extraction(agent, window)
+                return result.output, _usage_from_result(result)
+            return _extract_once(agent, window), Usage(0, 0, 0)
+
+        return extract_windows_sync(
+            _run,
+            inputs,
+            parsed,
+            schema,
+            cite,
+            max_retries=max_retries,
+            retry_backoff=retry_backoff,
+            retry_max_backoff=retry_max_backoff,
+        )
+
+
+async def _extract_async(
+    schema: type[T] | DefinedAgent | RemoteAgent,
+    model: str | Model | DefinedAgent | RemoteAgent | ExtractionInputLike,
+    input_file: ExtractionInputLike | None,
+    instructions: str | None,
+    *,
+    style: ExtractionStyle | str,
+    media_type: str | None,
+    max_input_bytes: int | None,
+    max_retries: int,
+    retry_backoff: float,
+    retry_max_backoff: float,
+    cite: bool,
+    with_usage: bool,
+) -> tuple[T, Usage, tuple[Citation, ...]]:
+    """Shared async oneshot path used by the async extract entry points."""
+    schema, model, input_file, instructions, style, use_swarm = _resolve_oneshot(
+        schema, model, input_file, instructions, style
+    )
+    if use_swarm:
+        swarm_kw = _swarm_kwargs(
+            style=style,
+            media_type=media_type,
+            max_input_bytes=max_input_bytes,
+            max_retries=max_retries,
+            retry_backoff=retry_backoff,
+            retry_max_backoff=retry_max_backoff,
+            cite=cite,
+        )
+        if with_usage:
+            swarm = await extract_swarm_with_results_async(
+                schema, model, input_file, instructions, **swarm_kw
+            )
+            return swarm.output, swarm.usage, swarm.citations
+        return (
+            await extract_swarm_async(schema, model, input_file, instructions, **swarm_kw),
+            Usage(0, 0, 0),
+            (),
+        )
+    style, limit, max_retries, retry_backoff, retry_max_backoff = _oneshot_options(
+        style, max_retries, retry_backoff, retry_max_backoff, max_input_bytes
+    )
+    async with _prepare_extraction_async(
+        schema,
+        model,
+        input_file,
+        instructions,
+        media_type,
+        limit,
+        style,
+        cite,
+    ) as (agent, inputs, parsed):
+
+        async def _run(window: list) -> tuple[object, Usage]:
+            result = await _run_extraction_async(agent, window)
+            return result.output, _usage_from_result(result) if with_usage else Usage(0, 0, 0)
+
+        return await extract_windows_async(
+            _run,
+            inputs,
+            parsed,
+            schema,
+            cite,
+            max_retries=max_retries,
+            retry_backoff=retry_backoff,
+            retry_max_backoff=retry_max_backoff,
+        )
+
+
 def extract(
     schema: type[T] | DefinedAgent | RemoteAgent,
     model: str | Model | DefinedAgent | RemoteAgent | ExtractionInputLike,
@@ -310,50 +489,21 @@ def extract(
         ValueError: If ``style`` is invalid or ``search``/``code`` is used with
             a non-text document.
     """
-    schema, model, input_file = _resolve_agent_call(schema, model, input_file)
-    model, instructions, style, use_swarm = _plan_agent(model, instructions, style)
-    if use_swarm:
-        return extract_swarm(
-            schema,
-            model,
-            input_file,
-            instructions,
-            style=style,
-            media_type=media_type,
-            max_input_bytes=max_input_bytes,
-            max_retries=max_retries,
-            retry_backoff=retry_backoff,
-            retry_max_backoff=retry_max_backoff,
-            cite=cite,
-        )
-    style, limit, max_retries, retry_backoff, retry_max_backoff = _oneshot_options(
-        style, max_retries, retry_backoff, retry_max_backoff, max_input_bytes
-    )
-    with _prepare_extraction(
+    output, _usage, _citations = _extract_sync(
         schema,
         model,
         input_file,
         instructions,
-        media_type,
-        limit,
-        style,
-        cite,
-    ) as (agent, inputs, parsed):
-
-        def _run(window: list) -> tuple[object, Usage]:
-            return _extract_once(agent, window), Usage(0, 0, 0)
-
-        output, _usage, _citations = extract_windows_sync(
-            _run,
-            inputs,
-            parsed,
-            schema,
-            cite,
-            max_retries=max_retries,
-            retry_backoff=retry_backoff,
-            retry_max_backoff=retry_max_backoff,
-        )
-        return output
+        style=style,
+        media_type=media_type,
+        max_input_bytes=max_input_bytes,
+        max_retries=max_retries,
+        retry_backoff=retry_backoff,
+        retry_max_backoff=retry_max_backoff,
+        cite=cite,
+        with_usage=False,
+    )
+    return output
 
 
 def extract_with_usage(
@@ -376,52 +526,21 @@ def extract_with_usage(
     :class:`Usage` describing the tokens consumed by the successful model call,
     or summed across the agents when an agent fans out into a swarm.
     """
-    schema, model, input_file = _resolve_agent_call(schema, model, input_file)
-    model, instructions, style, use_swarm = _plan_agent(model, instructions, style)
-    if use_swarm:
-        swarm = extract_swarm_with_results(
-            schema,
-            model,
-            input_file,
-            instructions,
-            style=style,
-            media_type=media_type,
-            max_input_bytes=max_input_bytes,
-            max_retries=max_retries,
-            retry_backoff=retry_backoff,
-            retry_max_backoff=retry_max_backoff,
-            cite=cite,
-        )
-        return swarm.output, swarm.usage
-    style, limit, max_retries, retry_backoff, retry_max_backoff = _oneshot_options(
-        style, max_retries, retry_backoff, retry_max_backoff, max_input_bytes
-    )
-    with _prepare_extraction(
+    output, usage, _citations = _extract_sync(
         schema,
         model,
         input_file,
         instructions,
-        media_type,
-        limit,
-        style,
-        cite,
-    ) as (agent, inputs, parsed):
-
-        def _run(window: list) -> tuple[object, Usage]:
-            result = _run_extraction(agent, window)
-            return result.output, _usage_from_result(result)
-
-        output, usage, _citations = extract_windows_sync(
-            _run,
-            inputs,
-            parsed,
-            schema,
-            cite,
-            max_retries=max_retries,
-            retry_backoff=retry_backoff,
-            retry_max_backoff=retry_max_backoff,
-        )
-        return output, usage
+        style=style,
+        media_type=media_type,
+        max_input_bytes=max_input_bytes,
+        max_retries=max_retries,
+        retry_backoff=retry_backoff,
+        retry_max_backoff=retry_max_backoff,
+        cite=cite,
+        with_usage=True,
+    )
+    return output, usage
 
 
 async def extract_with_usage_async(
@@ -439,52 +558,21 @@ async def extract_with_usage_async(
     cite: bool = False,
 ) -> tuple[T, Usage]:
     """Async sibling of :func:`extract_with_usage`; returns ``(output, Usage)``."""
-    schema, model, input_file = _resolve_agent_call(schema, model, input_file)
-    model, instructions, style, use_swarm = _plan_agent(model, instructions, style)
-    if use_swarm:
-        swarm = await extract_swarm_with_results_async(
-            schema,
-            model,
-            input_file,
-            instructions,
-            style=style,
-            media_type=media_type,
-            max_input_bytes=max_input_bytes,
-            max_retries=max_retries,
-            retry_backoff=retry_backoff,
-            retry_max_backoff=retry_max_backoff,
-            cite=cite,
-        )
-        return swarm.output, swarm.usage
-    style, limit, max_retries, retry_backoff, retry_max_backoff = _oneshot_options(
-        style, max_retries, retry_backoff, retry_max_backoff, max_input_bytes
-    )
-    async with _prepare_extraction_async(
+    output, usage, _citations = await _extract_async(
         schema,
         model,
         input_file,
         instructions,
-        media_type,
-        limit,
-        style,
-        cite,
-    ) as (agent, inputs, parsed):
-
-        async def _run(window: list) -> tuple[object, Usage]:
-            result = await _run_extraction_async(agent, window)
-            return result.output, _usage_from_result(result)
-
-        output, usage, _citations = await extract_windows_async(
-            _run,
-            inputs,
-            parsed,
-            schema,
-            cite,
-            max_retries=max_retries,
-            retry_backoff=retry_backoff,
-            retry_max_backoff=retry_max_backoff,
-        )
-        return output, usage
+        style=style,
+        media_type=media_type,
+        max_input_bytes=max_input_bytes,
+        max_retries=max_retries,
+        retry_backoff=retry_backoff,
+        retry_max_backoff=retry_max_backoff,
+        cite=cite,
+        with_usage=True,
+    )
+    return output, usage
 
 
 async def extract_async(
@@ -505,51 +593,21 @@ async def extract_async(
 
     Accepts the same agent forms as :func:`extract`.
     """
-    schema, model, input_file = _resolve_agent_call(schema, model, input_file)
-    model, instructions, style, use_swarm = _plan_agent(model, instructions, style)
-    if use_swarm:
-        return await extract_swarm_async(
-            schema,
-            model,
-            input_file,
-            instructions,
-            style=style,
-            media_type=media_type,
-            max_input_bytes=max_input_bytes,
-            max_retries=max_retries,
-            retry_backoff=retry_backoff,
-            retry_max_backoff=retry_max_backoff,
-            cite=cite,
-        )
-    style, limit, max_retries, retry_backoff, retry_max_backoff = _oneshot_options(
-        style, max_retries, retry_backoff, retry_max_backoff, max_input_bytes
-    )
-    async with _prepare_extraction_async(
+    output, _usage, _citations = await _extract_async(
         schema,
         model,
         input_file,
         instructions,
-        media_type,
-        limit,
-        style,
-        cite,
-    ) as (agent, inputs, parsed):
-
-        async def _run(window: list) -> tuple[object, Usage]:
-            result = await _run_extraction_async(agent, window)
-            return result.output, Usage(0, 0, 0)
-
-        output, _usage, _citations = await extract_windows_async(
-            _run,
-            inputs,
-            parsed,
-            schema,
-            cite,
-            max_retries=max_retries,
-            retry_backoff=retry_backoff,
-            retry_max_backoff=retry_max_backoff,
-        )
-        return output
+        style=style,
+        media_type=media_type,
+        max_input_bytes=max_input_bytes,
+        max_retries=max_retries,
+        retry_backoff=retry_backoff,
+        retry_max_backoff=retry_max_backoff,
+        cite=cite,
+        with_usage=False,
+    )
+    return output
 
 
 __all__ = [
