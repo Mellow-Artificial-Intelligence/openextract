@@ -86,6 +86,7 @@ cited: Invoice = extract(
     Path("/tmp/x.pdf"),
     cite=True,
     cite_min_confidence=0.5,
+    pages=(1, 2),
     on_progress=_report,
 )
 _cite: Citation = Citation("total", "12.50", 1, (0.1, 0.2, 0.3, 0.05))

@@ -6,7 +6,7 @@ import math
 import struct
 import threading
 import zlib
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, replace
 from difflib import SequenceMatcher
 from typing import Any
@@ -71,15 +71,20 @@ class ParsedDocument:
         return _pages_prompt_text(self.pages)
 
 
-def try_parse_document(data: bytes, media_type: str | None) -> ParsedDocument | None:
+def try_parse_document(
+    data: bytes,
+    media_type: str | None,
+    pages: Sequence[int] | None = None,
+) -> ParsedDocument | None:
     """Parse a paginated document when a local parser can handle it.
 
     Returns ``None`` when the extra is missing, the type is not a PDF, or the
-    bytes are not a readable PDF. Never raises on a bad file.
+    bytes are not a readable PDF. Never raises on a bad file. ``pages`` limits
+    the parse to those 1-based numbers; out-of-range entries are skipped.
     """
     if not _is_pdf(data, media_type):
         return None
-    return _parse_pdf(data)
+    return _parse_pdf(data, pages=pages)
 
 
 def parsed_run_inputs(parsed: ParsedDocument) -> list[str]:
@@ -266,17 +271,22 @@ def maybe_parsed_inputs(
     file_type: str,
     *,
     parse: bool,
+    pages: Sequence[int] | None = None,
 ) -> tuple[list | None, ParsedDocument | None]:
     """Return page-indexed prompt inputs when a local parse can replace the file.
 
     Text PDFs become page-marked strings. Scanned / empty-text PDFs become
     locally rendered page images (or page headers if render failed). Never
     returns ``None`` inputs for a paginated parse — that would upload the PDF
-    to the provider's document-parse engine.
+    to the provider's document-parse engine. ``pages`` keeps only those
+    1-based numbers (out-of-range ignored). If every requested page is
+    missing, raises ``ValueError`` rather than falling back to the full file.
     """
-    parsed = try_parse_document(file_bytes, file_type) if parse else None
+    parsed = try_parse_document(file_bytes, file_type, pages=pages) if parse else None
     if parsed is None:
         return None, None
+    if pages is not None and not parsed.pages:
+        raise ValueError("pages does not match any page in the document.")
     if parsed.has_text():
         return parsed_run_inputs(parsed), parsed
     if parsed.has_images():
@@ -327,25 +337,32 @@ def _is_pdf(data: bytes, media_type: str | None) -> bool:
     return data.startswith(b"%PDF")
 
 
-def _parse_pdf(data: bytes) -> ParsedDocument | None:
+def _parse_pdf(data: bytes, pages: Sequence[int] | None = None) -> ParsedDocument | None:
     try:
         import pypdfium2 as pdfium
     except ImportError:
         return None
+    wanted = None if pages is None else frozenset(pages)
     with _PDFIUM_LOCK:
         try:
             pdf = pdfium.PdfDocument(data)
         except Exception:
             return None
         try:
-            pages = tuple(_parse_pdf_page(pdf, index) for index in range(len(pdf)))
+            parsed_pages = tuple(
+                _parse_pdf_page(pdf, index)
+                for index in range(len(pdf))
+                if wanted is None or index + 1 in wanted
+            )
         except Exception:
             return None
         finally:
             close = getattr(pdf, "close", None)
             if callable(close):
                 close()
-        return ParsedDocument(pages=pages) if pages else None
+        if parsed_pages:
+            return ParsedDocument(pages=parsed_pages)
+        return ParsedDocument(pages=()) if wanted is not None else None
 
 
 def _parse_pdf_page(pdf: Any, index: int) -> ParsedPage:

@@ -25,7 +25,7 @@ empty when exit code `7` is returned — the batch output is still written.
 | Code | Meaning | Typical cause |
 | ---- | ------- | ------------- |
 | `0` | Success | Single-file or full-batch success |
-| `1` | Usage / setup error | Missing or bad `--schema` / `--model`, stdin without `--media-type`, invalid manifest, empty or unreadable directory, `--recursive` with `--manifest` or stdin, invalid concurrency/retry/size/swarm options, unloadable `--agent`, `--out` with a missing parent directory or unwritable path, argparse failures |
+| `1` | Usage / setup error | Missing or bad `--schema` / `--model`, stdin without `--media-type`, invalid manifest, empty or unreadable directory, `--recursive` with `--manifest` or stdin, invalid `--pages`, invalid concurrency/retry/size/swarm options, unloadable `--agent`, `--out` with a missing parent directory or unwritable path, argparse failures |
 | `2` | URL fetch error | `UrlFetchError` (network failure, HTTP error, SSRF refusal) |
 | `3` | Schema validation error | `SchemaValidationError` |
 | `4` | Model API error | `ModelError` |
@@ -41,8 +41,8 @@ These mappings live in `src/openextract/_cli.py` and are covered by
 
 CLI option values are validated **before any model call**: invalid
 `--max-concurrency`, `--max-retries`, `--retry-backoff`, `--retry-max-backoff`,
-`--max-input-bytes`, `--out` (missing parent directory or unwritable path), or
-manifest contents exit `1` without contacting a provider.
+`--max-input-bytes`, `--pages`, `--out` (missing parent directory or unwritable
+path), or manifest contents exit `1` without contacting a provider.
 
 ## Successful single-file output
 

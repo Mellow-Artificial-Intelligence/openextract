@@ -9,6 +9,14 @@ timing when that is known.
 ## [Unreleased]
 
 ### Added
+- Optional `pages` on extract APIs, sessions, batch, and swarm
+  (`Sequence[int] | None = None`). Default `None` keeps every page. When set,
+  only those 1-based PDF pages are considered for local parse-then-window and
+  citation grounding (`direct` parses when `pages` is set). Out-of-range
+  numbers are ignored; if none remain, `ValueError`. Invalid values raise
+  `ValueError` at call time. CLI `--pages RANGE` accepts compact syntax such
+  as `1-3,5,8` (empty/invalid tokens exit `1`). No extra package. Boxes are
+  still never invented.
 - CLI `--out PATH` writes the JSON / JSONL / `repr` payload to a file
   instead of stdout (create/overwrite). Progress, warnings, and errors stay
   on stderr. The parent directory must already exist (exit `1` otherwise).
