@@ -573,6 +573,8 @@ cat ./reports/q4.pdf | openextract - \
   unstamped citations (only meaningful with `--cite`).
 - `--output` is `json` (default), `jsonl` (one record per completed input,
   written incrementally in completion order with an `index` field), or `repr`.
+- `--out PATH` writes that payload to a file instead of stdout (create/overwrite).
+  The parent directory must already exist. Progress and errors stay on stderr.
 - `--max-concurrency` bounds in-flight extractions for batches (default 5).
 - `--progress` reports per-window extraction on stderr for a single input,
   and per-item completion for batches.
@@ -597,7 +599,7 @@ broken pipe, `1` any other failure (including missing or bad
 
 Extraction errors and progress are written to stderr; successful JSON, JSONL
 records, usage payloads, and `--continue-on-error` batch arrays are written to
-stdout. Missing provider extras
+stdout, or to `--out PATH` when that flag is set. Missing provider extras
 exit `6` and include the same install hint as the Python API, for example
 `pip install 'openextract[xai]'`. Partial batch failures with `--continue-on-error`
 still print the full batch array to stdout, write a warning to stderr, and exit `7`.
