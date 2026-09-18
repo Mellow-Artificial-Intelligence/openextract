@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 
+import pytest
 from pydantic import BaseModel
 from pydantic_ai.models.test import TestModel
 
@@ -28,6 +29,7 @@ from openextract._citations import (
     citations_from_payload,
     cited_output_schema,
     field_citations_for_extractbench,
+    filter_citations,
     json_schema_with_citations,
     prepare_cited_run,
     sanitize_citation,
@@ -244,6 +246,102 @@ class TestCitationConfidence:
         assert citations[0].match == "page"
         assert citations[0].confidence == 0.30
         assert citations[0].bbox is None
+
+
+class TestCiteMinConfidence:
+    def test_filter_drops_weak_and_unstamped(self):
+        exact = Citation("vendor", "Acme", 1, confidence=0.95, match="exact")
+        quote = Citation("total", "12.50", 1, confidence=0.55, match="quote")
+        weak = Citation("date", "Jan", 1, confidence=0.25, match="quote")
+        unstamped = Citation("notes", "see source", 1)
+        kept = filter_citations((exact, quote, weak, unstamped), 0.55)
+        assert kept == (exact, quote)
+        assert filter_citations((exact, unstamped), None) == (exact, unstamped)
+
+    def test_split_filters_after_grounding(self):
+        output, citations = split_cited_output(
+            {
+                "output": {"name": "Ada", "age": 36},
+                "citations": [
+                    {"field": "name", "quote": "Ada Lovelace", "page": 1},
+                    {"field": "age", "quote": "99", "page": 1},
+                ],
+            },
+            Person,
+            cite=True,
+            cite_min_confidence=0.5,
+        )
+        assert output == Person(name="Ada", age=36)
+        assert [item.field for item in citations] == ["name"]
+        assert citations[0].confidence == 0.55
+        mapped = field_citations_for_extractbench(citations)
+        assert mapped[0]["field_path"] == "name"
+        assert "confidence" not in mapped[0]
+
+    def test_results_api_applies_threshold(self):
+        model = _cited_model(
+            output={"name": "Ada", "age": 36},
+            citations=[
+                {"field": "name", "quote": "Ada", "page": 1},
+                {"field": "age", "quote": "99", "page": 1},
+            ],
+        )
+        results = extract_many_with_results(
+            Person,
+            model,
+            [ExtractionInput(b"Ada is 36", media_type="text/plain")],
+            cite=True,
+            cite_min_confidence=0.5,
+        )
+        assert [item.field for item in results[0].citations] == ["name"]
+        unfiltered = extract_many_with_results(
+            Person,
+            model,
+            [ExtractionInput(b"Ada is 36", media_type="text/plain")],
+            cite=True,
+        )
+        assert {item.field for item in unfiltered[0].citations} == {"name", "age"}
+
+    def test_swarm_filters_agent_and_reduced_citations(self):
+        model = _cited_model(
+            output={"name": "Ada", "age": 36},
+            citations=[
+                {"field": "name", "quote": "Ada", "page": 1},
+                {"field": "age", "quote": "99", "page": 1},
+            ],
+        )
+        swarm = extract_swarm_with_results(
+            Person,
+            model,
+            b"Ada is 36",
+            media_type="text/plain",
+            cite=True,
+            cite_min_confidence=0.5,
+        )
+        assert [item.field for item in swarm.citations] == ["name"]
+        assert [item.field for item in swarm.agents[0].citations] == ["name"]
+
+    def test_default_cite_false_is_unchanged(self):
+        model = TestModel(custom_output_args={"name": "Ada", "age": 36})
+        result = extract(Person, model, b"x", media_type="text/plain", cite_min_confidence=0.9)
+        assert result == Person(name="Ada", age=36)
+
+    @pytest.mark.parametrize("value", [-0.01, 1.01, float("inf"), float("nan"), True])
+    def test_invalid_threshold_raises_at_call_time(self, value):
+        model = TestModel(custom_output_args={"name": "Ada", "age": 36})
+        with pytest.raises(ValueError, match="cite_min_confidence must be a finite number in"):
+            extract(Person, model, b"x", media_type="text/plain", cite_min_confidence=value)
+        with pytest.raises(ValueError, match="cite_min_confidence must be a finite number in"):
+            Extractor(Person, model, cite_min_confidence=value)
+        with pytest.raises(ValueError, match="cite_min_confidence must be a finite number in"):
+            extract_many(
+                Person,
+                model,
+                [ExtractionInput(b"x", media_type="text/plain")],
+                cite_min_confidence=value,
+            )
+        with pytest.raises(ValueError, match="cite_min_confidence must be a finite number in"):
+            extract_swarm(Person, model, b"x", media_type="text/plain", cite_min_confidence=value)
 
 
 class TestSchemaWrap:

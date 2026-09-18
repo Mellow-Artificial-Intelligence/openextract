@@ -569,7 +569,8 @@ cat ./reports/q4.pdf | openextract - \
   per-item usage plus an aggregate.
 - `--cite` requests per-field citations (`{field, quote, page}`, optional
   `bbox` / heuristic `confidence` / `match`) in JSON/jsonl via the same
-  `cite=True` library path.
+  `cite=True` library path. `--cite-min-confidence FLOAT` drops weak or
+  unstamped citations (only meaningful with `--cite`).
 - `--output` is `json` (default), `jsonl` (one record per completed input,
   written incrementally in completion order with an `index` field), or `repr`.
 - `--max-concurrency` bounds in-flight extractions for batches (default 5).

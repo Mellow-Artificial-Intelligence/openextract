@@ -102,6 +102,24 @@ def prepare_cited_run(
     return cited_output_schema(schema), with_citation_instructions(instructions)
 
 
+def filter_citations(
+    citations: Iterable[Citation],
+    min_confidence: float | None,
+) -> tuple[Citation, ...]:
+    """Keep citations at or above ``min_confidence`` after grounding.
+
+    When ``min_confidence`` is set, citations with ``confidence is None``
+    (unstamped) are dropped. ``None`` leaves the list unchanged.
+    """
+    if min_confidence is None:
+        return tuple(citations)
+    return tuple(
+        citation
+        for citation in citations
+        if citation.confidence is not None and citation.confidence >= min_confidence
+    )
+
+
 def split_cited_output(
     raw: object,
     schema: type[T],
@@ -109,6 +127,7 @@ def split_cited_output(
     cite: bool,
     parsed: ParsedDocument | None = None,
     window: ParsedDocument | None = None,
+    cite_min_confidence: float | None = None,
 ) -> tuple[T, tuple[Citation, ...]]:
     """Unwrap a cited model payload into ``(schema instance, citations)``.
 
@@ -116,6 +135,7 @@ def split_cited_output(
     are empty, matching the default extract path. When a local parse is
     provided, pages are stamped from it and boxes come only from parser spans.
     ``window`` remaps page=1 / missing pages onto the single page the model saw.
+    ``cite_min_confidence`` drops weak or unstamped cites after grounding.
     """
     if not cite:
         return cast(T, raw), ()
@@ -126,7 +146,7 @@ def split_cited_output(
     if window is not None:
         citations = align_citations_to_window(citations, window)
     citations = ground_citations(citations, parsed, output)
-    return output, citations
+    return output, filter_citations(citations, cite_min_confidence)
 
 
 def citations_from_payload(payload: object) -> tuple[Citation, ...]:

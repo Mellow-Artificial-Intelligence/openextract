@@ -209,6 +209,7 @@ class TestMainSuccess:
             retry_backoff=1.0,
             retry_max_backoff=60.0,
             cite=False,
+            cite_min_confidence=None,
         )
 
     def test_repr_output(self, mocker, capsys):
@@ -1262,6 +1263,20 @@ class TestCite:
             "citations": [{"field": "name", "quote": "Ada", "page": 1}],
         }
 
+    def test_cite_min_confidence_is_forwarded(self, mocker, capsys):
+        mock_fn = _patch_extract_many_with_results(
+            mocker,
+            return_value=[
+                _rich_result(_FixtureSchema(name="Ada", age=36), citations=(_CITE_NAME,))
+            ],
+        )
+
+        assert main(["input.txt", *_BASE_ARGS, "--cite", "--cite-min-confidence", "0.8"]) == 0
+
+        assert mock_fn.call_args.kwargs["cite"] is True
+        assert mock_fn.call_args.kwargs["cite_min_confidence"] == 0.8
+        capsys.readouterr()
+
     def test_cite_json_includes_optional_bbox(self, mocker, capsys):
         _patch_extract_many_with_results(
             mocker,
@@ -1369,6 +1384,21 @@ class TestCite:
             },
         ]
 
+    def test_batch_cite_min_confidence_is_forwarded(self, mocker, capsys):
+        ada = _rich_result(_FixtureSchema(name="Ada", age=36), citations=(_CITE_NAME,))
+        mock_stream = _patch_iter_extractions(mocker, events=[(0, ada), (1, ada)])
+
+        assert main(["a.pdf", "b.pdf", *_BASE_ARGS, "--cite", "--cite-min-confidence", "0.6"]) == 0
+
+        options = mock_stream.call_args.args[3]
+        assert options.cite is True
+        assert options.cite_min_confidence == 0.6
+        capsys.readouterr()
+
+    def test_invalid_cite_min_confidence_returns_1(self, capsys):
+        assert main(["input.txt", *_BASE_ARGS, "--cite-min-confidence", "1.5"]) == 1
+        assert "cite_min_confidence" in capsys.readouterr().err
+
     def test_jsonl_cite_adds_citations_to_records(self, mocker, capsys):
         ada = _rich_result(_FixtureSchema(name="Ada", age=36), citations=(_CITE_NAME,))
         _patch_iter_extractions(mocker, events=[(0, ada)])
@@ -1412,6 +1442,31 @@ class TestCite:
         assert payload["result"] == {"name": "Ada", "age": 36}
         assert payload["citations"] == [{"field": "name", "quote": "Ada", "page": 1}]
         assert "usage" not in payload
+
+    def test_swarm_cite_min_confidence_is_forwarded(self, mocker, capsys):
+        cited = _rich_result(_FixtureSchema(name="Ada", age=36), citations=(_CITE_NAME,))
+        stub = _SwarmResultStub()
+        stub.agents = (cited,)
+        _, rich = _patch_swarm(mocker, usage_result=stub)
+
+        assert (
+            main(
+                [
+                    "input.txt",
+                    *_BASE_ARGS,
+                    "--swarm",
+                    "2",
+                    "--cite",
+                    "--cite-min-confidence",
+                    "0.7",
+                ]
+            )
+            == 0
+        )
+
+        assert rich.call_args.kwargs["cite"] is True
+        assert rich.call_args.kwargs["cite_min_confidence"] == 0.7
+        capsys.readouterr()
 
     def test_fanning_agent_with_cite_uses_swarm(self, mocker, tmp_path, capsys):
         first = _write_agent(tmp_path / "a.py", description="First")

@@ -123,3 +123,13 @@ def _validate_timeout(value: object, *, name: str) -> float:
     if seconds is None or seconds <= 0:
         raise ValueError(f"{name} must be a finite positive number of seconds.")
     return seconds
+
+
+def _validate_cite_min_confidence(value: object) -> float | None:
+    """Return ``value`` when it is a finite number in ``[0, 1]``, or ``None``."""
+    if value is None:
+        return None
+    number = _finite_number(value)
+    if number is None or number < 0 or number > 1:
+        raise ValueError("cite_min_confidence must be a finite number in [0, 1].")
+    return number

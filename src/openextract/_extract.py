@@ -42,6 +42,7 @@ from ._config import (
     _max_redirects,
     _resolve_max_input_bytes,
     _url_fetch_timeout,
+    _validate_cite_min_confidence,
     _validate_retry_options,
 )
 from ._errors import (
@@ -277,6 +278,7 @@ def _swarm_kwargs(
     retry_backoff: float,
     retry_max_backoff: float,
     cite: bool,
+    cite_min_confidence: float | None,
     on_progress: Callable[[ExtractProgress], None] | None,
 ) -> dict[str, Any]:
     """Keyword arguments shared by every oneshot-to-swarm dispatch."""
@@ -288,6 +290,7 @@ def _swarm_kwargs(
         "retry_backoff": retry_backoff,
         "retry_max_backoff": retry_max_backoff,
         "cite": cite,
+        "cite_min_confidence": cite_min_confidence,
         "on_progress": on_progress,
     }
 
@@ -305,10 +308,12 @@ def _extract_sync(
     retry_backoff: float,
     retry_max_backoff: float,
     cite: bool,
+    cite_min_confidence: float | None,
     with_usage: bool,
     on_progress: Callable[[ExtractProgress], None] | None,
 ) -> tuple[T, Usage, tuple[Citation, ...]]:
     """Shared sync oneshot path used by ``extract`` and ``extract_with_usage``."""
+    cite_min_confidence = _validate_cite_min_confidence(cite_min_confidence)
     schema, model, input_file, instructions, style, use_swarm = _resolve_oneshot(
         schema, model, input_file, instructions, style
     )
@@ -321,6 +326,7 @@ def _extract_sync(
             retry_backoff=retry_backoff,
             retry_max_backoff=retry_max_backoff,
             cite=cite,
+            cite_min_confidence=cite_min_confidence,
             on_progress=on_progress,
         )
         if with_usage:
@@ -357,6 +363,7 @@ def _extract_sync(
             parsed,
             schema,
             cite,
+            cite_min_confidence=cite_min_confidence,
             max_retries=max_retries,
             retry_backoff=retry_backoff,
             retry_max_backoff=retry_max_backoff,
@@ -377,10 +384,12 @@ async def _extract_async(
     retry_backoff: float,
     retry_max_backoff: float,
     cite: bool,
+    cite_min_confidence: float | None,
     with_usage: bool,
     on_progress: Callable[[ExtractProgress], None] | None,
 ) -> tuple[T, Usage, tuple[Citation, ...]]:
     """Shared async oneshot path used by the async extract entry points."""
+    cite_min_confidence = _validate_cite_min_confidence(cite_min_confidence)
     schema, model, input_file, instructions, style, use_swarm = _resolve_oneshot(
         schema, model, input_file, instructions, style
     )
@@ -393,6 +402,7 @@ async def _extract_async(
             retry_backoff=retry_backoff,
             retry_max_backoff=retry_max_backoff,
             cite=cite,
+            cite_min_confidence=cite_min_confidence,
             on_progress=on_progress,
         )
         if with_usage:
@@ -429,6 +439,7 @@ async def _extract_async(
             parsed,
             schema,
             cite,
+            cite_min_confidence=cite_min_confidence,
             max_retries=max_retries,
             retry_backoff=retry_backoff,
             retry_max_backoff=retry_max_backoff,
@@ -449,6 +460,7 @@ def extract(
     retry_backoff: float = 1.0,
     retry_max_backoff: float = _DEFAULT_RETRY_MAX_BACKOFF,
     cite: bool = False,
+    cite_min_confidence: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> T:
     """
@@ -493,6 +505,10 @@ def extract(
             PDFs are parsed locally first; boxes come from parser spans, not
             the model. ``extract`` still returns the schema instance; citations
             land on :class:`ExtractionResult` from the ``*_with_results`` APIs.
+        cite_min_confidence: When ``cite=True``, keep only citations whose
+            heuristic ``confidence`` is not ``None`` and is at least this
+            threshold in ``[0, 1]``. ``None`` (default) keeps every citation.
+            Invalid values raise ``ValueError`` at call time.
         on_progress: Optional callback invoked once per parse window immediately
             before that window is sent to the model. Receives
             :class:`ExtractProgress` (1-indexed ``current`` / ``total``, plus
@@ -513,8 +529,8 @@ def extract(
         ModelError: If retries (if any) are exhausted.
         ProviderNotInstalledError: If a provider SDK or style extra is missing.
         ExtractionError: For other extraction failures.
-        ValueError: If ``style`` is invalid or ``search``/``code`` is used with
-            a non-text document.
+        ValueError: If ``style`` is invalid, ``search``/``code`` is used with
+            a non-text document, or ``cite_min_confidence`` is outside ``[0, 1]``.
     """
     output, _usage, _citations = _extract_sync(
         schema,
@@ -528,6 +544,7 @@ def extract(
         retry_backoff=retry_backoff,
         retry_max_backoff=retry_max_backoff,
         cite=cite,
+        cite_min_confidence=cite_min_confidence,
         with_usage=False,
         on_progress=on_progress,
     )
@@ -547,11 +564,13 @@ def extract_with_usage(
     retry_backoff: float = 1.0,
     retry_max_backoff: float = _DEFAULT_RETRY_MAX_BACKOFF,
     cite: bool = False,
+    cite_min_confidence: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> tuple[T, Usage]:
     """Extract structured data and return ``(output, Usage)`` for token accounting.
 
-    Same retry, agent, ``cite``, and ``on_progress`` semantics as :func:`extract`.
+    Same retry, agent, ``cite`` / ``cite_min_confidence``, and ``on_progress``
+    semantics as :func:`extract`.
     Returns a :class:`Usage` describing the tokens consumed by the successful
     model call, or summed across the agents when an agent fans out into a swarm.
     """
@@ -567,6 +586,7 @@ def extract_with_usage(
         retry_backoff=retry_backoff,
         retry_max_backoff=retry_max_backoff,
         cite=cite,
+        cite_min_confidence=cite_min_confidence,
         with_usage=True,
         on_progress=on_progress,
     )
@@ -586,6 +606,7 @@ async def extract_with_usage_async(
     retry_backoff: float = 1.0,
     retry_max_backoff: float = _DEFAULT_RETRY_MAX_BACKOFF,
     cite: bool = False,
+    cite_min_confidence: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> tuple[T, Usage]:
     """Async sibling of :func:`extract_with_usage`; returns ``(output, Usage)``."""
@@ -601,6 +622,7 @@ async def extract_with_usage_async(
         retry_backoff=retry_backoff,
         retry_max_backoff=retry_max_backoff,
         cite=cite,
+        cite_min_confidence=cite_min_confidence,
         with_usage=True,
         on_progress=on_progress,
     )
@@ -620,6 +642,7 @@ async def extract_async(
     retry_backoff: float = 1.0,
     retry_max_backoff: float = _DEFAULT_RETRY_MAX_BACKOFF,
     cite: bool = False,
+    cite_min_confidence: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> T:
     """Async sibling of :func:`extract`; uses ``Agent.run`` instead of ``run_sync``.
@@ -638,6 +661,7 @@ async def extract_async(
         retry_backoff=retry_backoff,
         retry_max_backoff=retry_max_backoff,
         cite=cite,
+        cite_min_confidence=cite_min_confidence,
         with_usage=False,
         on_progress=on_progress,
     )
