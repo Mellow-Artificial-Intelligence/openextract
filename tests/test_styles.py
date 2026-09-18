@@ -34,11 +34,14 @@ from openextract._cli import main
 from openextract._styles import (
     FORM_INSTRUCTIONS,
     TABLE_INSTRUCTIONS,
+    compose_extract_instructions,
     decode_text_document,
     document_filename,
     is_binary_media_type,
     is_text_media_type,
+    language_instructions,
     materialize_text_document,
+    normalize_language,
     normalize_style,
     prepared_style_run,
     should_parse,
@@ -46,6 +49,7 @@ from openextract._styles import (
     style_run_inputs,
     uses_workspace,
     with_form_instructions,
+    with_language_instructions,
     with_style_instructions,
     with_table_instructions,
 )
@@ -107,6 +111,28 @@ class TestStyleHelpers:
         assert with_style_instructions("keep", ExtractionStyle.DIRECT) == "keep"
         assert TABLE_INSTRUCTIONS in with_style_instructions("keep", ExtractionStyle.TABLE)
         assert FORM_INSTRUCTIONS in with_style_instructions("keep", ExtractionStyle.FORM)
+
+    def test_language_helper_appends_and_leaves_default_unchanged(self):
+        hint = language_instructions("es")
+        assert with_language_instructions("keep", None) == "keep"
+        assert with_language_instructions(None, None) is None
+        assert with_language_instructions(None, "es") == hint
+        assert with_language_instructions("keep", " es ") == f"keep\n\n{hint}"
+        assert compose_extract_instructions("keep", ExtractionStyle.DIRECT) == "keep"
+        composed = compose_extract_instructions("rows", ExtractionStyle.TABLE, "es")
+        assert composed.startswith(TABLE_INSTRUCTIONS)
+        assert "rows" in composed
+        assert composed.endswith(hint)
+        assert normalize_language(" fr ") == "fr"
+        assert normalize_language(None) is None
+        with pytest.raises(ValueError, match="language must be a non-empty string"):
+            normalize_language("")
+        with pytest.raises(ValueError, match="language must be a non-empty string"):
+            normalize_language("   ")
+        with pytest.raises(ValueError, match="language must be a non-empty string"):
+            with_language_instructions("keep", "")
+        with pytest.raises(ValueError, match="language must be a non-empty string"):
+            normalize_language(1)  # type: ignore[arg-type]
 
     def test_normalize_rejects_unknown(self):
         with pytest.raises(ValueError, match="style must be one of"):
@@ -795,3 +821,77 @@ class TestCliStyle:
             == 0
         )
         assert mock_extract.call_args.kwargs["style"] == "form"
+
+
+class TestLanguageHint:
+    def test_extract_appends_language_instruction(self, mocker):
+        expected = _Person(name="Ada", age=36)
+        agent_cls, _ = _make_agent_mock(mocker, output=expected)
+        result = extract(
+            schema=_Person,
+            model="openai:gpt-5",
+            input_file=b"Ada is 36",
+            media_type="text/plain",
+            instructions="pull the person",
+            language="es",
+        )
+        assert result is expected
+        instructions = agent_cls.call_args.kwargs["instructions"]
+        assert instructions.startswith("pull the person")
+        assert instructions.endswith(language_instructions("es"))
+
+    def test_extract_default_language_does_not_add_hint(self, mocker):
+        expected = _Person(name="Ada", age=36)
+        agent_cls, _ = _make_agent_mock(mocker, output=expected)
+        extract(
+            schema=_Person,
+            model="openai:gpt-5",
+            input_file=b"Ada is 36",
+            media_type="text/plain",
+            instructions="pull the person",
+        )
+        assert agent_cls.call_args.kwargs["instructions"] == "pull the person"
+
+    def test_invalid_language_raises_before_model_call(self):
+        model = "openai:gpt-5"
+        with pytest.raises(ValueError, match="language must be a non-empty string"):
+            extract(_Person, model, b"x", media_type="text/plain", language="")
+        with pytest.raises(ValueError, match="language must be a non-empty string"):
+            Extractor(_Person, model, language="  ")
+        with pytest.raises(ValueError, match="language must be a non-empty string"):
+            extract_many(
+                _Person,
+                model,
+                [b"x"],
+                media_type="text/plain",
+                language="",
+            )
+        with pytest.raises(ValueError, match="language must be a non-empty string"):
+            extract_swarm(_Person, model, b"x", media_type="text/plain", language="")
+
+    def test_injected_agent_rejects_language(self):
+        with pytest.raises(ValueError, match="configured on an injected agent"):
+            Extractor(_Person, agent=MagicMock(), language="es")
+
+    def test_session_appends_language_instruction(self, mocker):
+        agent_cls, _ = _make_agent_mock(mocker, output=_Person(name="Ada", age=36))
+        Extractor(_Person, "openai:gpt-5", instructions="pull", language="es")
+        assert agent_cls.call_args.kwargs["instructions"].endswith(language_instructions("es"))
+
+    def test_batch_and_swarm_compose_language(self):
+        model = TestModel(custom_output_args={"name": "Ada", "age": 36})
+        results = extract_many(
+            _Person,
+            model,
+            [b"Ada is 36"],
+            media_type="text/plain",
+            language="es",
+        )
+        assert results == [_Person(name="Ada", age=36)]
+        assert extract_swarm(
+            _Person,
+            model,
+            b"Ada is 36",
+            media_type="text/plain",
+            language="es",
+        ) == _Person(name="Ada", age=36)

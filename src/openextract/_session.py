@@ -35,13 +35,14 @@ from ._parse import ParsedDocument, maybe_parsed_inputs, parsed_window_inputs
 from ._retry import _run_with_retries_async, _run_with_retries_sync
 from ._styles import (
     ExtractionStyle,
+    compose_extract_instructions,
     materialize_text_document,
+    normalize_language,
     normalize_style,
     should_parse,
     style_capabilities,
     style_run_inputs,
     uses_workspace,
-    with_style_instructions,
 )
 from ._types import ExtractionInputLike, ExtractProgress, OnProgress, RetryPolicy, T, Usage
 from ._windows import emit_progress, extract_windows_async, extract_windows_sync
@@ -79,16 +80,23 @@ class _ExtractorSession[T: BaseModel]:
         cite: bool = False,
         cite_min_confidence: float | None = None,
         pages: Sequence[int] | None = None,
+        language: str | None = None,
         on_progress: OnProgress | None = None,
     ) -> None:
         resolved_style = normalize_style(style)
+        language = normalize_language(language)
         if agent is not None:
             if model is not None:
                 raise ValueError("model and agent are mutually exclusive; provide exactly one.")
-            if instructions is not None or model_settings is not None or timeout is not None:
+            if (
+                instructions is not None
+                or language is not None
+                or model_settings is not None
+                or timeout is not None
+            ):
                 raise ValueError(
-                    "instructions, model_settings, and timeout must be configured "
-                    "on an injected agent."
+                    "instructions, language, model_settings, and timeout must be "
+                    "configured on an injected agent."
                 )
             if instrument is not False:
                 raise ValueError("instrument must be configured on an injected agent.")
@@ -104,7 +112,7 @@ class _ExtractorSession[T: BaseModel]:
                 raise TypeError("model is required unless agent is provided.")
             session_settings = _session_model_settings(model_settings, timeout)
             run_schema, run_instructions = prepare_cited_run(
-                schema, with_style_instructions(instructions, resolved_style), cite
+                schema, compose_extract_instructions(instructions, resolved_style, language), cite
             )
             if not uses_workspace(resolved_style):
                 configured_agent = _build_agent(

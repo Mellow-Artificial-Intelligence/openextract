@@ -153,6 +153,34 @@ def _with_prefixed_instructions(prefix: str, instructions: str | None) -> str:
     return prefix
 
 
+def _with_appended_instructions(instructions: str | None, suffix: str) -> str:
+    if instructions and instructions.strip():
+        return f"{instructions.strip()}\n\n{suffix}"
+    return suffix
+
+
+def normalize_language(language: str | None) -> str | None:
+    """Return a stripped language tag, or ``None`` when unset.
+
+    Accepts a BCP-47-ish tag or a plain name (``en``, ``es``, ``fr``). Empty or
+    whitespace-only values raise ``ValueError``.
+    """
+    if language is None:
+        return None
+    if not isinstance(language, str) or not language.strip():
+        raise ValueError("language must be a non-empty string.")
+    return language.strip()
+
+
+def language_instructions(language: str) -> str:
+    """Return the stable document-language hint for ``language``."""
+    return (
+        f"The document's primary language is {language}. "
+        "Preserve that language and script in extracted field values. "
+        "Do not translate unless the schema or instructions ask."
+    )
+
+
 def with_table_instructions(instructions: str | None) -> str:
     """Prepend table/line-item guidance without dropping caller instructions."""
     return _with_prefixed_instructions(TABLE_INSTRUCTIONS, instructions)
@@ -174,6 +202,23 @@ def with_style_instructions(instructions: str | None, style: ExtractionStyle) ->
             return instructions
         case _:  # pragma: no cover - exhaustive ExtractionStyle
             assert_never(style)
+
+
+def with_language_instructions(instructions: str | None, language: str | None) -> str | None:
+    """Append a document-language hint without dropping caller instructions."""
+    tag = normalize_language(language)
+    if tag is None:
+        return instructions
+    return _with_appended_instructions(instructions, language_instructions(tag))
+
+
+def compose_extract_instructions(
+    instructions: str | None,
+    style: ExtractionStyle,
+    language: str | None = None,
+) -> str | None:
+    """Apply style guidance, then an optional document-language hint."""
+    return with_language_instructions(with_style_instructions(instructions, style), language)
 
 
 def _bare_media_type(media_type: str) -> str:

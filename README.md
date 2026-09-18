@@ -554,6 +554,9 @@ cat ./reports/q4.pdf | openextract - \
 - `--schema` is a Python import path of the form `module:ClassName` resolving to a Pydantic model.
 - `--model` is a `pydantic-ai` model identifier.
 - `--instructions` is optional natural-language guidance.
+- `--language TAG` is an optional document language hint (`en`, `es`, `fr`).
+  Field values keep that language/script unless the schema or instructions
+  ask to translate.
 - `--style` is `direct` (default), `table` (line items; PDFs parse by page),
   `form` (labeled fields; PDFs parse by page), `search` (file tools on text),
   or `code` (write Python against text).
