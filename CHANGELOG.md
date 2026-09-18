@@ -9,6 +9,11 @@ timing when that is known.
 ## [Unreleased]
 
 ### Added
+- CLI directory inputs: pass a folder of files to extract as a batch via the
+  existing `extract_many` path. Non-recursive by default; `--recursive` walks
+  subdirectories. Hidden names and files with no guessed MIME type are
+  skipped (or included when `--media-type` is set). JSON/JSONL and `--cite`
+  use the same batch shapes as an explicit file list.
 - `on_progress` on `extract*` / sessions / batch / swarm reports parse-window
   progress for long documents. The callback receives `ExtractProgress`
   (`current`, `total`, `page`, `pages`) immediately before each window is

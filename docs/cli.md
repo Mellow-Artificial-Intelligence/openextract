@@ -24,7 +24,7 @@ exit code `7` is returned — the batch output is still written.
 | Code | Meaning | Typical cause |
 | ---- | ------- | ------------- |
 | `0` | Success | Single-file or full-batch success |
-| `1` | Usage / setup error | Missing or bad `--schema` / `--model`, stdin without `--media-type`, invalid manifest, invalid concurrency/retry/size/swarm options, unloadable `--agent`, argparse failures |
+| `1` | Usage / setup error | Missing or bad `--schema` / `--model`, stdin without `--media-type`, invalid manifest, empty or unreadable directory, `--recursive` with `--manifest` or stdin, invalid concurrency/retry/size/swarm options, unloadable `--agent`, argparse failures |
 | `2` | URL fetch error | `UrlFetchError` (network failure, HTTP error, SSRF refusal) |
 | `3` | Schema validation error | `SchemaValidationError` |
 | `4` | Model API error | `ModelError` |
@@ -69,6 +69,38 @@ openextract ./invoices/a.pdf ./invoices/b.pdf \
 - stdout: JSON array of per-item `model_dump()` objects, in input order.
 - `--max-concurrency N` bounds in-flight extractions (default `5`); it must be
   a positive integer.
+
+## Directory input
+
+```bash
+openextract ./invoices \
+  --schema mypkg.schemas:Invoice \
+  --model xai:grok-4.3 \
+  --output jsonl --cite --progress
+```
+
+A positional directory expands to supported local files and always uses batch
+semantics (a one-file directory still emits a JSON array or JSONL records),
+then runs through the same `extract_many` path as explicit file lists.
+
+```bash
+openextract ./invoices --recursive \
+  --schema mypkg.schemas:Invoice \
+  --model xai:grok-4.3
+```
+
+- Default is **non-recursive**: only immediate files in each directory.
+- `--recursive` walks subdirectories. Directory symlinks are not followed.
+- Hidden names (`.hidden.pdf`, `.git/`) are skipped.
+- Files with no guessed MIME type are skipped unless `--media-type` is set
+  (then every non-hidden file is included and that type is the fallback).
+- Skips are quiet. A directory with no remaining files exits `1` before any
+  model call: `directory '...' contains no supported files`.
+- Mix directories with files or URLs; expansion happens in argument order,
+  files inside each directory in sorted path order.
+- `--recursive` cannot be combined with `--manifest` or stdin (`-`).
+- `--cite`, `--usage`, `--output json` / `jsonl`, and `--progress` use the
+  same batch shapes as an explicit file list.
 
 ## JSONL output for large batches
 
@@ -153,9 +185,9 @@ arguments, so heterogeneous batches can set per-input media types:
 - `name` (optional): safe display label used in JSONL records, progress lines,
   and error entries instead of the source.
 - Blank lines are skipped; unknown keys are rejected.
-- `--manifest` is mutually exclusive with positional inputs and always uses
-  batch semantics (a one-entry manifest still emits a JSON array or JSONL
-  records).
+- `--manifest` is mutually exclusive with positional inputs and `--recursive`,
+  and always uses batch semantics (a one-entry manifest still emits a JSON
+  array or JSONL records).
 - Invalid manifests exit `1` with a `manifest line N: ...` error before any
   model call.
 
@@ -338,7 +370,8 @@ openextract ./invoices/q4.pdf --agent ./agents/invoices
 ```
 
 - These flags apply to a **single** positional input; combining them with
-  several input files, `--manifest`, or `--output jsonl` exits `1`.
+  several input files, a directory that expands to more than one file,
+  `--manifest`, or `--output jsonl` exits `1`.
 - `--swarm` may not contradict the length of `--models`, and `--model` and
   `--models` are mutually exclusive.
 - A lone `--agent` is not itself a swarm, but an agent with subagents (or a

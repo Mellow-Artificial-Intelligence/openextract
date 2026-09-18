@@ -475,6 +475,16 @@ openextract ./invoices/*.pdf \
   | jq -c 'select(.result) | .result'
 ```
 
+Or pass a directory (non-recursive by default; add `--recursive` to walk
+subfolders). Unsupported and hidden files are skipped:
+
+```bash
+openextract ./invoices --recursive \
+  --schema mypkg.schemas:Invoice \
+  --model xai:grok-4.3 \
+  --output jsonl --cite
+```
+
 Mix media types in one run with a JSONL manifest (`source` required;
 `media_type` and `name` optional per line):
 
@@ -519,7 +529,7 @@ cat ./reports/q4.pdf | openextract - \
   --media-type application/pdf
 ```
 
-- `input_file` accepts one or more paths/URLs, or `-` for stdin (`--media-type` required for stdin).
+- `input_file` accepts one or more paths/URLs, directories of files, or `-` for stdin (`--media-type` required for stdin). Directories expand to supported files (see `--recursive`).
 - `--schema` is a Python import path of the form `module:ClassName` resolving to a Pydantic model.
 - `--model` is a `pydantic-ai` model identifier.
 - `--instructions` is optional natural-language guidance.
@@ -529,7 +539,9 @@ cat ./reports/q4.pdf | openextract - \
 - `--media-type` sets MIME type for stdin, overrides guessing for paths/URLs,
   and is the fallback for manifest entries without their own.
 - `--manifest` reads inputs from a JSONL file with per-item media types and
-  display names; mutually exclusive with positional inputs.
+  display names; mutually exclusive with positional inputs and `--recursive`.
+- `--recursive` walks directories given as positional inputs. Default is only
+  the immediate files in each directory.
 - `--usage` prints `result` and `usage` for a single input; batches report
   per-item usage plus an aggregate.
 - `--cite` requests per-field citations (`{field, quote, page}`, optional
