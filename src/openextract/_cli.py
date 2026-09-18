@@ -11,10 +11,11 @@ import os
 import sys
 from collections.abc import AsyncGenerator, Sequence
 from pathlib import Path
+from types import GenericAlias
 from typing import Any, BinaryIO, cast
 
 from dotenv import load_dotenv
-from pydantic import BaseModel
+from pydantic import BaseModel, create_model
 
 from ._agents import DefinedAgent, RemoteAgent, is_agent, load_agent, load_agents
 from ._batch import _BatchOptions, _iter_extractions, extract_many_with_results
@@ -44,9 +45,100 @@ _EXIT_REMOTE_AGENT = 8
 _EXIT_INTERRUPTED = 130  # 128 + SIGINT, the conventional Ctrl-C exit code
 _EXIT_BROKEN_PIPE = 141  # 128 + SIGPIPE, the conventional broken-pipe exit code
 _MANIFEST_KEYS = frozenset({"source", "media_type", "name"})
+_JSON_PRIMITIVES: dict[str, type] = {
+    "string": str,
+    "integer": int,
+    "number": float,
+    "boolean": bool,
+}
 
 
-def _resolve_schema(schema_path: str) -> type[BaseModel]:
+def _json_schema_model_name(schema: dict[str, Any], path: Path) -> str:
+    """Pick a valid class name from the schema title or file stem."""
+    title = schema.get("title")
+    if isinstance(title, str) and title.isidentifier():
+        return title
+    stem = path.stem
+    return stem if stem.isidentifier() else "JsonSchema"
+
+
+def _schema_object(node: object) -> dict[str, Any] | None:
+    """Narrow a JSON object to ``dict[str, Any]``."""
+    if not isinstance(node, dict):
+        return None
+    return cast(dict[str, Any], node)
+
+
+def _json_schema_annotation(node: object, *, name: str) -> Any:
+    """Map a JSON Schema node to a Pydantic annotation."""
+    schema = _schema_object(node)
+    if schema is None:
+        return Any
+    schema_type = schema.get("type")
+    if schema_type == "array":
+        item = _json_schema_annotation(schema.get("items"), name=f"{name}Item")
+        return GenericAlias(list, (item,))
+    if schema_type == "object" or (schema_type is None and "properties" in schema):
+        return _model_from_json_schema(schema, name)
+    if isinstance(schema_type, str):
+        return _JSON_PRIMITIVES.get(schema_type, Any)
+    return Any
+
+
+def _model_from_json_schema(schema: dict[str, Any], name: str) -> type[BaseModel]:
+    """Build a Pydantic model from a JSON Schema object."""
+    required_raw = schema.get("required")
+    required = set(required_raw) if isinstance(required_raw, list) else set()
+    properties: dict[str, Any] = _schema_object(schema.get("properties")) or {}
+    fields: dict[str, Any] = {}
+    for key, spec in properties.items():
+        if not key.isidentifier():
+            raise ValueError(
+                f"cannot build a Pydantic model from '{name}': invalid field name {key!r}"
+            )
+        annotation = _json_schema_annotation(spec, name=f"{name}{key.title()}")
+        fields[key] = (annotation, ...) if key in required else (annotation | None, None)
+    try:
+        return create_model(name, __module__="openextract._cli", **fields)
+    except Exception as exc:
+        raise ValueError(f"cannot build a Pydantic model from '{name}': {exc}") from exc
+
+
+def _require_object_schema(data: object, path: Path) -> dict[str, Any]:
+    """Reject non-object JSON Schema documents."""
+    schema = _schema_object(data)
+    if schema is None:
+        raise ValueError(f"schema file '{path}' must be a JSON Schema object")
+    schema_type = schema.get("type")
+    if schema_type is not None and schema_type != "object":
+        raise ValueError(f"schema file '{path}' must be a JSON Schema object")
+    return schema
+
+
+def _read_json_schema_file(path: Path) -> dict[str, Any]:
+    """Load a JSON Schema object from ``path`` with clear file errors."""
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except FileNotFoundError as exc:
+        raise ValueError(f"schema file '{path}' not found") from exc
+    except (OSError, UnicodeDecodeError) as exc:
+        raise ValueError(f"cannot read schema file '{path}': {exc}") from exc
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"schema file '{path}' is not valid JSON: {exc}") from exc
+    return _require_object_schema(data, path)
+
+
+def _probe_json_schema_file(path: Path) -> dict[str, Any] | None:
+    """Return a JSON Schema object if ``path`` already is one, else ``None``."""
+    try:
+        return _read_json_schema_file(path)
+    except ValueError:
+        return None
+
+
+def _schema_from_import(schema_path: str) -> type[BaseModel]:
     """Resolve a ``module:ClassName`` string to a Pydantic ``BaseModel`` subclass."""
     if ":" not in schema_path:
         raise ValueError(
@@ -69,6 +161,19 @@ def _resolve_schema(schema_path: str) -> type[BaseModel]:
         raise ValueError(f"'{schema_path}' does not refer to a Pydantic BaseModel subclass.")
 
     return cls
+
+
+def _resolve_schema(schema_path: str) -> type[BaseModel]:
+    """Resolve ``module:ClassName`` or a JSON Schema file to a Pydantic model."""
+    path = Path(schema_path).expanduser()
+    if path.suffix.lower() == ".json":
+        schema = _read_json_schema_file(path)
+        return _model_from_json_schema(schema, _json_schema_model_name(schema, path))
+    if path.is_file():
+        schema = _probe_json_schema_file(path)
+        if schema is not None:
+            return _model_from_json_schema(schema, _json_schema_model_name(schema, path))
+    return _schema_from_import(schema_path)
 
 
 def _split_list(value: str | None) -> list[str]:
@@ -660,8 +765,8 @@ def _build_parser() -> argparse.ArgumentParser:
         "--schema",
         default=None,
         help=(
-            "Pydantic model import path in 'module:ClassName' form. Optional "
-            "when --agent/--agents supplies an output schema."
+            "Pydantic model as 'module:ClassName', or a JSON Schema file "
+            "(*.json). Optional when --agent/--agents supplies an output schema."
         ),
     )
     parser.add_argument(

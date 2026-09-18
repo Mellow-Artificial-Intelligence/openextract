@@ -9,6 +9,10 @@ timing when that is known.
 ## [Unreleased]
 
 ### Added
+- CLI `--schema` accepts a JSON Schema file path (`.json`, or an existing file
+  that parses as a JSON Schema object) in addition to `module:ClassName`.
+  Missing files, invalid JSON, and non-object schemas exit `1` with a clear
+  error. Agent-declared schemas and swarm flags are unchanged.
 - `style='form'` (`ExtractionStyle.FORM`) for forms, receipts, and other
   labeled key-value documents. Same media path as `direct`, with
   labeled-field instructions (keep labels/values as written; null for
