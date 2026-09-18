@@ -44,6 +44,7 @@ from ._swarm import (
 )
 from ._types import (
     Citation,
+    ExtractProgress,
     ExtractionInput,
     ExtractionResult,
     RetryPolicy,
@@ -66,6 +67,7 @@ __all__ = [
     "RetryPolicy",
     "ExtractionInput",
     "ExtractionResult",
+    "ExtractProgress",
     "Citation",
     "ExtractionStyle",
     "DefinedAgent",

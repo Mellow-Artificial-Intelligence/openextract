@@ -36,15 +36,17 @@ from ._remote import run_remote_extraction
 from ._styles import ExtractionStyle, normalize_style, prepared_style_run
 from ._types import (
     Citation,
+    ExtractProgress,
     ExtractionInputLike,
     ExtractionResult,
+    OnProgress,
     T,
     Usage,
     _extraction_result,
     _resolve_item,
     total_usage,
 )
-from ._windows import extract_windows_async
+from ._windows import emit_progress, extract_windows_async
 
 if TYPE_CHECKING:
     pass
@@ -153,6 +155,7 @@ async def _run_member(
     retry_backoff: float,
     retry_max_backoff: float,
     cite: bool,
+    on_progress: OnProgress | None = None,
 ) -> ExtractionResult[T]:
     """Run one swarm agent over already-loaded media and build its result."""
     started = time.perf_counter()
@@ -164,6 +167,7 @@ async def _run_member(
     run_schema, member_instructions = prepare_cited_run(schema, member_instructions, cite)
     parsed_inputs, parsed = maybe_parsed_inputs(file_bytes, file_type, parse=cite)
     if isinstance(member.model, RemoteAgent):
+        emit_progress(on_progress, 1, 1, parsed)
         output, usage, attempts = await run_remote_extraction(
             run_schema,
             member.model,
@@ -215,6 +219,7 @@ async def _run_member(
             max_retries=max_retries,
             retry_backoff=retry_backoff,
             retry_max_backoff=retry_max_backoff,
+            on_progress=on_progress,
         )
     return _extraction_result(
         output,
@@ -246,6 +251,7 @@ async def _run_swarm(
     on_agent_start: Callable[[int, int], None] | None,
     on_agent: Callable[[int, int, ExtractionResult[T] | Exception], None] | None,
     cite: bool = False,
+    on_progress: OnProgress | None = None,
 ) -> SwarmResult[T]:
     """Load the input once, fan it out across agents, and reduce the outputs."""
     members = resolve_swarm_members(agents, size)
@@ -299,6 +305,7 @@ async def _run_swarm(
                     retry_backoff=retry_backoff,
                     retry_max_backoff=retry_max_backoff,
                     cite=cite,
+                    on_progress=on_progress,
                 )
             except Exception as exc:
                 results[index] = exc
@@ -346,6 +353,7 @@ def extract_swarm(
     retry_backoff: float = 1.0,
     retry_max_backoff: float = _DEFAULT_RETRY_MAX_BACKOFF,
     cite: bool = False,
+    on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> T:
     """Run several agents over one input and return the reduced result.
 
@@ -380,6 +388,8 @@ def extract_swarm(
             ``extract_swarm`` still returns the reduced schema instance;
             citations land on :class:`SwarmResult` from the ``*_with_results``
             APIs.
+        on_progress: Optional per-window callback, same contract as
+            :func:`extract`. Concurrent agents may interleave events.
 
     Returns:
         The reduced schema instance.
@@ -412,6 +422,7 @@ def extract_swarm(
             on_agent_start=None,
             on_agent=None,
             cite=cite,
+            on_progress=on_progress,
         ),
     ).output
 
@@ -432,6 +443,7 @@ async def extract_swarm_async(
     retry_backoff: float = 1.0,
     retry_max_backoff: float = _DEFAULT_RETRY_MAX_BACKOFF,
     cite: bool = False,
+    on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> T:
     """Async sibling of :func:`extract_swarm`."""
     result = await _run_swarm(
@@ -451,6 +463,7 @@ async def extract_swarm_async(
         on_agent_start=None,
         on_agent=None,
         cite=cite,
+        on_progress=on_progress,
     )
     return result.output
 
@@ -473,6 +486,7 @@ def extract_swarm_with_results(
     on_agent_start: Callable[[int, int], None] | None = None,
     on_agent: Callable[[int, int, ExtractionResult[T] | Exception], None] | None = None,
     cite: bool = False,
+    on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> SwarmResult[T]:
     """Run a swarm and return the reduced output plus per-agent diagnostics.
 
@@ -480,7 +494,9 @@ def extract_swarm_with_results(
     :class:`ExtractionResult` (or its exception), the summed token usage, the
     reduce strategy that produced the output, and reduced ``citations`` when
     ``cite=True``. ``on_agent_start`` and ``on_agent`` are called with
-    ``(index, total)`` and ``(index, total, result)`` for progress reporting.
+    ``(index, total)`` and ``(index, total, result)`` for agent progress.
+    ``on_progress`` is the same per-window callback as :func:`extract`;
+    concurrent agents may interleave events.
     """
     return cast(
         "SwarmResult[T]",
@@ -502,6 +518,7 @@ def extract_swarm_with_results(
             on_agent_start=on_agent_start,
             on_agent=on_agent,
             cite=cite,
+            on_progress=on_progress,
         ),
     )
 
@@ -524,6 +541,7 @@ async def extract_swarm_with_results_async(
     on_agent_start: Callable[[int, int], None] | None = None,
     on_agent: Callable[[int, int, ExtractionResult[T] | Exception], None] | None = None,
     cite: bool = False,
+    on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> SwarmResult[T]:
     """Async sibling of :func:`extract_swarm_with_results`."""
     return await _run_swarm(
@@ -543,4 +561,5 @@ async def extract_swarm_with_results_async(
         on_agent_start=on_agent_start,
         on_agent=on_agent,
         cite=cite,
+        on_progress=on_progress,
     )

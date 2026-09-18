@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import asynccontextmanager, contextmanager
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 
@@ -78,6 +78,7 @@ from ._types import (
     ExtractionInput,
     ExtractionInputLike,
     ExtractionResult,
+    ExtractProgress,
     RetryPolicy,
     Usage,
     _resolve_item,
@@ -266,6 +267,7 @@ def _swarm_kwargs(
     retry_backoff: float,
     retry_max_backoff: float,
     cite: bool,
+    on_progress: Callable[[ExtractProgress], None] | None,
 ) -> dict[str, Any]:
     """Keyword arguments shared by every oneshot-to-swarm dispatch."""
     return {
@@ -276,6 +278,7 @@ def _swarm_kwargs(
         "retry_backoff": retry_backoff,
         "retry_max_backoff": retry_max_backoff,
         "cite": cite,
+        "on_progress": on_progress,
     }
 
 
@@ -293,6 +296,7 @@ def _extract_sync(
     retry_max_backoff: float,
     cite: bool,
     with_usage: bool,
+    on_progress: Callable[[ExtractProgress], None] | None,
 ) -> tuple[T, Usage, tuple[Citation, ...]]:
     """Shared sync oneshot path used by ``extract`` and ``extract_with_usage``."""
     schema, model, input_file, instructions, style, use_swarm = _resolve_oneshot(
@@ -307,6 +311,7 @@ def _extract_sync(
             retry_backoff=retry_backoff,
             retry_max_backoff=retry_max_backoff,
             cite=cite,
+            on_progress=on_progress,
         )
         if with_usage:
             swarm = extract_swarm_with_results(schema, model, input_file, instructions, **swarm_kw)
@@ -345,6 +350,7 @@ def _extract_sync(
             max_retries=max_retries,
             retry_backoff=retry_backoff,
             retry_max_backoff=retry_max_backoff,
+            on_progress=on_progress,
         )
 
 
@@ -362,6 +368,7 @@ async def _extract_async(
     retry_max_backoff: float,
     cite: bool,
     with_usage: bool,
+    on_progress: Callable[[ExtractProgress], None] | None,
 ) -> tuple[T, Usage, tuple[Citation, ...]]:
     """Shared async oneshot path used by the async extract entry points."""
     schema, model, input_file, instructions, style, use_swarm = _resolve_oneshot(
@@ -376,6 +383,7 @@ async def _extract_async(
             retry_backoff=retry_backoff,
             retry_max_backoff=retry_max_backoff,
             cite=cite,
+            on_progress=on_progress,
         )
         if with_usage:
             swarm = await extract_swarm_with_results_async(
@@ -414,6 +422,7 @@ async def _extract_async(
             max_retries=max_retries,
             retry_backoff=retry_backoff,
             retry_max_backoff=retry_max_backoff,
+            on_progress=on_progress,
         )
 
 
@@ -430,6 +439,7 @@ def extract(
     retry_backoff: float = 1.0,
     retry_max_backoff: float = _DEFAULT_RETRY_MAX_BACKOFF,
     cite: bool = False,
+    on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> T:
     """
     Extract structured data from a document, image, audio, or video file using an LLM.
@@ -471,6 +481,11 @@ def extract(
             PDFs are parsed locally first; boxes come from parser spans, not
             the model. ``extract`` still returns the schema instance; citations
             land on :class:`ExtractionResult` from the ``*_with_results`` APIs.
+        on_progress: Optional callback invoked once per parse window immediately
+            before that window is sent to the model. Receives
+            :class:`ExtractProgress` (1-indexed ``current`` / ``total``, plus
+            ``page`` / ``pages`` when the input was parsed). Default ``None``
+            keeps the silent path. A raising callback aborts the extraction.
 
     Returns:
         An instance of the schema populated with extracted data.
@@ -502,6 +517,7 @@ def extract(
         retry_max_backoff=retry_max_backoff,
         cite=cite,
         with_usage=False,
+        on_progress=on_progress,
     )
     return output
 
@@ -519,12 +535,13 @@ def extract_with_usage(
     retry_backoff: float = 1.0,
     retry_max_backoff: float = _DEFAULT_RETRY_MAX_BACKOFF,
     cite: bool = False,
+    on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> tuple[T, Usage]:
     """Extract structured data and return ``(output, Usage)`` for token accounting.
 
-    Same retry, agent, and ``cite`` semantics as :func:`extract`. Returns a
-    :class:`Usage` describing the tokens consumed by the successful model call,
-    or summed across the agents when an agent fans out into a swarm.
+    Same retry, agent, ``cite``, and ``on_progress`` semantics as :func:`extract`.
+    Returns a :class:`Usage` describing the tokens consumed by the successful
+    model call, or summed across the agents when an agent fans out into a swarm.
     """
     output, usage, _citations = _extract_sync(
         schema,
@@ -539,6 +556,7 @@ def extract_with_usage(
         retry_max_backoff=retry_max_backoff,
         cite=cite,
         with_usage=True,
+        on_progress=on_progress,
     )
     return output, usage
 
@@ -556,6 +574,7 @@ async def extract_with_usage_async(
     retry_backoff: float = 1.0,
     retry_max_backoff: float = _DEFAULT_RETRY_MAX_BACKOFF,
     cite: bool = False,
+    on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> tuple[T, Usage]:
     """Async sibling of :func:`extract_with_usage`; returns ``(output, Usage)``."""
     output, usage, _citations = await _extract_async(
@@ -571,6 +590,7 @@ async def extract_with_usage_async(
         retry_max_backoff=retry_max_backoff,
         cite=cite,
         with_usage=True,
+        on_progress=on_progress,
     )
     return output, usage
 
@@ -588,6 +608,7 @@ async def extract_async(
     retry_backoff: float = 1.0,
     retry_max_backoff: float = _DEFAULT_RETRY_MAX_BACKOFF,
     cite: bool = False,
+    on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> T:
     """Async sibling of :func:`extract`; uses ``Agent.run`` instead of ``run_sync``.
 
@@ -606,6 +627,7 @@ async def extract_async(
         retry_max_backoff=retry_max_backoff,
         cite=cite,
         with_usage=False,
+        on_progress=on_progress,
     )
     return output
 

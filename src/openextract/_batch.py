@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import AsyncIterator, Iterable
+from collections.abc import AsyncIterator, Callable, Iterable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, cast, overload
 
@@ -32,6 +32,8 @@ from ._styles import ExtractionStyle, normalize_style, prepared_style_run
 from ._types import (
     ExtractionInputLike,
     ExtractionResult,
+    ExtractProgress,
+    OnProgress,
     T,
     Usage,
     _extraction_result,
@@ -64,6 +66,7 @@ class _BatchOptions:
     retry_max_backoff: float
     rich: bool
     cite: bool
+    on_progress: OnProgress | None = None
 
     @classmethod
     def resolve(
@@ -80,6 +83,7 @@ class _BatchOptions:
         retry_max_backoff: float,
         rich: bool,
         cite: bool = False,
+        on_progress: OnProgress | None = None,
     ) -> _BatchOptions:
         """Validate and normalize the public batch arguments."""
         _validate_retry_options(max_retries, retry_backoff, retry_max_backoff)
@@ -96,6 +100,7 @@ class _BatchOptions:
             retry_max_backoff=retry_max_backoff,
             rich=rich,
             cite=cite,
+            on_progress=on_progress,
         )
 
 
@@ -239,6 +244,7 @@ async def _iter_extractions(
                         max_retries=options.max_retries,
                         retry_backoff=options.retry_backoff,
                         retry_max_backoff=options.retry_max_backoff,
+                        on_progress=options.on_progress,
                     )
                 if options.rich:
                     return _extraction_result(
@@ -360,6 +366,7 @@ def extract_many(
     retry_backoff: float = 1.0,
     retry_max_backoff: float = _DEFAULT_RETRY_MAX_BACKOFF,
     cite: bool = False,
+    on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list[T]: ...
 
 
@@ -379,6 +386,7 @@ def extract_many(
     retry_backoff: float = 1.0,
     retry_max_backoff: float = _DEFAULT_RETRY_MAX_BACKOFF,
     cite: bool = False,
+    on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list[T | Exception]: ...
 
 
@@ -398,6 +406,7 @@ def extract_many(
     retry_backoff: float = 1.0,
     retry_max_backoff: float = _DEFAULT_RETRY_MAX_BACKOFF,
     cite: bool = False,
+    on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list[T | Exception]: ...
 
 
@@ -416,6 +425,7 @@ def extract_many(
     retry_backoff: float = 1.0,
     retry_max_backoff: float = _DEFAULT_RETRY_MAX_BACKOFF,
     cite: bool = False,
+    on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list:
     """Run :func:`extract` over many inputs concurrently from sync code.
 
@@ -445,6 +455,8 @@ def extract_many(
         cite: When ``True``, request per-field citations. Bare batch APIs still
             return schema instances; ``extract_many_with_results*`` attach them
             to :class:`ExtractionResult.citations`.
+        on_progress: Optional per-window callback, same contract as
+            :func:`extract`. Concurrent items may interleave events.
 
     Returns:
         A list of results (or exceptions, when ``return_exceptions=True``) in
@@ -472,6 +484,7 @@ def extract_many(
             retry_max_backoff=retry_max_backoff,
             rich=False,
             cite=cite,
+            on_progress=on_progress,
         ),
         name="extract_many",
     )
@@ -493,6 +506,7 @@ async def extract_many_async(
     retry_backoff: float = 1.0,
     retry_max_backoff: float = _DEFAULT_RETRY_MAX_BACKOFF,
     cite: bool = False,
+    on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list[T]: ...
 
 
@@ -512,6 +526,7 @@ async def extract_many_async(
     retry_backoff: float = 1.0,
     retry_max_backoff: float = _DEFAULT_RETRY_MAX_BACKOFF,
     cite: bool = False,
+    on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list[T | Exception]: ...
 
 
@@ -531,6 +546,7 @@ async def extract_many_async(
     retry_backoff: float = 1.0,
     retry_max_backoff: float = _DEFAULT_RETRY_MAX_BACKOFF,
     cite: bool = False,
+    on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list[T | Exception]: ...
 
 
@@ -549,6 +565,7 @@ async def extract_many_async(
     retry_backoff: float = 1.0,
     retry_max_backoff: float = _DEFAULT_RETRY_MAX_BACKOFF,
     cite: bool = False,
+    on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list:
     """Async sibling of :func:`extract_many`."""
     return await _gather_extractions(
@@ -567,6 +584,7 @@ async def extract_many_async(
             retry_max_backoff=retry_max_backoff,
             rich=False,
             cite=cite,
+            on_progress=on_progress,
         ),
     )
 
@@ -587,6 +605,7 @@ def iter_extract_many_async(
     retry_backoff: float = 1.0,
     retry_max_backoff: float = _DEFAULT_RETRY_MAX_BACKOFF,
     cite: bool = False,
+    on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> AsyncIterator[tuple[int, T]]: ...
 
 
@@ -606,6 +625,7 @@ def iter_extract_many_async(
     retry_backoff: float = 1.0,
     retry_max_backoff: float = _DEFAULT_RETRY_MAX_BACKOFF,
     cite: bool = False,
+    on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> AsyncIterator[tuple[int, T | Exception]]: ...
 
 
@@ -625,6 +645,7 @@ def iter_extract_many_async(
     retry_backoff: float = 1.0,
     retry_max_backoff: float = _DEFAULT_RETRY_MAX_BACKOFF,
     cite: bool = False,
+    on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> AsyncIterator[tuple[int, T | Exception]]: ...
 
 
@@ -643,6 +664,7 @@ def iter_extract_many_async(
     retry_backoff: float = 1.0,
     retry_max_backoff: float = _DEFAULT_RETRY_MAX_BACKOFF,
     cite: bool = False,
+    on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> AsyncIterator[tuple[int, T | Exception]]:
     """Stream ``(input_index, result)`` pairs in completion order.
 
@@ -678,6 +700,7 @@ def iter_extract_many_async(
                 retry_max_backoff=retry_max_backoff,
                 rich=False,
                 cite=cite,
+                on_progress=on_progress,
             ),
         ),
     )
@@ -699,6 +722,7 @@ def extract_many_with_results(
     retry_backoff: float = 1.0,
     retry_max_backoff: float = _DEFAULT_RETRY_MAX_BACKOFF,
     cite: bool = False,
+    on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list[ExtractionResult[T]]: ...
 
 
@@ -718,6 +742,7 @@ def extract_many_with_results(
     retry_backoff: float = 1.0,
     retry_max_backoff: float = _DEFAULT_RETRY_MAX_BACKOFF,
     cite: bool = False,
+    on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list[ExtractionResult[T] | Exception]: ...
 
 
@@ -737,6 +762,7 @@ def extract_many_with_results(
     retry_backoff: float = 1.0,
     retry_max_backoff: float = _DEFAULT_RETRY_MAX_BACKOFF,
     cite: bool = False,
+    on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list[ExtractionResult[T] | Exception]: ...
 
 
@@ -755,6 +781,7 @@ def extract_many_with_results(
     retry_backoff: float = 1.0,
     retry_max_backoff: float = _DEFAULT_RETRY_MAX_BACKOFF,
     cite: bool = False,
+    on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list:
     """Run a batch and return per-item :class:`ExtractionResult` diagnostics.
 
@@ -785,6 +812,7 @@ def extract_many_with_results(
             retry_max_backoff=retry_max_backoff,
             rich=True,
             cite=cite,
+            on_progress=on_progress,
         ),
         name="extract_many_with_results",
     )
@@ -806,6 +834,7 @@ async def extract_many_with_results_async(
     retry_backoff: float = 1.0,
     retry_max_backoff: float = _DEFAULT_RETRY_MAX_BACKOFF,
     cite: bool = False,
+    on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list[ExtractionResult[T]]: ...
 
 
@@ -825,6 +854,7 @@ async def extract_many_with_results_async(
     retry_backoff: float = 1.0,
     retry_max_backoff: float = _DEFAULT_RETRY_MAX_BACKOFF,
     cite: bool = False,
+    on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list[ExtractionResult[T] | Exception]: ...
 
 
@@ -844,6 +874,7 @@ async def extract_many_with_results_async(
     retry_backoff: float = 1.0,
     retry_max_backoff: float = _DEFAULT_RETRY_MAX_BACKOFF,
     cite: bool = False,
+    on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list[ExtractionResult[T] | Exception]: ...
 
 
@@ -862,6 +893,7 @@ async def extract_many_with_results_async(
     retry_backoff: float = 1.0,
     retry_max_backoff: float = _DEFAULT_RETRY_MAX_BACKOFF,
     cite: bool = False,
+    on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list:
     """Async sibling of :func:`extract_many_with_results`."""
     return await _gather_extractions(
@@ -880,5 +912,6 @@ async def extract_many_with_results_async(
             retry_max_backoff=retry_max_backoff,
             rich=True,
             cite=cite,
+            on_progress=on_progress,
         ),
     )

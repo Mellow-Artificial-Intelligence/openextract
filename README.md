@@ -537,7 +537,8 @@ cat ./reports/q4.pdf | openextract - \
 - `--output` is `json` (default), `jsonl` (one record per completed input,
   written incrementally in completion order with an `index` field), or `repr`.
 - `--max-concurrency` bounds in-flight extractions for batches (default 5).
-- `--progress` reports per-item batch completion on stderr only.
+- `--progress` reports per-window extraction on stderr for a single input,
+  and per-item completion for batches.
 - `--max-retries`, `--retry-backoff`, and `--retry-max-backoff` match the Python
   API retry behavior.
 - `--max-input-bytes` overrides the 50 MiB per-input cap.
@@ -646,6 +647,7 @@ below even though it is not exported from `__all__`.
 | `ExtractionInput` | Provisional | Frozen input contract wrapping a media source with optional per-item `media_type` and safe `name`. |
 | `ExtractionResult` | Provisional | Frozen generic result contract; never retains raw media, credentials, or provider internals. Additive `citations` when `cite=True`. |
 | `Citation` | Provisional | Per-field source span (`field`, `quote`, `page`, optional normalized `bbox`). `as_dict()` is the JSON shape (`bbox` as four floats or `null`). `as_field_citation()` maps to ExtractBench `FieldCitation`. |
+| `ExtractProgress` | Provisional | Per-window progress event (`current`, `total`, `page`, `pages`) delivered to `on_progress` before each model call. |
 | `Usage` | Stable | Frozen dataclass with `input_tokens`, `output_tokens`, and `total_tokens`. New fields, if ever needed, should be additive. |
 | `ExtractionError` | Stable | Base class for all public `openextract` exceptions. Catch this for a broad fallback. |
 | `UrlFetchError` | Stable | Raised for URL fetch and URL safety failures. Message wording may improve, but the exception type is stable. |
