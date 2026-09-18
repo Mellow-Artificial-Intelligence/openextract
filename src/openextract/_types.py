@@ -95,6 +95,14 @@ class Citation:
     parser matched the quoted span; they are never invented or taken from
     the model.
 
+    ``confidence`` is a local heuristic in ``[0, 1]``, not a model-reported
+    probability. ``match`` says how it was derived: ``exact`` (quote in the
+    parse), ``numeric`` (numeric/punctuation variant), ``fuzzy`` (approximate
+    quote), ``value`` (extracted field value located after the quote missed),
+    ``page`` (page only, no span), or ``quote`` (quote present but no parse
+    to verify). Grounding stamps both; they stay ``None`` on manually built
+    citations until then.
+
     Attributes:
         field: Dotted schema path (for example ``vendor`` or ``lines[0].qty``).
         quote: Verbatim text span from the source, when present.
@@ -102,26 +110,34 @@ class Citation:
         bbox: Normalized COCO ``(x, y, width, height)`` in ``[0, 1]`` when
             the parser located the span. ``None`` when no span matches
             (page-level grounding can still score).
+        confidence: Heuristic match strength in ``[0, 1]``, or ``None``.
+        match: How ``confidence`` was derived, or ``None``.
     """
 
     field: str
     quote: str | None = None
     page: int | None = None
     bbox: tuple[float, float, float, float] | None = None
+    confidence: float | None = None
+    match: str | None = None
 
     def as_dict(self) -> dict[str, object]:
-        """JSON-stable citation: ``field``, ``quote``, ``page``, ``bbox``.
+        """JSON-stable citation including additive ``confidence`` / ``match``.
 
-        ``bbox`` is a list of four floats when a local parser located the
-        span, otherwise ``None``. Boxes are never invented. Quote-only
+        Keys are ``field``, ``quote``, ``page``, ``bbox``, ``confidence``,
+        ``match``. ``bbox`` is a list of four floats or ``None`` (never
+        invented). ``confidence`` is a heuristic ``[0, 1]`` float or
+        ``None``; ``match`` is the derivation label or ``None``. Quote-only
         citations are included; :meth:`as_field_citation` still requires a
-        page for ExtractBench scoring.
+        page for ExtractBench scoring and omits ``confidence`` / ``match``.
         """
         return {
             "field": self.field,
             "quote": self.quote,
             "page": self.page,
             "bbox": list(self.bbox) if self.bbox is not None else None,
+            "confidence": self.confidence,
+            "match": self.match,
         }
 
     def as_field_citation(self) -> dict[str, object] | None:

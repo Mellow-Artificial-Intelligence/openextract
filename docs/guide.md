@@ -157,10 +157,27 @@ backfilled from the extracted field value.
 invented and never taken from the model; if no span matches, `bbox` is
 omitted (page-level grounding can still score).
 
-`Citation.as_dict()` is the JSON-stable `{field, quote, page, bbox}` dump
-(`bbox` is a four-float list or `null`). `Citation.as_field_citation()` maps
+Each citation also carries a **heuristic** `confidence` in `[0, 1]` and a
+`match` label. These are computed locally from quote/value match strength —
+not a model-reported probability, and not calibrated as one. `match` is one
+of:
+
+| `match` | Meaning | Typical score |
+| --- | --- | --- |
+| `exact` | Quote found verbatim in the local parse | 0.95 |
+| `numeric` | Numeric/punctuation variant (`$1,234.00` vs `1234`) | 0.85 |
+| `value` | Quote missed; the extracted field value was located | 0.80 |
+| `fuzzy` | Approximate quote match in the parse | 0.65 |
+| `page` | Valid page, no span (0.40 with a parse; 0.30 unverified) | 0.40 / 0.30 |
+| `quote` | Quote present, no span to verify (0.55 if it agrees with the field value, 0.45 if there is no value, 0.25 if it disagrees; 0.50 if a parse searched and missed) | 0.55–0.25 |
+
+Manually constructed `Citation` values leave both `None` until grounding.
+
+`Citation.as_dict()` is the JSON-stable `{field, quote, page, bbox,
+confidence, match}` dump (`bbox` is a four-float list or `null`;
+`confidence` / `match` are a float / string or `null`). `Citation.as_field_citation()` maps
 onto ExtractBench `FieldCitation` (`field` → `field_path`, `quote` →
-`reference_text`). ExtractBench requires `page >= 1`; quote-only citations
+`reference_text`) and does **not** include `confidence` / `match`. ExtractBench requires `page >= 1`; quote-only citations
 stay on `ExtractionResult` but cannot be scored.
 
 ```python
@@ -419,7 +436,8 @@ openextract ./bill.pdf \
 - Batch: pass multiple paths. `--continue-on-error` emits per-item errors inline and exits `7` if any failed.
 - `--usage` is single-input only.
 - `--cite` adds a `citations` array to JSON/jsonl (`field`, `quote`, `page`,
-  optional `bbox`). Same as `cite=True` on the Python API.
+  optional `bbox` / heuristic `confidence` / `match`). Same as `cite=True`
+  on the Python API.
 - `--progress` writes window lines to stderr for one input, or per-item
   completion for a batch.
 - `--style`, `--max-retries`, `--max-input-bytes` match the Python API.

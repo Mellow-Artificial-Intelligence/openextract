@@ -299,11 +299,12 @@ title: openextract
               </div>
               <h3 class="font-mono text-base font-medium text-black/90 mb-2">Citation.as_dict</h3>
               <p class="text-sm text-black/60 leading-relaxed mb-4">
-                <code class="font-mono text-black/90 text-xs">Citation.as_dict()</code> returns a JSON-stable <code class="font-mono text-black/90 text-xs">{field, quote, page, bbox}</code> payload. Boxes stay parser-backed; they are never invented.
+                <code class="font-mono text-black/90 text-xs">Citation.as_dict()</code> returns a JSON-stable <code class="font-mono text-black/90 text-xs">{field, quote, page, bbox, confidence, match}</code> payload. Boxes stay parser-backed; they are never invented. <code class="font-mono text-black/90 text-xs">confidence</code> is a local match heuristic, not a model probability.
               </p>
               <div class="flex flex-wrap gap-1.5">
                 <span class="font-mono text-[11px] text-black/90 border border-black/10 px-2 py-1">as_dict</span>
                 <span class="font-mono text-[11px] text-black/90 border border-black/10 px-2 py-1">bbox</span>
+                <span class="font-mono text-[11px] text-black/90 border border-black/10 px-2 py-1">confidence</span>
               </div>
             </div>
 

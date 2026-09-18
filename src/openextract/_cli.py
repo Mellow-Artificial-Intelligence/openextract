@@ -218,12 +218,13 @@ def _usage_payload(usage) -> dict[str, int]:
 
 
 def _citations_payload(citations: Sequence[Citation]) -> list[dict[str, Any]]:
-    """Serialize citations via ``Citation.as_dict()``; omit null ``bbox``."""
+    """Serialize citations via ``Citation.as_dict()``; omit null optional keys."""
     payload: list[dict[str, Any]] = []
     for citation in citations:
         item = citation.as_dict()
-        if item["bbox"] is None:
-            del item["bbox"]
+        for key in ("bbox", "confidence", "match"):
+            if item[key] is None:
+                del item[key]
         payload.append(item)
     return payload
 
@@ -650,8 +651,9 @@ def _build_parser() -> argparse.ArgumentParser:
         "--cite",
         action="store_true",
         help=(
-            "Request per-field source citations (field, quote, page, optional bbox). "
-            "JSON/jsonl include a citations array. Same cite=True path as the library."
+            "Request per-field source citations (field, quote, page, optional "
+            "bbox/confidence/match). JSON/jsonl include a citations array. "
+            "Same cite=True path as the library."
         ),
     )
     parser.add_argument(

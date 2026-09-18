@@ -77,7 +77,7 @@ scans are not rejected by openextract's 50 MiB library default.
 The runner asks the model for per-field citations by default (`--cite`, disable
 with `--no-cite`). Raw `citations` in the result JSON use
 `Citation.as_dict()` (`field`, `quote`, `page`, `bbox` as four floats or
-`null`). ExtractBench scoring still uses `as_field_citation()` / `FieldCitation`:
+`null`, plus heuristic `confidence` / `match`). ExtractBench scoring still uses `as_field_citation()` / `FieldCitation`:
 
 | ExtractBench field | openextract `Citation` | When it scores |
 | --- | --- | --- |
@@ -115,8 +115,11 @@ the local parse (including numeric and punctuation variants such as
 taken from the model: if a parser span matches the quote or value (exact,
 then simple fuzzy), a normalized COCO `[x, y, width, height]` in `[0, 1]` is
 attached, preferring the value span over a long quote box; if
-nothing matches, `bbox` is omitted. Model field paths that drop array
-indexes (`qty` vs `lines[0].qty`) are rebound onto the extracted output.
+nothing matches, `bbox` is omitted. Heuristic `confidence` / `match` are
+stamped from that same quote/value search (not model-provided) and stay on
+`as_dict()` only — they are not ExtractBench `FieldCitation` keys. Model field
+paths that drop array indexes (`qty` vs `lines[0].qty`) are rebound onto the
+extracted output.
 Citations without a page cannot become
 `FieldCitation` (ExtractBench requires `page >= 1`) and are dropped at the
 mapping step.

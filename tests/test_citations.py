@@ -34,6 +34,7 @@ from openextract._citations import (
     split_cited_output,
     with_citation_instructions,
 )
+from openextract._confidence import MATCH_SCORES, score_citation_match
 
 
 class Person(BaseModel):
@@ -59,6 +60,8 @@ class TestCitationMapping:
             "quote": "3",
             "page": 1,
             "bbox": [0.1, 0.2, 0.3, 0.05],
+            "confidence": None,
+            "match": None,
         }
         assert json.loads(json.dumps(dumped)) == dumped
 
@@ -69,11 +72,39 @@ class TestCitationMapping:
             "quote": "Acme",
             "page": None,
             "bbox": None,
+            "confidence": None,
+            "match": None,
         }
         assert quote_only.as_field_citation() is None
         assert field_citations_for_extractbench([quote_only]) == []
 
-    def test_as_field_citation_requires_page(self):
+    def test_as_dict_includes_heuristic_confidence(self):
+        citation = Citation(
+            field="vendor",
+            quote="Acme",
+            page=1,
+            bbox=(0.1, 0.2, 0.3, 0.05),
+            confidence=0.95,
+            match="exact",
+        )
+        dumped = citation.as_dict()
+        assert dumped["confidence"] == 0.95
+        assert dumped["match"] == "exact"
+        mapped = citation.as_field_citation()
+        assert mapped is not None
+        assert "confidence" not in mapped
+        assert "match" not in mapped
+        assert mapped["field_path"] == "vendor"
+
+    def test_model_supplied_confidence_is_ignored(self):
+        citation = sanitize_citation(
+            {"field": "vendor", "quote": "Acme", "page": 1, "confidence": 0.99, "match": "exact"}
+        )
+        assert citation == Citation("vendor", "Acme", 1, None)
+        kept = sanitize_citation(
+            Citation("vendor", "Acme", 1, None, confidence=0.95, match="exact")
+        )
+        assert kept == Citation("vendor", "Acme", 1, confidence=0.95, match="exact")
         quote_only = Citation(field="vendor", quote="Acme")
         assert quote_only.as_field_citation() is None
         assert field_citations_for_extractbench([quote_only]) == []
@@ -164,6 +195,55 @@ class TestSanitize:
         assert sanitize_citation({"field": "n", "page": 1, "bbox": [0.1, 0.1, 0.1]}).bbox is None
         long = sanitize_citation({"field": "n", "quote": "x" * 3000, "page": 1})
         assert long is not None and len(long.quote) == 2000
+
+
+class TestCitationConfidence:
+    def test_scores_are_heuristic_not_model_provided(self):
+        assert score_citation_match(None, parsed=True) is None
+        assert score_citation_match("nope", parsed=True) is None
+        assert score_citation_match("exact", parsed=True) == MATCH_SCORES["exact"]
+        assert score_citation_match("numeric", parsed=True) == 0.85
+        assert score_citation_match("value", parsed=True) == 0.80
+        assert score_citation_match("fuzzy", parsed=True) == 0.65
+        assert score_citation_match("page", parsed=True) == 0.40
+        assert score_citation_match("quote", parsed=True) == 0.50
+        assert score_citation_match("page", parsed=False) == 0.30
+        assert score_citation_match("quote", parsed=False) == 0.45
+        assert score_citation_match("quote", parsed=False, agrees=True) == 0.55
+        assert score_citation_match("quote", parsed=False, agrees=False) == 0.25
+        assert score_citation_match("exact", parsed=False) == MATCH_SCORES["exact"]
+        assert score_citation_match("numeric", parsed=False) == MATCH_SCORES["numeric"]
+        assert score_citation_match("fuzzy", parsed=False) == MATCH_SCORES["fuzzy"]
+        assert score_citation_match("value", parsed=False) == MATCH_SCORES["value"]
+
+    def test_split_stamps_unparsed_quote_agreement(self):
+        output, citations = split_cited_output(
+            {
+                "output": {"name": "Ada", "age": 36},
+                "citations": [
+                    {"field": "name", "quote": "Ada Lovelace", "page": 1},
+                    {"field": "age", "quote": "99", "page": 1},
+                ],
+            },
+            Person,
+            cite=True,
+        )
+        assert output == Person(name="Ada", age=36)
+        assert citations[0].match == "quote"
+        assert citations[0].confidence == 0.55
+        assert citations[1].match == "quote"
+        assert citations[1].confidence == 0.25
+
+    def test_split_stamps_unparsed_page_only(self):
+        output, citations = split_cited_output(
+            {"output": {"name": "Ada", "age": 36}, "citations": [{"field": "name", "page": 1}]},
+            Person,
+            cite=True,
+        )
+        assert output.name == "Ada"
+        assert citations[0].match == "page"
+        assert citations[0].confidence == 0.30
+        assert citations[0].bbox is None
 
 
 class TestSchemaWrap:
@@ -299,6 +379,8 @@ class TestExtractCite:
         assert result.citations[0].quote is not None
         assert "secret" not in result.citations[0].quote
         assert result.citations[0].bbox is None
+        assert result.citations[0].match == "quote"
+        assert result.citations[0].confidence == 0.55
         assert result.citations[1].page is None
         mapped = field_citations_for_extractbench(result.citations)
         assert [item["field_path"] for item in mapped] == ["name"]
@@ -448,7 +530,7 @@ class TestSwarmCiteReduce:
             cite=True,
         )
         assert swarm.output.name == "Grace"
-        assert swarm.citations == (Citation("name", "Grace", 2),)
+        assert swarm.citations == (Citation("name", "Grace", 2, confidence=0.55, match="quote"),)
         assert swarm.agents[0].citations[0].page == 1
 
     def test_first_keeps_the_leading_agent_citations(self):
