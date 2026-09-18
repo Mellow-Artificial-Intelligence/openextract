@@ -86,7 +86,7 @@ jobs:
           --cov=openextract --cov-report=term-missing --cov-fail-under=100
       - name: Run tests
         if: ${{ steps.filter.outputs.test == 'true' && !matrix.coverage }}
-        run: uv run --no-sync pytest -n auto
+        run: uv run --no-sync pytest -n 2
 
   package:
     name: Build and install distributions
