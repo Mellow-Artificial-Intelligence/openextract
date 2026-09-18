@@ -36,6 +36,7 @@ ALL_MODULES = [
     "examples.advanced.swarm_extract",
     "examples.advanced.error_handling",
     "examples.audio.meeting_notes",
+    "examples.documents.line_item_extraction",
 ]
 
 
@@ -102,6 +103,14 @@ def test_extract_with_citations_example() -> None:
     assert "Acme Corp" in result.stdout
     assert "citations:" in result.stdout
     assert "ExtractBench:" in result.stdout
+
+
+def test_line_item_extraction_example() -> None:
+    result = _run("examples.documents.line_item_extraction")
+    assert result.returncode == 0, result.stderr
+    assert "Acme Corp" in result.stdout
+    assert "Widget" in result.stdout
+    assert "Gadget" in result.stdout
 
 
 def test_stream_batch_extract_example() -> None:

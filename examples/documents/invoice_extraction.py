@@ -39,6 +39,7 @@ def main() -> None:
         schema=Invoice,
         model=anthropic_model(),
         input_file=input_file,
+        style="table",
         instructions=(
             "Extract invoice metadata, parties, every line item, and totals when present. "
             "Use ISO 8601 for dates. Use null for fields not found."

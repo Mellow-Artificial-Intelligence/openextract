@@ -73,6 +73,9 @@ single: Invoice = extract(Invoice, "openai:gpt-5", Path("/tmp/x.pdf"))
 search: Invoice = extract(
     Invoice, "openai:gpt-5", Path("/tmp/notes.txt"), style=ExtractionStyle.SEARCH
 )
+table: Invoice = extract(
+    Invoice, "openai:gpt-5", Path("/tmp/statement.pdf"), style=ExtractionStyle.TABLE
+)
 output, usage = extract_with_usage(Invoice, "openai:gpt-5", Path("/tmp/x.pdf"))
 _assert_invoice: Invoice = output
 _assert_usage: Usage = usage

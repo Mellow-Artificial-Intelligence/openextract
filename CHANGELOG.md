@@ -9,6 +9,12 @@ timing when that is known.
 ## [Unreleased]
 
 ### Added
+- `style='table'` (`ExtractionStyle.TABLE`) for invoices, statements, and
+  other line-item documents. Same media path as `direct`, with row-oriented
+  instructions. PDFs reuse the local parse-then-window path so rows across
+  pages merge. No extra package. Boxes are still never invented (`cite=True`
+  for parser-backed citations). CLI `--style table`. Example:
+  `examples/documents/line_item_extraction.py`.
 - CLI directory inputs: pass a folder of files to extract as a batch via the
   existing `extract_many` path. Non-recursive by default; `--recursive` walks
   subdirectories. Hidden names and files with no guessed MIME type are

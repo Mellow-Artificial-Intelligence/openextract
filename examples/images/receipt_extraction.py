@@ -37,6 +37,7 @@ def main() -> None:
         schema=Receipt,
         model=anthropic_model(),
         input_file=input_file,
+        style="table",
         instructions=(
             "If this is a receipt, extract merchant, date, line items, and totals. "
             "If it is not a receipt, still return the schema with best-effort values "

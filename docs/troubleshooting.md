@@ -33,7 +33,8 @@ pip install 'openextract[all]'
 ```
 
 `style='search'` needs `pydantic-ai-harness`; `style='code'` needs
-`pydantic-ai-harness[codemode]`. The styles integration was written against
+`pydantic-ai-harness[codemode]`. `style='table'` does not. The styles
+integration was written against
 `pydantic-ai-harness` 0.18.x, which requires `pydantic-ai-slim` 2.x; the
 repository's locked development environment cannot resolve it, so CI does not
 exercise the live harness integration.

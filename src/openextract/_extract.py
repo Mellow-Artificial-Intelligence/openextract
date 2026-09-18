@@ -66,7 +66,13 @@ from ._media import (
 from ._parse import ParsedDocument, maybe_parsed_inputs
 from ._retry import _retry_delay
 from ._session import AsyncExtractor, Extractor
-from ._styles import ExtractionStyle, normalize_style, prepared_style_run
+from ._styles import (
+    ExtractionStyle,
+    normalize_style,
+    prepared_style_run,
+    should_parse,
+    with_style_instructions,
+)
 from ._swarm import (
     extract_swarm,
     extract_swarm_async,
@@ -104,8 +110,12 @@ def _bind_agent_inputs(
     cite: bool,
 ) -> Iterator[tuple[PydanticAgent, list, ParsedDocument | None]]:
     """Build the agent and run inputs after media has already been loaded."""
-    run_schema, run_instructions = prepare_cited_run(schema, instructions, cite)
-    parsed_inputs, parsed = maybe_parsed_inputs(file_bytes, file_type, parse=cite)
+    run_schema, run_instructions = prepare_cited_run(
+        schema, with_style_instructions(instructions, style), cite
+    )
+    parsed_inputs, parsed = maybe_parsed_inputs(
+        file_bytes, file_type, parse=should_parse(cite, style)
+    )
     with prepared_style_run(style, file_bytes, file_type) as (capabilities, style_inputs):
         with _extraction_errors():
             agent = _build_agent(

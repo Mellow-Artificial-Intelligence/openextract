@@ -31,8 +31,11 @@ from ._styles import (
     ExtractionStyle,
     materialize_text_document,
     normalize_style,
+    should_parse,
     style_capabilities,
     style_run_inputs,
+    uses_workspace,
+    with_style_instructions,
 )
 from ._types import ExtractionInputLike, ExtractProgress, OnProgress, RetryPolicy, T, Usage
 from ._windows import emit_progress, extract_windows_async, extract_windows_sync
@@ -92,8 +95,10 @@ class _ExtractorSession[T: BaseModel]:
             if model is None:
                 raise TypeError("model is required unless agent is provided.")
             session_settings = _session_model_settings(model_settings, timeout)
-            run_schema, run_instructions = prepare_cited_run(schema, instructions, cite)
-            if resolved_style is ExtractionStyle.DIRECT:
+            run_schema, run_instructions = prepare_cited_run(
+                schema, with_style_instructions(instructions, resolved_style), cite
+            )
+            if not uses_workspace(resolved_style):
                 configured_agent = _build_agent(
                     run_schema,
                     model,
@@ -181,7 +186,7 @@ class _ExtractorSession[T: BaseModel]:
         The agent (and its provider HTTP client) is built once per session and
         lives until the session closes, matching the direct-style lifecycle.
         """
-        if self._style is ExtractionStyle.DIRECT:
+        if not uses_workspace(self._style):
             return
         assert self._model is not None
         self._style_workspace = tempfile.TemporaryDirectory(prefix="openextract-")
@@ -229,8 +234,10 @@ class _ExtractorSession[T: BaseModel]:
     ) -> Iterator[tuple[PydanticAgent, list, ParsedDocument | None]]:
         """Pair the session agent with per-call run inputs for one extraction."""
         assert self._agent is not None
-        parsed_inputs, parsed = maybe_parsed_inputs(file_bytes, file_type, parse=self._cite)
-        if self._style is ExtractionStyle.DIRECT:
+        parsed_inputs, parsed = maybe_parsed_inputs(
+            file_bytes, file_type, parse=should_parse(self._cite, self._style)
+        )
+        if not uses_workspace(self._style):
             inputs = (
                 parsed_inputs
                 if parsed_inputs is not None

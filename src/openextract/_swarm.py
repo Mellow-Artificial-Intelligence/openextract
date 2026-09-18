@@ -33,7 +33,13 @@ from ._media import _get_media_async, _item_source_label
 from ._parse import maybe_parsed_inputs
 from ._reduce import SwarmReduce, normalize_reduce, reduce_citations, reduce_outputs
 from ._remote import run_remote_extraction
-from ._styles import ExtractionStyle, normalize_style, prepared_style_run
+from ._styles import (
+    ExtractionStyle,
+    normalize_style,
+    prepared_style_run,
+    should_parse,
+    with_style_instructions,
+)
 from ._types import (
     Citation,
     ExtractionInputLike,
@@ -164,8 +170,12 @@ async def _run_member(
     member_instructions = _agent_instructions(
         instructions if member.instructions is None else member.instructions, index, total
     )
-    run_schema, member_instructions = prepare_cited_run(schema, member_instructions, cite)
-    parsed_inputs, parsed = maybe_parsed_inputs(file_bytes, file_type, parse=cite)
+    run_schema, member_instructions = prepare_cited_run(
+        schema, with_style_instructions(member_instructions, member_style), cite
+    )
+    parsed_inputs, parsed = maybe_parsed_inputs(
+        file_bytes, file_type, parse=should_parse(cite, member_style)
+    )
     if isinstance(member.model, RemoteAgent):
         emit_progress(on_progress, 1, 1, parsed)
         output, usage, attempts = await run_remote_extraction(
