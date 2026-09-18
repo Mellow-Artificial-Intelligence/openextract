@@ -709,6 +709,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help=(
             "Extraction style: 'direct' (default) sends media to the model; "
             "'table' adds line-item guidance and parses PDFs by page; "
+            "'form' adds labeled-field guidance and parses PDFs by page; "
             "'search' uses file tools on text; 'code' writes Python against text."
         ),
     )

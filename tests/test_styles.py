@@ -32,6 +32,7 @@ from openextract import (
 )
 from openextract._cli import main
 from openextract._styles import (
+    FORM_INSTRUCTIONS,
     TABLE_INSTRUCTIONS,
     decode_text_document,
     document_filename,
@@ -44,6 +45,7 @@ from openextract._styles import (
     style_capabilities,
     style_run_inputs,
     uses_workspace,
+    with_form_instructions,
     with_style_instructions,
     with_table_instructions,
 )
@@ -61,6 +63,11 @@ class _Invoice(BaseModel):
     line_items: list[_LineItem]
 
 
+class _LabeledForm(BaseModel):
+    name: str | None = None
+    address: str | None = None
+
+
 def _install_harness(mocker, *, filesystem=None, code_mode=None, mount_dir=None):
     harness = SimpleNamespace(
         FileSystem=filesystem or MagicMock(return_value="fs-cap"),
@@ -76,21 +83,29 @@ class TestStyleHelpers:
         assert normalize_style("search") is ExtractionStyle.SEARCH
         assert normalize_style(ExtractionStyle.CODE) is ExtractionStyle.CODE
         assert normalize_style("table") is ExtractionStyle.TABLE
+        assert normalize_style("form") is ExtractionStyle.FORM
 
     def test_workspace_and_parse_helpers(self):
         assert uses_workspace(ExtractionStyle.SEARCH)
         assert uses_workspace(ExtractionStyle.CODE)
         assert not uses_workspace(ExtractionStyle.DIRECT)
         assert not uses_workspace(ExtractionStyle.TABLE)
+        assert not uses_workspace(ExtractionStyle.FORM)
         assert should_parse(False, ExtractionStyle.TABLE)
+        assert should_parse(False, ExtractionStyle.FORM)
         assert not should_parse(False, ExtractionStyle.DIRECT)
         assert should_parse(True, ExtractionStyle.DIRECT)
         assert with_table_instructions(None) == TABLE_INSTRUCTIONS
         assert with_table_instructions("  ").strip() == TABLE_INSTRUCTIONS
         assert with_table_instructions("rows only").startswith(TABLE_INSTRUCTIONS)
         assert with_table_instructions("rows only").endswith("rows only")
+        assert with_form_instructions(None) == FORM_INSTRUCTIONS
+        assert with_form_instructions("  ").strip() == FORM_INSTRUCTIONS
+        assert with_form_instructions("fields only").startswith(FORM_INSTRUCTIONS)
+        assert with_form_instructions("fields only").endswith("fields only")
         assert with_style_instructions("keep", ExtractionStyle.DIRECT) == "keep"
         assert TABLE_INSTRUCTIONS in with_style_instructions("keep", ExtractionStyle.TABLE)
+        assert FORM_INSTRUCTIONS in with_style_instructions("keep", ExtractionStyle.FORM)
 
     def test_normalize_rejects_unknown(self):
         with pytest.raises(ValueError, match="style must be one of"):
@@ -158,6 +173,7 @@ class TestStyleHelpers:
     def test_direct_capabilities_are_empty(self, tmp_path):
         assert style_capabilities(ExtractionStyle.DIRECT, tmp_path) == []
         assert style_capabilities(ExtractionStyle.TABLE, tmp_path) == []
+        assert style_capabilities(ExtractionStyle.FORM, tmp_path) == []
 
     def test_style_run_inputs_mention_tools_or_code(self):
         search = style_run_inputs(ExtractionStyle.SEARCH, "document.txt")
@@ -168,6 +184,8 @@ class TestStyleHelpers:
             style_run_inputs(ExtractionStyle.DIRECT, "document.txt")
         with pytest.raises(ValueError, match="does not use workspace"):
             style_run_inputs(ExtractionStyle.TABLE, "document.txt")
+        with pytest.raises(ValueError, match="does not use workspace"):
+            style_run_inputs(ExtractionStyle.FORM, "document.txt")
 
 
 class TestPreparedStyleRun:
@@ -181,6 +199,14 @@ class TestPreparedStyleRun:
 
     def test_table_yields_no_workspace_inputs(self):
         with prepared_style_run(ExtractionStyle.TABLE, b"row", "text/plain") as (
+            caps,
+            inputs,
+        ):
+            assert caps == []
+            assert inputs is None
+
+    def test_form_yields_no_workspace_inputs(self):
+        with prepared_style_run(ExtractionStyle.FORM, b"field", "text/plain") as (
             caps,
             inputs,
         ):
@@ -621,6 +647,93 @@ class TestTableStyle:
         ) == _Person(name="Ada", age=36)
 
 
+class TestFormStyle:
+    def test_form_prepends_field_guidance(self, mocker):
+        expected = _Person(name="Ada", age=36)
+        agent_cls, _ = _make_agent_mock(mocker, output=expected)
+        result = extract(
+            schema=_Person,
+            model="openai:gpt-5",
+            input_file=b"Ada is 36",
+            media_type="text/plain",
+            style="form",
+            instructions="pull the person",
+        )
+        assert result is expected
+        instructions = agent_cls.call_args.kwargs["instructions"]
+        assert instructions.startswith(FORM_INSTRUCTIONS)
+        assert instructions.endswith("pull the person")
+
+    def test_form_accepts_images_without_harness(self, mocker):
+        expected = _Person(name="Ada", age=36)
+        _make_agent_mock(mocker, output=expected)
+        result = extract(
+            schema=_Person,
+            model="openai:gpt-5",
+            input_file=b"\x89PNG",
+            media_type="image/png",
+            style=ExtractionStyle.FORM,
+        )
+        assert result is expected
+
+    def test_form_parses_pdf_windows_and_merges_fields(self, mocker):
+        pdf = synthetic_pdf(pages=["Name: Ada", "Address: 1 Main St"])
+        pages = [
+            _LabeledForm(name="Ada", address=None),
+            _LabeledForm(name=None, address="1 Main St"),
+        ]
+        agent_cls, agent = _make_agent_mock(mocker)
+        agent.run_sync.side_effect = [SimpleNamespace(output=page) for page in pages]
+
+        result = extract(
+            schema=_LabeledForm,
+            model="openai:gpt-5",
+            input_file=pdf,
+            media_type="application/pdf",
+            style="form",
+        )
+
+        assert result.name == "Ada"
+        assert result.address == "1 Main St"
+        assert agent.run_sync.call_count == 2
+        assert FORM_INSTRUCTIONS in agent_cls.call_args.kwargs["instructions"]
+        prompt = agent.run_sync.call_args_list[0].args[0]
+        assert all(not isinstance(part, BinaryContent) for part in prompt)
+        assert any("--- Page" in part for part in prompt if isinstance(part, str))
+
+    def test_form_cite_ignores_model_boxes(self):
+        pdf = synthetic_pdf("Acme Corp")
+        model = TestModel(
+            custom_output_args={
+                "output": {"name": "Ada", "age": 36},
+                "citations": [
+                    {
+                        "field": "name",
+                        "quote": "Acme Corp",
+                        "page": 1,
+                        "bbox": [0.9, 0.9, 0.1, 0.1],
+                    }
+                ],
+            }
+        )
+        result = extract_many_with_results(
+            _Person,
+            model,
+            [ExtractionInput(pdf, media_type="application/pdf")],
+            style="form",
+            cite=True,
+        )[0]
+        assert result.output == _Person(name="Ada", age=36)
+        citation = result.citations[0]
+        assert citation.quote == "Acme Corp"
+        assert citation.bbox != (0.9, 0.9, 0.1, 0.1)
+        assert citation.bbox is not None
+
+    def test_injected_agent_rejects_form_style(self):
+        with pytest.raises(ValueError, match="injected agent"):
+            Extractor(_Person, agent=MagicMock(), style="form")
+
+
 class TestCliStyle:
     def test_style_is_forwarded(self, mocker):
         fake = _Person(name="Ada", age=36)
@@ -661,3 +774,23 @@ class TestCliStyle:
             == 0
         )
         assert mock_extract.call_args.kwargs["style"] == "table"
+
+    def test_form_style_is_forwarded(self, mocker):
+        fake = _Person(name="Ada", age=36)
+        mock_extract = mocker.patch("openextract._cli.extract", return_value=fake)
+
+        assert (
+            main(
+                [
+                    "input.txt",
+                    "--schema",
+                    "tests.test_cli:_FixtureSchema",
+                    "--model",
+                    "openai:gpt-5",
+                    "--style",
+                    "form",
+                ]
+            )
+            == 0
+        )
+        assert mock_extract.call_args.kwargs["style"] == "form"

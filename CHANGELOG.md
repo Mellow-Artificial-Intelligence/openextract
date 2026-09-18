@@ -9,6 +9,14 @@ timing when that is known.
 ## [Unreleased]
 
 ### Added
+- `style='form'` (`ExtractionStyle.FORM`) for forms, receipts, and other
+  labeled key-value documents. Same media path as `direct`, with
+  labeled-field instructions (keep labels/values as written; null for
+  missing fields; preserve nested sections; do not summarize). PDFs reuse
+  the local parse-then-window path so fields across pages merge, matching
+  `table`. No extra package. Boxes are still never invented (`cite=True`
+  for parser-backed citations). CLI `--style form`. Example:
+  `examples/advanced/extraction_styles.py`.
 - `style='table'` (`ExtractionStyle.TABLE`) for invoices, statements, and
   other line-item documents. Same media path as `direct`, with row-oriented
   instructions. PDFs reuse the local parse-then-window path so rows across

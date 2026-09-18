@@ -80,6 +80,13 @@ TABLE_INSTRUCTIONS = (
     "Empty tables are an empty list, not omitted."
 )
 
+FORM_INSTRUCTIONS = (
+    "The document is a form, receipt, or other labeled key-value document. "
+    "Extract every labeled field. Keep labels and values as written. "
+    "Do not invent missing fields; use null when a field is not present. "
+    "Preserve nested sections. Do not summarize."
+)
+
 
 class ExtractionStyle(StrEnum):
     """How an extraction run inspects the input.
@@ -89,6 +96,9 @@ class ExtractionStyle(StrEnum):
     ``table``
         Same media path as ``direct``, with row-oriented guidance. PDFs reuse
         the local parse-then-window path so line items across pages merge.
+    ``form``
+        Same media path as ``direct``, with labeled-field guidance. PDFs reuse
+        the local parse-then-window path so fields across pages merge.
     ``search``
         For text, give the model sandboxed file tools (read, regex search,
         glob) against a workspace copy of the document.
@@ -99,6 +109,7 @@ class ExtractionStyle(StrEnum):
 
     DIRECT = "direct"
     TABLE = "table"
+    FORM = "form"
     SEARCH = "search"
     CODE = "code"
 
@@ -117,7 +128,7 @@ def uses_workspace(style: ExtractionStyle) -> bool:
     match style:
         case ExtractionStyle.SEARCH | ExtractionStyle.CODE:
             return True
-        case ExtractionStyle.DIRECT | ExtractionStyle.TABLE:
+        case ExtractionStyle.DIRECT | ExtractionStyle.TABLE | ExtractionStyle.FORM:
             return False
         case _:  # pragma: no cover - exhaustive ExtractionStyle
             assert_never(style)
@@ -126,24 +137,40 @@ def uses_workspace(style: ExtractionStyle) -> bool:
 def should_parse(cite: bool, style: ExtractionStyle) -> bool:
     """Return whether this run should locally parse a PDF before extract.
 
-    ``cite=True`` always parses so citations can be grounded. ``table`` also
-    parses so line items are extracted per page window and merged.
+    ``cite=True`` always parses so citations can be grounded. ``table`` and
+    ``form`` also parse so rows and labeled fields are extracted per page
+    window and merged.
     """
-    return cite or style is ExtractionStyle.TABLE
+    return cite or style is ExtractionStyle.TABLE or style is ExtractionStyle.FORM
+
+
+def _with_prefixed_instructions(prefix: str, instructions: str | None) -> str:
+    if instructions and instructions.strip():
+        return f"{prefix}\n\n{instructions.strip()}"
+    return prefix
 
 
 def with_table_instructions(instructions: str | None) -> str:
     """Prepend table/line-item guidance without dropping caller instructions."""
-    if instructions and instructions.strip():
-        return f"{TABLE_INSTRUCTIONS}\n\n{instructions.strip()}"
-    return TABLE_INSTRUCTIONS
+    return _with_prefixed_instructions(TABLE_INSTRUCTIONS, instructions)
+
+
+def with_form_instructions(instructions: str | None) -> str:
+    """Prepend form/key-value guidance without dropping caller instructions."""
+    return _with_prefixed_instructions(FORM_INSTRUCTIONS, instructions)
 
 
 def with_style_instructions(instructions: str | None, style: ExtractionStyle) -> str | None:
-    """Return caller instructions, with table guidance when ``style`` is table."""
-    if style is ExtractionStyle.TABLE:
-        return with_table_instructions(instructions)
-    return instructions
+    """Return caller instructions, with table or form guidance when applicable."""
+    match style:
+        case ExtractionStyle.TABLE:
+            return with_table_instructions(instructions)
+        case ExtractionStyle.FORM:
+            return with_form_instructions(instructions)
+        case ExtractionStyle.DIRECT | ExtractionStyle.SEARCH | ExtractionStyle.CODE:
+            return instructions
+        case _:  # pragma: no cover - exhaustive ExtractionStyle
+            assert_never(style)
 
 
 def _bare_media_type(media_type: str) -> str:
@@ -252,7 +279,7 @@ def style_capabilities(style: ExtractionStyle, workspace: Path) -> list[object]:
             return _search_capabilities(workspace)
         case ExtractionStyle.CODE:
             return _code_capabilities(workspace)
-        case ExtractionStyle.DIRECT | ExtractionStyle.TABLE:
+        case ExtractionStyle.DIRECT | ExtractionStyle.TABLE | ExtractionStyle.FORM:
             return []
         case _:  # pragma: no cover - exhaustive ExtractionStyle
             assert_never(style)
@@ -274,7 +301,7 @@ def style_run_inputs(style: ExtractionStyle, filename: str) -> list[str]:
                 f"{_CODE_VIRTUAL_ROOT}/{filename}. Read the file with pathlib or "
                 "open(), then parse, filter, and compute the structured result."
             ]
-        case ExtractionStyle.DIRECT | ExtractionStyle.TABLE:
+        case ExtractionStyle.DIRECT | ExtractionStyle.TABLE | ExtractionStyle.FORM:
             raise ValueError(f"style {style.value!r} does not use workspace run inputs.")
         case _:  # pragma: no cover - exhaustive ExtractionStyle
             assert_never(style)
@@ -288,10 +315,10 @@ def prepared_style_run(
 ) -> Iterator[tuple[list[object], list[str] | None]]:
     """Yield ``(extra_capabilities, run_inputs)`` for one extraction.
 
-    ``direct`` and ``table`` yield no extra capabilities and ``None`` inputs so
-    the caller can pass media as ``BinaryContent`` (or parsed page text).
-    ``search`` and ``code`` materialize a UTF-8 workspace that lives until the
-    context exits, including retries.
+    ``direct``, ``table``, and ``form`` yield no extra capabilities and ``None``
+    inputs so the caller can pass media as ``BinaryContent`` (or parsed page
+    text). ``search`` and ``code`` materialize a UTF-8 workspace that lives
+    until the context exits, including retries.
     """
     if not uses_workspace(style):
         yield [], None

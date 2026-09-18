@@ -473,9 +473,11 @@ def extract(
             and file-like inputs, ``media_type`` must be provided.
         instructions: Optional natural-language guidance for the LLM.
         style: Extraction strategy. ``direct`` (default) sends the media to the
-            model in one shot. ``search`` gives the model file tools (grep/read)
-            against a text document. ``code`` lets the model write Python against
-            a text document via the Pydantic AI harness.
+            model in one shot. ``table`` adds row-oriented guidance; ``form``
+            adds labeled-field guidance. Both reuse PDF parse-then-window.
+            ``search`` gives the model file tools (grep/read) against a text
+            document. ``code`` lets the model write Python against a text
+            document via the Pydantic AI harness.
         media_type: Optional MIME type. Required for ``bytes`` and file-like
             inputs; overrides the guess for ``str`` inputs when provided.
         max_input_bytes: Maximum bytes to load for this input. ``None`` uses

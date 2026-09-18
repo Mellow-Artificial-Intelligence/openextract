@@ -1,8 +1,9 @@
 """Choose how the model inspects a text document.
 
 ``direct`` sends the bytes to the LLM. ``table`` adds line-item guidance
-and parses PDFs by page. ``search`` and ``code`` use the Pydantic AI
-harness (file tools or sandboxed Python) and need
+and parses PDFs by page. ``form`` adds labeled-field guidance for forms
+and receipts (same PDF parse-then-window path). ``search`` and ``code``
+use the Pydantic AI harness (file tools or sandboxed Python) and need
 ``pydantic-ai-harness`` / ``pydantic-ai-harness[codemode]``.
 """
 
@@ -32,7 +33,7 @@ def main() -> None:
     with Extractor(Note, agent=test_agent(), style=ExtractionStyle.DIRECT) as extractor:
         result = extractor.extract(document, media_type="text/plain")
     print(result.model_dump_json(indent=2))
-    print("Other styles: style='table' (line items), 'search', or 'code'.")
+    print("Other styles: style='table' (line items), 'form' (receipts/forms), 'search', or 'code'.")
 
 
 if __name__ == "__main__":
