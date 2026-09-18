@@ -6,9 +6,11 @@ import argparse
 import asyncio
 import importlib
 import json
+import mimetypes
 import os
 import sys
 from collections.abc import AsyncGenerator, Sequence
+from pathlib import Path
 from typing import Any, BinaryIO, cast
 
 from dotenv import load_dotenv
@@ -144,15 +146,87 @@ def _resolve_input_files(
     *,
     media_type: str | None,
 ) -> list[str | bytes | BinaryIO]:
-    """Resolve CLI paths, URLs, or stdin ``-`` to values accepted by ``extract``."""
-    if "-" in raw_inputs:
-        if len(raw_inputs) > 1:
-            raise ValueError("stdin (-) cannot be combined with other input files")
-        if not media_type:
-            raise ValueError("--media-type is required when reading from stdin (-)")
-        return [sys.stdin.buffer]
+    """Resolve stdin ``-`` to the process byte buffer."""
+    if len(raw_inputs) > 1:
+        raise ValueError("stdin (-) cannot be combined with other input files")
+    if not media_type:
+        raise ValueError("--media-type is required when reading from stdin (-)")
+    return [sys.stdin.buffer]
 
-    return cast(list[str | bytes | BinaryIO], raw_inputs)
+
+def _is_cli_directory(raw: str) -> bool:
+    """Return whether ``raw`` names a local directory (not stdin or a URL)."""
+    return raw != "-" and not raw.startswith(("http://", "https://")) and Path(raw).is_dir()
+
+
+def _is_supported_directory_file(path: Path, *, media_type: str | None) -> bool:
+    """Return whether a directory entry should be extracted.
+
+    Hidden names are skipped. A guessed MIME type is required unless the
+    caller supplied ``--media-type`` as a fallback for extensionless files.
+    """
+    if not path.is_file() or path.name.startswith("."):
+        return False
+    if media_type:
+        return True
+    guessed, _ = mimetypes.guess_type(path.name)
+    return guessed is not None
+
+
+def _directory_candidates(root: Path, *, recursive: bool) -> list[Path]:
+    """List regular-file candidates under ``root`` (hidden directories omitted)."""
+    if recursive:
+        files: list[Path] = []
+        for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+            dirnames[:] = [name for name in dirnames if not name.startswith(".")]
+            files.extend(Path(dirpath, name) for name in filenames)
+        return files
+    return [path for path in root.iterdir() if path.is_file()]
+
+
+def _join_input_label(raw: str, child: Path, root: Path) -> str:
+    """Preserve the user-supplied directory prefix in display labels."""
+    return str(Path(raw) / child.relative_to(root))
+
+
+def _expand_directory(
+    raw: str,
+    *,
+    recursive: bool,
+    media_type: str | None,
+) -> list[str]:
+    """Expand one directory into supported file paths, in sorted order."""
+    root = Path(raw)
+    try:
+        candidates = _directory_candidates(root, recursive=recursive)
+    except OSError as exc:
+        raise ValueError(f"cannot read directory '{raw}': {exc}") from exc
+    paths = [
+        _join_input_label(raw, path, root)
+        for path in sorted(candidates, key=lambda item: item.as_posix())
+        if _is_supported_directory_file(path, media_type=media_type)
+    ]
+    if not paths:
+        raise ValueError(f"directory '{raw}' contains no supported files")
+    return paths
+
+
+def _expand_positional_inputs(
+    raw_inputs: list[str],
+    *,
+    recursive: bool,
+    media_type: str | None,
+) -> tuple[list[str], list[str], bool]:
+    """Expand directories among positional inputs; files and URLs pass through."""
+    items: list[str] = []
+    from_directory = False
+    for raw in raw_inputs:
+        if _is_cli_directory(raw):
+            from_directory = True
+            items.extend(_expand_directory(raw, recursive=recursive, media_type=media_type))
+        else:
+            items.append(raw)
+    return items, list(items), from_directory
 
 
 def _parse_manifest_entry(text: str, line_number: int) -> ExtractionInput:
@@ -196,17 +270,32 @@ def _load_manifest(path: str) -> list[ExtractionInput]:
 
 def _resolve_cli_inputs(
     args: argparse.Namespace,
-) -> tuple[list[ExtractionInputLike], list[str]]:
-    """Resolve positional inputs or a manifest into items plus display labels."""
+) -> tuple[list[ExtractionInputLike], list[str], bool]:
+    """Resolve positional inputs or a manifest into items plus display labels.
+
+    The boolean is ``True`` when at least one positional argument was a
+    directory. Directory runs always use batch output, matching manifests.
+    """
     if args.manifest is not None:
         if args.input_files:
             raise ValueError("--manifest cannot be combined with positional input files")
+        if args.recursive:
+            raise ValueError("--recursive cannot be combined with --manifest")
         entries = _load_manifest(args.manifest)
-        return list(entries), [entry.name or cast(str, entry.source) for entry in entries]
+        return list(entries), [entry.name or cast(str, entry.source) for entry in entries], False
     if not args.input_files:
-        raise ValueError("provide one or more input files, or --manifest")
-    resolved = _resolve_input_files(args.input_files, media_type=args.media_type)
-    return cast(list[ExtractionInputLike], resolved), list(args.input_files)
+        raise ValueError("provide one or more input files, a directory, or --manifest")
+    if args.recursive and "-" in args.input_files:
+        raise ValueError("--recursive cannot be combined with stdin (-)")
+    if "-" in args.input_files:
+        resolved = _resolve_input_files(args.input_files, media_type=args.media_type)
+        return cast(list[ExtractionInputLike], resolved), list(args.input_files), False
+    items, labels, from_directory = _expand_positional_inputs(
+        args.input_files,
+        recursive=args.recursive,
+        media_type=args.media_type,
+    )
+    return cast(list[ExtractionInputLike], items), labels, from_directory
 
 
 def _usage_payload(usage) -> dict[str, int]:
@@ -559,7 +648,9 @@ def _build_parser() -> argparse.ArgumentParser:
         nargs="*",
         metavar="input_file",
         help=(
-            "One or more paths/URLs, or '-' to read bytes from stdin. Omit when using --manifest."
+            "One or more paths/URLs, directories of files, or '-' to read bytes "
+            "from stdin. Directories expand to supported files (non-recursive "
+            "unless --recursive). Omit when using --manifest."
         ),
     )
     parser.add_argument(
@@ -637,6 +728,16 @@ def _build_parser() -> argparse.ArgumentParser:
             'JSONL file of inputs, one {"source": ..., "media_type"?: ..., '
             '"name"?: ...} object per line. Mutually exclusive with positional '
             "input files; always uses batch semantics."
+        ),
+    )
+    parser.add_argument(
+        "--recursive",
+        action="store_true",
+        help=(
+            "Recurse into directories given as positional inputs. Default is "
+            "only the immediate files in each directory. Hidden names and "
+            "files with no guessed MIME type are skipped unless --media-type "
+            "is set. Mutually exclusive with --manifest and stdin."
         ),
     )
     parser.add_argument(
@@ -741,7 +842,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
 
     try:
-        items, labels = _resolve_cli_inputs(args)
+        items, labels, from_directory = _resolve_cli_inputs(args)
         _validate_swarm_args(args, agents, items)
     except OSError as exc:
         print(f"error: cannot read manifest: {exc}", file=sys.stderr)
@@ -757,7 +858,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         _validate_max_concurrency(args.max_concurrency)
         if swarm_agents is not None:
             return _run_swarm(schema_cls, swarm_agents, items[0], args)
-        if args.manifest is not None or len(items) > 1 or args.output == "jsonl":
+        if args.manifest is not None or from_directory or len(items) > 1 or args.output == "jsonl":
             return _run_batch(schema_cls, items, labels, args, cast(str, single_model))
         return _run_single(schema_cls, items[0], args, single_model)
     except BrokenPipeError:

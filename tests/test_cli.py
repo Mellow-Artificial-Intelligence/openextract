@@ -24,6 +24,7 @@ from openextract import (
 from openextract._cli import (
     _citations_payload,
     _discard_stdout,
+    _is_cli_directory,
     _resolve_schema,
     _result_citations,
     main,
@@ -748,6 +749,189 @@ class TestManifest:
         error = capsys.readouterr().err
         assert "manifest line 1" in error
         assert message in error
+
+
+# ---------------------------------------------------------------------------
+# directory input
+# ---------------------------------------------------------------------------
+
+
+class TestDirectory:
+    def _write(self, path, text="body"):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+        return path
+
+    def test_directory_expands_supported_files_as_batch(self, mocker, capsys, tmp_path):
+        root = tmp_path / "invoices"
+        self._write(root / "b.pdf")
+        self._write(root / "a.txt")
+        self._write(root / "nested" / "c.pdf")
+        self._write(root / ".hidden.pdf")
+        self._write(root / "notes.unknown")
+        ada = _FixtureSchema(name="Ada", age=36)
+        mock_stream = _patch_iter_extractions(mocker, events=[(0, ada), (1, ada)])
+
+        exit_code = main([str(root), *_BASE_ARGS])
+
+        assert exit_code == 0
+        items = mock_stream.call_args.args[2]
+        assert items == [str(root / "a.txt"), str(root / "b.pdf")]
+        payload = json.loads(capsys.readouterr().out)
+        assert payload == [{"name": "Ada", "age": 36}, {"name": "Ada", "age": 36}]
+
+    def test_single_file_directory_still_uses_batch_output(self, mocker, capsys, tmp_path):
+        root = tmp_path / "one"
+        self._write(root / "only.pdf")
+        ada = _FixtureSchema(name="Ada", age=36)
+        mock_extract = _patch_extract(mocker)
+        _patch_iter_extractions(mocker, events=[(0, ada)])
+
+        exit_code = main([str(root), *_BASE_ARGS])
+
+        assert exit_code == 0
+        mock_extract.assert_not_called()
+        assert json.loads(capsys.readouterr().out) == [{"name": "Ada", "age": 36}]
+
+    def test_recursive_includes_nested_files(self, mocker, capsys, tmp_path):
+        root = tmp_path / "invoices"
+        self._write(root / "a.pdf")
+        self._write(root / "nested" / "b.pdf")
+        self._write(root / ".hidden_dir" / "secret.pdf")
+        ada = _FixtureSchema(name="Ada", age=36)
+        mock_stream = _patch_iter_extractions(mocker, events=[(0, ada), (1, ada)])
+
+        exit_code = main([str(root), *_BASE_ARGS, "--recursive"])
+
+        assert exit_code == 0
+        assert mock_stream.call_args.args[2] == [
+            str(root / "a.pdf"),
+            str(root / "nested" / "b.pdf"),
+        ]
+        capsys.readouterr()
+
+    def test_recursive_skips_dangling_symlinks(self, mocker, capsys, tmp_path):
+        root = tmp_path / "invoices"
+        self._write(root / "a.pdf")
+        (root / "broken.pdf").symlink_to(root / "missing.pdf")
+        ada = _FixtureSchema(name="Ada", age=36)
+        mock_stream = _patch_iter_extractions(mocker, events=[(0, ada)])
+
+        assert main([str(root), *_BASE_ARGS, "--recursive"]) == 0
+
+        assert mock_stream.call_args.args[2] == [str(root / "a.pdf")]
+        capsys.readouterr()
+
+    def test_media_type_includes_extensionless_files(self, mocker, capsys, tmp_path):
+        root = tmp_path / "raw"
+        self._write(root / "payload")
+        ada = _FixtureSchema(name="Ada", age=36)
+        mock_stream = _patch_iter_extractions(mocker, events=[(0, ada)])
+
+        exit_code = main([str(root), *_BASE_ARGS, "--media-type", "text/plain"])
+
+        assert exit_code == 0
+        assert mock_stream.call_args.args[2] == [str(root / "payload")]
+        capsys.readouterr()
+
+    def test_mixes_directory_and_file(self, mocker, capsys, tmp_path):
+        root = tmp_path / "invoices"
+        self._write(root / "a.pdf")
+        extra = self._write(tmp_path / "extra.pdf")
+        ada = _FixtureSchema(name="Ada", age=36)
+        mock_stream = _patch_iter_extractions(mocker, events=[(0, ada), (1, ada)])
+
+        assert main([str(root), str(extra), *_BASE_ARGS]) == 0
+
+        assert mock_stream.call_args.args[2] == [str(root / "a.pdf"), str(extra)]
+        capsys.readouterr()
+
+    def test_empty_or_unsupported_directory_returns_1(self, capsys, tmp_path):
+        root = tmp_path / "empty"
+        self._write(root / ".hidden.pdf")
+        self._write(root / "notes.unknown")
+
+        exit_code = main([str(root), *_BASE_ARGS])
+
+        assert exit_code == 1
+        assert "contains no supported files" in capsys.readouterr().err
+
+    def test_unreadable_directory_returns_1(self, mocker, capsys, tmp_path):
+        root = tmp_path / "locked"
+        root.mkdir()
+        mocker.patch(
+            "openextract._cli._directory_candidates",
+            side_effect=PermissionError("denied"),
+        )
+
+        exit_code = main([str(root), *_BASE_ARGS])
+
+        assert exit_code == 1
+        error = capsys.readouterr().err
+        assert "cannot read directory" in error
+        assert str(root) in error
+
+    def test_recursive_with_manifest_returns_1(self, capsys, tmp_path):
+        manifest = tmp_path / "manifest.jsonl"
+        manifest.write_text('{"source": "a.pdf"}\n', encoding="utf-8")
+
+        exit_code = main([*_BASE_ARGS, "--manifest", str(manifest), "--recursive"])
+
+        assert exit_code == 1
+        assert "cannot be combined with --manifest" in capsys.readouterr().err
+
+    def test_recursive_with_stdin_returns_1(self, capsys):
+        exit_code = main(["-", *_BASE_ARGS, "--media-type", "text/plain", "--recursive"])
+
+        assert exit_code == 1
+        assert "cannot be combined with stdin" in capsys.readouterr().err
+
+    def test_jsonl_cite_uses_expanded_paths(self, mocker, capsys, tmp_path):
+        root = tmp_path / "invoices"
+        self._write(root / "a.pdf")
+        ada = _rich_result(_FixtureSchema(name="Ada", age=36), citations=(_CITE_NAME,))
+        _patch_iter_extractions(mocker, events=[(0, ada)])
+
+        assert main([str(root), *_BASE_ARGS, "--output", "jsonl", "--cite"]) == 0
+
+        lines = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+        assert lines == [
+            {
+                "index": 0,
+                "input": str(root / "a.pdf"),
+                "result": {"name": "Ada", "age": 36},
+                "citations": [{"field": "name", "quote": "Ada", "page": 1}],
+            }
+        ]
+
+    def test_agents_still_require_a_single_input(self, capsys, tmp_path):
+        root = tmp_path / "invoices"
+        self._write(root / "a.pdf")
+        self._write(root / "b.pdf")
+        argv = [str(root), *_BASE_ARGS, "--model", "test:a", "--swarm", "2"]
+        assert main(argv) == 1
+        assert "single input" in capsys.readouterr().err
+
+    def test_recursive_without_a_directory_is_a_noop(self, mocker, capsys, tmp_path):
+        path = self._write(tmp_path / "a.pdf")
+        _patch_extract(mocker, return_value=_FixtureSchema(name="Ada", age=36))
+
+        assert main([str(path), *_BASE_ARGS, "--recursive"]) == 0
+
+        assert json.loads(capsys.readouterr().out) == {"name": "Ada", "age": 36}
+
+    def test_urls_and_stdin_are_not_directories(self):
+        assert _is_cli_directory("-") is False
+        assert _is_cli_directory("https://example.com/a.pdf") is False
+        assert _is_cli_directory("http://example.com/a.pdf") is False
+
+    def test_url_input_is_not_expanded(self, mocker, capsys):
+        mock_extract = _patch_extract(mocker, return_value=_FixtureSchema(name="Ada", age=36))
+
+        assert main(["https://example.com/a.pdf", *_BASE_ARGS]) == 0
+
+        assert mock_extract.call_args.kwargs["input_file"] == "https://example.com/a.pdf"
+        capsys.readouterr()
 
 
 # ---------------------------------------------------------------------------
