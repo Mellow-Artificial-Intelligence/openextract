@@ -341,7 +341,7 @@ def _schema_validation_error(exc: ValidationError) -> SchemaValidationError:
     prefix = "Model output did not match schema"
     errors = tuple(details)
     if not parts:
-        return SchemaValidationError(f"{prefix}: {exc}", errors=errors)
+        return SchemaValidationError(f"{prefix}: {str(exc).rstrip()}", errors=errors)
     if len(parts) == 1:
         return SchemaValidationError(f"{prefix}: {parts[0]}", errors=errors)
     joined = "; ".join(parts)
