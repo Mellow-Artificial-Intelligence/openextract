@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import time
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import BinaryIO, TypeVar
 
@@ -58,6 +58,30 @@ class Usage:
     input_tokens: int
     output_tokens: int
     total_tokens: int
+
+
+@dataclass(frozen=True)
+class ExtractProgress:
+    """One parse-window tick during a single extraction.
+
+    Emitted immediately before that window is sent to the model, including the
+    one-window fast path. ``current`` is 1-indexed. Unparsed inputs (no local
+    PDF parse) emit a single ``current=1, total=1`` event with empty pages.
+
+    Attributes:
+        current: 1-indexed window about to run.
+        total: Number of windows for this input.
+        page: First 1-indexed page in this window, or ``None`` when unparsed.
+        pages: All 1-indexed pages in this window (empty when unparsed).
+    """
+
+    current: int
+    total: int
+    page: int | None = None
+    pages: tuple[int, ...] = ()
+
+
+OnProgress = Callable[[ExtractProgress], None]
 
 
 @dataclass(frozen=True)

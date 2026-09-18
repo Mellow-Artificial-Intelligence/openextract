@@ -8,10 +8,30 @@ from ._citations import split_cited_output
 from ._parse import ParsedDocument, ground_citations, parsed_window_pairs
 from ._reduce import reduce_outputs
 from ._retry import _run_with_retries_async, _run_with_retries_sync
-from ._types import Citation, T, Usage, _sum_usage
+from ._types import Citation, ExtractProgress, OnProgress, T, Usage, _sum_usage
 
 WindowRun = Callable[[list], tuple[object, Usage]]
 AsyncWindowRun = Callable[[list], Awaitable[tuple[object, Usage]]]
+
+
+def emit_progress(
+    on_progress: OnProgress | None,
+    current: int,
+    total: int,
+    window_parse: ParsedDocument | None,
+) -> None:
+    """Notify ``on_progress`` for one window. No-op when the callback is omitted."""
+    if on_progress is None:
+        return
+    pages = () if window_parse is None else tuple(page.page for page in window_parse.pages)
+    on_progress(
+        ExtractProgress(
+            current=current,
+            total=total,
+            page=pages[0] if pages else None,
+            pages=pages,
+        )
+    )
 
 
 def extract_windows_sync(
@@ -24,13 +44,16 @@ def extract_windows_sync(
     max_retries: int,
     retry_backoff: float,
     retry_max_backoff: float,
+    on_progress: OnProgress | None = None,
 ) -> tuple[T, Usage, tuple[Citation, ...]]:
     """Extract each parse window (or the one-window fast path) and merge."""
     windows = parsed_window_pairs(parsed, inputs)
     outputs: list[T] = []
     usages: list[Usage] = []
     citations: list[Citation] = []
-    for window, window_parse in windows:
+    total = len(windows)
+    for index, (window, window_parse) in enumerate(windows, start=1):
+        emit_progress(on_progress, index, total, window_parse)
 
         def _once(
             window: list = window,
@@ -64,13 +87,16 @@ async def extract_windows_async(
     max_retries: int,
     retry_backoff: float,
     retry_max_backoff: float,
+    on_progress: OnProgress | None = None,
 ) -> tuple[T, Usage, tuple[Citation, ...]]:
     """Async sibling of :func:`extract_windows_sync`."""
     windows = parsed_window_pairs(parsed, inputs)
     outputs: list[T] = []
     usages: list[Usage] = []
     citations: list[Citation] = []
-    for window, window_parse in windows:
+    total = len(windows)
+    for index, (window, window_parse) in enumerate(windows, start=1):
+        emit_progress(on_progress, index, total, window_parse)
 
         async def _once(
             window: list = window,

@@ -110,14 +110,23 @@ openextract ./invoices/*.pdf \
   --output jsonl --progress 2>progress.log
 ```
 
-`--progress` writes one line per completed batch item to **stderr only**:
+`--progress` writes progress to **stderr only**.
+
+Single input: one line per parse window, immediately before that window runs
+(page when the input was parsed locally):
+
+```
+progress: window 2/20 (page 2)
+```
+
+Batch: one line per completed item (unchanged):
 
 ```
 progress: 3/10 completed (1 failed): ./invoices/c.pdf
 ```
 
 stdout stays machine-readable. Progress lines are human-oriented; do not parse
-them. The flag is a no-op for single-input runs.
+them.
 
 ## Manifest input
 

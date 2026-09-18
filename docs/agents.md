@@ -16,7 +16,7 @@ Swarm surface (provisional): `extract_swarm*`, `SwarmMember`, `SwarmResult`, `Sw
 
 Agent surface (provisional): `define_agent`, `define_remote_agent`, `DefinedAgent`, `RemoteAgent`, `flatten_agent`, `resolve_output_schema`, `load_agent`, `load_agents`, `load_agent_directory`, `RemoteAgentError`, and the `openextract.auth` helpers.
 
-Stable enough to generate against: `extract`, `extract_async`, `extract_with_usage`, `extract_with_usage_async`, `Usage`, and the exception types. Provisional (still public, may evolve before 1.0): sessions, batch helpers, `ExtractionInput` / `ExtractionResult`, `ExtractionStyle`, CLI flags.
+Stable enough to generate against: `extract`, `extract_async`, `extract_with_usage`, `extract_with_usage_async`, `Usage`, and the exception types. Provisional (still public, may evolve before 1.0): sessions, batch helpers, `ExtractionInput` / `ExtractionResult` / `ExtractProgress`, `ExtractionStyle`, CLI flags.
 
 Canonical signatures: [API reference](api-reference.md). CI fails if those headings drift from the installed callables.
 
@@ -48,6 +48,7 @@ Always define a real `pydantic.BaseModel` subclass. Do not ask the library for f
 | Many inputs, stream as done | `iter_extract_many_async` — yields `(input_index, result)` in **completion order** |
 | Per-item usage / timing | `extract_many_with_results*` + `total_usage` |
 | Per-field source spans (ExtractBench grounding) | `cite=True` on `extract_many_with_results*` or sessions (`Extractor` / `AsyncExtractor`). Read `ExtractionResult.citations`; session `extract()` still returns the schema instance. Swarm: `extract_swarm_with_results*` → `SwarmResult.citations` (per-agent cites stay on each agent). |
+| Long-document / window progress | `on_progress` on `extract*` or `Extractor` / `AsyncExtractor`. Callback receives `ExtractProgress` (`current`, `total`, `page`, `pages`) before each window. CLI: `--progress`. Default off. |
 | Several agents on **one** input | `extract_swarm` / `extract_swarm_async` |
 | A reusable specialist (model + style + instructions + schema) | `define_agent`, then `extract(agent, input_file)` or `agents=` |
 | An extraction service over HTTP | `define_remote_agent` + `openextract.auth` |

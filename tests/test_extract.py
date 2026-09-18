@@ -134,6 +134,7 @@ def test_star_import_exposes_only_existing_names():
         "RetryPolicy",
         "ExtractionInput",
         "ExtractionResult",
+        "ExtractProgress",
         "Citation",
         "ExtractionStyle",
         "DefinedAgent",

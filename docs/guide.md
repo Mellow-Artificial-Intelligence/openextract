@@ -184,6 +184,39 @@ raw media or credentials. CLI `--cite` uses the same path and adds a
 [`examples/advanced/extract_with_citations.py`](https://github.com/Mellow-Artificial-Intelligence/openextract/blob/main/examples/advanced/extract_with_citations.py)
 for a runnable `cite=True` walkthrough.
 
+## Progress
+
+Long PDFs are split into page windows when `cite=True`. Pass `on_progress` to
+see each window start instead of a silent hang. The callback receives
+`ExtractProgress`: 1-indexed `current` / `total`, plus `page` / `pages` when
+the input was parsed. Default is off. A raising callback aborts the run.
+
+```python
+from openextract import ExtractProgress, extract
+
+
+def report(progress: ExtractProgress) -> None:
+    page = f" page {progress.page}" if progress.page else ""
+    print(f"window {progress.current}/{progress.total}{page}")
+
+
+extract(
+    schema=Invoice,
+    model="openai:gpt-5",
+    input_file="long.pdf",
+    cite=True,
+    on_progress=report,
+)
+```
+
+`Extractor` / `AsyncExtractor` accept the same callback on the constructor
+(session default) or on `extract()`. Batch and swarm APIs take it too;
+concurrent items or agents may interleave events.
+
+CLI `--progress` writes window lines to stderr for a single input
+(`progress: window 2/20 (page 2)`) and keeps per-item completion lines for
+batches.
+
 ## Batch
 
 | API | Returns | Order | Use when |
@@ -387,6 +420,8 @@ openextract ./bill.pdf \
 - `--usage` is single-input only.
 - `--cite` adds a `citations` array to JSON/jsonl (`field`, `quote`, `page`,
   optional `bbox`). Same as `cite=True` on the Python API.
+- `--progress` writes window lines to stderr for one input, or per-item
+  completion for a batch.
 - `--style`, `--max-retries`, `--max-input-bytes` match the Python API.
 
 Full stdout/stderr/exit-code contract: [CLI](cli.md).

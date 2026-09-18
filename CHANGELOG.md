@@ -8,6 +8,14 @@ timing when that is known.
 
 ## [Unreleased]
 
+### Added
+- `on_progress` on `extract*` / sessions / batch / swarm reports parse-window
+  progress for long documents. The callback receives `ExtractProgress`
+  (`current`, `total`, `page`, `pages`) immediately before each window is
+  sent to the model. Default `None` is unchanged (silent). CLI `--progress`
+  now writes `progress: window N/M (page P)` on stderr for a single input;
+  batch per-item completion lines are unchanged.
+
 ### Changed
 - CLI `--cite` JSON/JSONL citations serialize via `Citation.as_dict()`
   (`{field, quote, page}` plus optional `bbox`).

@@ -17,6 +17,7 @@ from openextract import (
     ExtractionInput,
     ExtractionResult,
     ExtractionStyle,
+    ExtractProgress,
     SwarmResult,
     Usage,
     extract,
@@ -32,6 +33,10 @@ from openextract import (
 
 class Invoice(BaseModel):
     total: float
+
+
+def _report(progress: ExtractProgress) -> None:
+    _ = progress.current, progress.total, progress.page, progress.pages
 
 
 # Path / os.PathLike works directly in every public API.
@@ -71,7 +76,9 @@ search: Invoice = extract(
 output, usage = extract_with_usage(Invoice, "openai:gpt-5", Path("/tmp/x.pdf"))
 _assert_invoice: Invoice = output
 _assert_usage: Usage = usage
-cited: Invoice = extract(Invoice, "openai:gpt-5", Path("/tmp/x.pdf"), cite=True)
+cited: Invoice = extract(
+    Invoice, "openai:gpt-5", Path("/tmp/x.pdf"), cite=True, on_progress=_report
+)
 _cite: Citation = Citation("total", "12.50", 1, (0.1, 0.2, 0.3, 0.05))
 _dumped: dict[str, object] = _cite.as_dict()
 _field: dict[str, object] | None = _cite.as_field_citation()

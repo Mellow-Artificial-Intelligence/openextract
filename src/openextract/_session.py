@@ -34,8 +34,8 @@ from ._styles import (
     style_capabilities,
     style_run_inputs,
 )
-from ._types import ExtractionInputLike, RetryPolicy, T, Usage
-from ._windows import extract_windows_async, extract_windows_sync
+from ._types import ExtractionInputLike, ExtractProgress, OnProgress, RetryPolicy, T, Usage
+from ._windows import emit_progress, extract_windows_async, extract_windows_sync
 
 if TYPE_CHECKING:
     from pydantic_ai import Agent as PydanticAgent
@@ -68,6 +68,7 @@ class _ExtractorSession[T: BaseModel]:
         max_input_bytes: int | None = None,
         url_timeout: float | None = None,
         cite: bool = False,
+        on_progress: OnProgress | None = None,
     ) -> None:
         resolved_style = normalize_style(style)
         if agent is not None:
@@ -125,6 +126,7 @@ class _ExtractorSession[T: BaseModel]:
             if url_timeout is None
             else _validate_timeout(url_timeout, name="url_timeout")
         )
+        self._on_progress = on_progress
         self._entered = False
         self._closed = False
         self._style_workspace: tempfile.TemporaryDirectory[str] | None = None
@@ -347,11 +349,14 @@ class Extractor(_ExtractorSession[T]):
         project: Callable[..., R],
         *,
         with_usage: bool = False,
+        on_progress: OnProgress | None = None,
     ) -> R:
         """Run one retrying extraction and map the raw result through ``project``."""
+        callback = self._on_progress if on_progress is None else on_progress
         with self._prepare_session_extraction(input_file, media_type) as (agent, inputs, parsed):
             windows = parsed_window_inputs(parsed, inputs)
             if len(windows) == 1:
+                emit_progress(callback, 1, 1, parsed)
                 return _run_with_retries_sync(
                     lambda: project(self._run_agent(agent, windows[0]), parsed),
                     max_retries=self._retry_policy.max_retries,
@@ -372,6 +377,7 @@ class Extractor(_ExtractorSession[T]):
                 max_retries=self._retry_policy.max_retries,
                 retry_backoff=self._retry_policy.backoff,
                 retry_max_backoff=self._retry_policy.max_backoff,
+                on_progress=callback,
             )
             validated = self._validate_output(output)
             if with_usage:
@@ -383,19 +389,27 @@ class Extractor(_ExtractorSession[T]):
         input_file: ExtractionInputLike,
         *,
         media_type: str | None = None,
+        on_progress: Callable[[ExtractProgress], None] | None = None,
     ) -> T:
         """Extract one input using the session's reusable agent and clients."""
-        return self._extract_projected(input_file, media_type, self._output_from_run)
+        return self._extract_projected(
+            input_file, media_type, self._output_from_run, on_progress=on_progress
+        )
 
     def extract_with_usage(
         self,
         input_file: ExtractionInputLike,
         *,
         media_type: str | None = None,
+        on_progress: Callable[[ExtractProgress], None] | None = None,
     ) -> tuple[T, Usage]:
         """Extract one input and return its successful-call token usage."""
         return self._extract_projected(
-            input_file, media_type, self._output_and_usage, with_usage=True
+            input_file,
+            media_type,
+            self._output_and_usage,
+            with_usage=True,
+            on_progress=on_progress,
         )
 
 
@@ -486,8 +500,10 @@ class AsyncExtractor(_ExtractorSession[T]):
         project: Callable[..., R],
         *,
         with_usage: bool = False,
+        on_progress: OnProgress | None = None,
     ) -> R:
         """Async counterpart to :meth:`Extractor._extract_projected`."""
+        callback = self._on_progress if on_progress is None else on_progress
         async with self._prepare_session_extraction(input_file, media_type) as (
             agent,
             inputs,
@@ -495,6 +511,7 @@ class AsyncExtractor(_ExtractorSession[T]):
         ):
             windows = parsed_window_inputs(parsed, inputs)
             if len(windows) == 1:
+                emit_progress(callback, 1, 1, parsed)
 
                 async def _once() -> R:
                     return project(await _run_extraction_async(agent, windows[0]), parsed)
@@ -519,6 +536,7 @@ class AsyncExtractor(_ExtractorSession[T]):
                 max_retries=self._retry_policy.max_retries,
                 retry_backoff=self._retry_policy.backoff,
                 retry_max_backoff=self._retry_policy.max_backoff,
+                on_progress=callback,
             )
             validated = self._validate_output(output)
             if with_usage:
@@ -530,17 +548,25 @@ class AsyncExtractor(_ExtractorSession[T]):
         input_file: ExtractionInputLike,
         *,
         media_type: str | None = None,
+        on_progress: Callable[[ExtractProgress], None] | None = None,
     ) -> T:
         """Extract one input using the session's reusable agent and clients."""
-        return await self._extract_projected(input_file, media_type, self._output_from_run)
+        return await self._extract_projected(
+            input_file, media_type, self._output_from_run, on_progress=on_progress
+        )
 
     async def extract_with_usage(
         self,
         input_file: ExtractionInputLike,
         *,
         media_type: str | None = None,
+        on_progress: Callable[[ExtractProgress], None] | None = None,
     ) -> tuple[T, Usage]:
         """Extract one input and return its successful-call token usage."""
         return await self._extract_projected(
-            input_file, media_type, self._output_and_usage, with_usage=True
+            input_file,
+            media_type,
+            self._output_and_usage,
+            with_usage=True,
+            on_progress=on_progress,
         )

@@ -21,7 +21,13 @@ from ._extract import _plan_agent, extract, extract_with_usage
 from ._reduce import SwarmReduce
 from ._styles import ExtractionStyle
 from ._swarm import extract_swarm, extract_swarm_with_results
-from ._types import Citation, ExtractionInput, ExtractionInputLike, ExtractionResult
+from ._types import (
+    Citation,
+    ExtractionInput,
+    ExtractionInputLike,
+    ExtractionResult,
+    ExtractProgress,
+)
 from .exceptions import (
     ExtractionError,
     ModelError,
@@ -429,6 +435,21 @@ def _run_batch(
     return asyncio.run(_run_batch_async(schema_cls, items, labels, options, args, model))
 
 
+def _window_progress(progress: ExtractProgress) -> None:
+    """Write one window-progress line to stderr for ``--progress`` single runs."""
+    if not progress.pages:
+        suffix = ""
+    elif len(progress.pages) == 1:
+        suffix = f" (page {progress.pages[0]})"
+    else:
+        suffix = f" (pages {progress.pages[0]}-{progress.pages[-1]})"
+    print(
+        f"progress: window {progress.current}/{progress.total}{suffix}",
+        file=sys.stderr,
+        flush=True,
+    )
+
+
 def _print_single_payload(payload: Any, args: argparse.Namespace) -> None:
     """Print a single-result payload in the requested output format."""
     if args.output == "repr":
@@ -456,6 +477,8 @@ def _run_single(
         "retry_max_backoff": args.retry_max_backoff,
         "cite": args.cite,
     }
+    if args.progress:
+        shared["on_progress"] = _window_progress
     if args.cite:
         run_model: Any = model
         if is_agent(model):
@@ -508,6 +531,8 @@ def _run_swarm(
         "retry_max_backoff": args.retry_max_backoff,
         "cite": args.cite,
     }
+    if args.progress:
+        options["on_progress"] = _window_progress
     if args.usage or args.cite:
         swarm = extract_swarm_with_results(schema_cls, swarm_agents, input_file, **options)
         payload: Any = {"result": swarm.output.model_dump()}
@@ -656,7 +681,10 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--progress",
         action="store_true",
-        help="Batch only: report per-item completion progress on stderr.",
+        help=(
+            "Report progress on stderr. Batch: per-item completion. "
+            "Single input: per-window extraction (page when parsed)."
+        ),
     )
     parser.add_argument(
         "--max-retries",
