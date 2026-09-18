@@ -81,6 +81,7 @@ uv run python -m examples.advanced.extract_with_citations
 uv run python -m examples.batch.batch_extract
 
 # Anthropic via CLI (from repo root)
+# --schema also accepts a JSON Schema file path (*.json)
 PYTHONPATH=. uv run openextract examples/fixtures/document_page.png \
   --schema examples.cli.schemas:DocumentInfo \
   --model anthropic:claude-opus-4-8 \

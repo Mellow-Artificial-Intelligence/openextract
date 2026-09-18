@@ -100,6 +100,39 @@ _BASE_ARGS = ["--schema", "tests.test_cli:_FixtureSchema", "--model", "xai:grok-
 # ---------------------------------------------------------------------------
 
 
+_PERSON_SCHEMA = {
+    "title": "Person",
+    "type": "object",
+    "properties": {
+        "name": {"type": "string"},
+        "age": {"type": "integer"},
+        "score": {"type": "number"},
+        "ok": {"type": "boolean"},
+        "tags": {"type": "array", "items": {"type": "string"}},
+        "misc": {"type": "array"},
+        "address": {
+            "type": "object",
+            "properties": {"city": {"type": "string"}},
+            "required": ["city"],
+        },
+        "extra": {"properties": {"flag": {"type": "boolean"}}},
+        "note": {"type": "string"},
+        "mystery": {"type": "unknown"},
+        "union": {"type": ["string", "null"]},
+        "blank": {},
+        "empty": {"type": "object"},
+        "flag": True,
+    },
+    "required": ["name", "age"],
+}
+
+
+def _write_schema(tmp_path, data, name="person.json"):
+    path = tmp_path / name
+    path.write_text(json.dumps(data), encoding="utf-8")
+    return path
+
+
 class TestResolveSchema:
     def test_resolves_valid_schema(self):
         cls = _resolve_schema("tests.test_cli:_FixtureSchema")
@@ -128,6 +161,113 @@ class TestResolveSchema:
     def test_bad_module_raises_import_error(self):
         with pytest.raises(ImportError):
             _resolve_schema("definitely_not_a_real_module_xyz:Thing")
+
+    def test_json_schema_file_builds_model(self, tmp_path):
+        path = _write_schema(tmp_path, _PERSON_SCHEMA)
+        cls = _resolve_schema(str(path))
+        assert cls.__name__ == "Person"
+        person = cls(
+            name="Ada",
+            age=36,
+            score=1.5,
+            ok=True,
+            tags=["a"],
+            address={"city": "London"},
+            extra={"flag": True},
+        )
+        dumped = person.model_dump()
+        assert dumped["name"] == "Ada"
+        assert dumped["age"] == 36
+        assert dumped["note"] is None
+        assert dumped["address"]["city"] == "London"
+        assert dumped["extra"]["flag"] is True
+
+    def test_json_schema_title_fallback_and_empty_properties(self, tmp_path):
+        path = _write_schema(
+            tmp_path,
+            {"title": "My Schema", "type": "object", "properties": [], "required": "name"},
+            name="person.json",
+        )
+        cls = _resolve_schema(str(path))
+        assert cls.__name__ == "person"
+        assert cls.model_fields == {}
+
+    def test_json_schema_non_identifier_name(self, tmp_path):
+        path = _write_schema(tmp_path, {"type": "object"}, name="my-schema.json")
+        cls = _resolve_schema(str(path))
+        assert cls.__name__ == "JsonSchema"
+
+    def test_json_schema_suffix_is_case_insensitive(self, tmp_path):
+        path = tmp_path / "upper.JSON"
+        path.write_text(
+            json.dumps({"type": "object", "properties": {"n": {"type": "string"}}}),
+            encoding="utf-8",
+        )
+        cls = _resolve_schema(str(path))
+        assert "n" in cls.model_fields
+
+    def test_json_schema_without_type_is_object(self, tmp_path):
+        path = _write_schema(
+            tmp_path,
+            {"properties": {"name": {"type": "string"}}, "required": ["name"]},
+        )
+        cls = _resolve_schema(str(path))
+        assert cls(name="Ada").name == "Ada"
+
+    def test_existing_non_json_suffix_file_that_is_a_schema(self, tmp_path):
+        path = _write_schema(
+            tmp_path,
+            {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]},
+            name="person.schema",
+        )
+        cls = _resolve_schema(str(path))
+        assert cls(name="Ada").name == "Ada"
+
+    def test_existing_non_schema_file_falls_through(self, tmp_path):
+        path = tmp_path / "notes.txt"
+        path.write_text("not json", encoding="utf-8")
+        with pytest.raises(ValueError, match="Expected format"):
+            _resolve_schema(str(path))
+
+    def test_existing_json_array_file_falls_through(self, tmp_path):
+        path = tmp_path / "data.txt"
+        path.write_text("[]", encoding="utf-8")
+        with pytest.raises(ValueError, match="Expected format"):
+            _resolve_schema(str(path))
+
+    def test_missing_json_file_raises(self, tmp_path):
+        with pytest.raises(ValueError, match="not found"):
+            _resolve_schema(str(tmp_path / "missing.json"))
+
+    def test_invalid_json_raises(self, tmp_path):
+        path = tmp_path / "bad.json"
+        path.write_text("{", encoding="utf-8")
+        with pytest.raises(ValueError, match="not valid JSON"):
+            _resolve_schema(str(path))
+
+    def test_non_object_json_raises(self, tmp_path):
+        path = _write_schema(tmp_path, ["not", "an", "object"])
+        with pytest.raises(ValueError, match="JSON Schema object"):
+            _resolve_schema(str(path))
+
+    def test_non_object_type_raises(self, tmp_path):
+        path = _write_schema(tmp_path, {"type": "string"})
+        with pytest.raises(ValueError, match="JSON Schema object"):
+            _resolve_schema(str(path))
+
+    def test_unreadable_json_file_raises(self, tmp_path, mocker):
+        path = _write_schema(tmp_path, {"type": "object"})
+        mocker.patch("pathlib.Path.read_text", side_effect=OSError("denied"))
+        with pytest.raises(ValueError, match="cannot read schema file"):
+            _resolve_schema(str(path))
+
+    def test_invalid_field_name_raises(self, tmp_path):
+        path = _write_schema(
+            tmp_path,
+            {"type": "object", "properties": {"foo-bar": {"type": "string"}}},
+        )
+        with pytest.raises(ValueError, match="cannot build a Pydantic model"):
+            _resolve_schema(str(path))
 
 
 # ---------------------------------------------------------------------------
@@ -178,6 +318,24 @@ class TestMainSuccess:
 
         assert mock_extract.call_args.kwargs["max_input_bytes"] == 1024
         capsys.readouterr()
+
+    def test_json_schema_file_is_accepted(self, mocker, capsys, tmp_path):
+        path = _write_schema(
+            tmp_path,
+            {
+                "type": "object",
+                "properties": {"name": {"type": "string"}, "age": {"type": "integer"}},
+                "required": ["name", "age"],
+            },
+        )
+
+        def _extract(schema, **_kwargs):
+            return schema(name="Ada", age=36)
+
+        _patch_extract(mocker, side_effect=_extract)
+
+        assert main(["input.txt", "--schema", str(path), "--model", "xai:grok-4.3"]) == 0
+        assert '"name": "Ada"' in capsys.readouterr().out
 
     def test_loads_dotenv_at_application_boundary(self, mocker, capsys):
         load_dotenv = mocker.patch("openextract._cli.load_dotenv")
@@ -347,6 +505,13 @@ class TestMainErrorCodes:
         )
         assert exit_code == 1
         assert "BaseModel" in capsys.readouterr().err
+
+    def test_missing_json_schema_file_returns_1(self, capsys, tmp_path):
+        exit_code = main(
+            ["input.txt", "--schema", str(tmp_path / "missing.json"), "--model", "xai:grok-4.3"]
+        )
+        assert exit_code == 1
+        assert "not found" in capsys.readouterr().err
 
 
 # ---------------------------------------------------------------------------
