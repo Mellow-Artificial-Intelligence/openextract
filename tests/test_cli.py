@@ -375,6 +375,7 @@ class TestMainSuccess:
             cite=False,
             cite_min_confidence=None,
             pages=None,
+            language=None,
         )
 
     def test_repr_output(self, mocker, capsys):
@@ -1777,6 +1778,36 @@ class TestCite:
 
         assert rich.call_args.kwargs["cite"] is True
         assert rich.call_args.kwargs["cite_min_confidence"] == 0.7
+        capsys.readouterr()
+
+    def test_language_flag_is_forwarded(self, mocker, capsys):
+        mock_extract = _patch_extract(mocker, return_value=_FixtureSchema(name="Ada", age=36))
+
+        assert main(["input.txt", *_BASE_ARGS, "--language", "es"]) == 0
+
+        assert mock_extract.call_args.kwargs["language"] == "es"
+        capsys.readouterr()
+
+    def test_empty_language_returns_1(self, capsys):
+        assert main(["input.txt", *_BASE_ARGS, "--language", ""]) == 1
+        assert "language must be a non-empty string" in capsys.readouterr().err
+
+    def test_batch_language_is_forwarded(self, mocker, capsys):
+        ada = _rich_result(_FixtureSchema(name="Ada", age=36))
+        mock_stream = _patch_iter_extractions(mocker, events=[(0, ada), (1, ada)])
+
+        assert main(["a.pdf", "b.pdf", *_BASE_ARGS, "--language", "fr"]) == 0
+
+        options = mock_stream.call_args.args[3]
+        assert options.language == "fr"
+        capsys.readouterr()
+
+    def test_swarm_language_is_forwarded(self, mocker, capsys):
+        plain, _ = _patch_swarm(mocker)
+
+        assert main(["input.txt", *_BASE_ARGS, "--swarm", "2", "--language", "zh-Hans"]) == 0
+
+        assert plain.call_args.kwargs["language"] == "zh-Hans"
         capsys.readouterr()
 
     def test_fanning_agent_with_cite_uses_swarm(self, mocker, tmp_path, capsys):

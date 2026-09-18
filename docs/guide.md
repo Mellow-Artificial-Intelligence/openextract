@@ -125,6 +125,10 @@ invoice = extract(
 
 PDFs, Office files, images, audio, and video stay on `direct`, `table`, or `form`. `search`/`code` are text-only. The CLI flag is `--style`. Written against `pydantic-ai-harness` 0.18.x.
 
+## Document language
+
+Pass `language="es"` (a BCP-47-ish tag or a plain name like `en` / `fr`) when the source is not in the model's default language. Extracted field values keep that language and script unless the schema or `instructions` ask to translate. Default `None` is unchanged. Empty values raise `ValueError`. CLI: `--language es`.
+
 ## Sessions
 
 For repeated calls with the same schema and model, use `Extractor` / `AsyncExtractor`. One agent and HTTP client are built on enter and closed on exit.

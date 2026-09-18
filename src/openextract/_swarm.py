@@ -37,10 +37,11 @@ from ._reduce import SwarmReduce, normalize_reduce, reduce_citations, reduce_out
 from ._remote import run_remote_extraction
 from ._styles import (
     ExtractionStyle,
+    compose_extract_instructions,
+    normalize_language,
     normalize_style,
     prepared_style_run,
     should_parse,
-    with_style_instructions,
 )
 from ._types import (
     Citation,
@@ -165,6 +166,7 @@ async def _run_member(
     cite: bool,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    language: str | None = None,
     on_progress: OnProgress | None = None,
 ) -> ExtractionResult[T]:
     """Run one swarm agent over already-loaded media and build its result."""
@@ -175,7 +177,9 @@ async def _run_member(
         instructions if member.instructions is None else member.instructions, index, total
     )
     run_schema, member_instructions = prepare_cited_run(
-        schema, with_style_instructions(member_instructions, member_style), cite
+        schema,
+        compose_extract_instructions(member_instructions, member_style, language),
+        cite,
     )
     parsed_inputs, parsed = maybe_parsed_inputs(
         file_bytes,
@@ -277,6 +281,7 @@ async def _run_swarm(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    language: str | None = None,
     on_progress: OnProgress | None = None,
 ) -> SwarmResult[T]:
     """Load the input once, fan it out across agents, and reduce the outputs."""
@@ -286,6 +291,7 @@ async def _run_swarm(
     _validate_retry_options(max_retries, retry_backoff, retry_max_backoff)
     cite_min_confidence = _validate_cite_min_confidence(cite_min_confidence)
     pages = _validate_pages(pages)
+    language = normalize_language(language)
     concurrency = (
         min(_DEFAULT_SWARM_CONCURRENCY, len(members))
         if max_concurrency is None
@@ -335,6 +341,7 @@ async def _run_swarm(
                     cite=cite,
                     cite_min_confidence=cite_min_confidence,
                     pages=pages,
+                    language=language,
                     on_progress=on_progress,
                 )
             except Exception as exc:
@@ -385,6 +392,7 @@ def extract_swarm(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    language: str | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> T:
     """Run several agents over one input and return the reduced result.
@@ -426,6 +434,8 @@ def extract_swarm(
             every citation. Invalid values raise ``ValueError`` at call time.
         pages: Optional 1-based PDF page numbers, same contract as
             :func:`extract`.
+        language: Optional document language hint, same contract as
+            :func:`extract`. Applied to every agent.
         on_progress: Optional per-window callback, same contract as
             :func:`extract`. Concurrent agents may interleave events.
 
@@ -435,8 +445,9 @@ def extract_swarm(
     Raises:
         ValueError: If ``agents`` is empty, ``size`` is out of range or
             disagrees with the agent list, a retry/concurrency option is
-            invalid, ``cite_min_confidence`` is outside ``[0, 1]``, or
-            ``pages`` is empty/invalid. Raised before any model call.
+            invalid, ``cite_min_confidence`` is outside ``[0, 1]``,
+            ``pages`` is empty/invalid, or ``language`` is empty. Raised
+            before any model call.
         ExtractionError: The first agent's failure, when every agent failed.
         RuntimeError: If called from a running event loop. Use
             :func:`extract_swarm_async` in async code instead.
@@ -463,6 +474,7 @@ def extract_swarm(
             cite=cite,
             cite_min_confidence=cite_min_confidence,
             pages=pages,
+            language=language,
             on_progress=on_progress,
         ),
     ).output
@@ -486,6 +498,7 @@ async def extract_swarm_async(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    language: str | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> T:
     """Async sibling of :func:`extract_swarm`."""
@@ -508,6 +521,7 @@ async def extract_swarm_async(
         cite=cite,
         cite_min_confidence=cite_min_confidence,
         pages=pages,
+        language=language,
         on_progress=on_progress,
     )
     return result.output
@@ -533,6 +547,7 @@ def extract_swarm_with_results(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    language: str | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> SwarmResult[T]:
     """Run a swarm and return the reduced output plus per-agent diagnostics.
@@ -567,6 +582,7 @@ def extract_swarm_with_results(
             cite=cite,
             cite_min_confidence=cite_min_confidence,
             pages=pages,
+            language=language,
             on_progress=on_progress,
         ),
     )
@@ -592,6 +608,7 @@ async def extract_swarm_with_results_async(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    language: str | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> SwarmResult[T]:
     """Async sibling of :func:`extract_swarm_with_results`."""
@@ -614,5 +631,6 @@ async def extract_swarm_with_results_async(
         cite=cite,
         cite_min_confidence=cite_min_confidence,
         pages=pages,
+        language=language,
         on_progress=on_progress,
     )

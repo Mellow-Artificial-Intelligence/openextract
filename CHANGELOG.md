@@ -9,6 +9,12 @@ timing when that is known.
 ## [Unreleased]
 
 ### Added
+- Optional `language` on extract APIs, sessions, batch, and swarm
+  (`str | None = None`). A BCP-47-ish tag or plain name (`en`, `es`, `fr`)
+  appends a short instruction that the document’s primary language is that
+  value and field values should preserve that language/script (do not
+  translate unless the schema or instructions ask). `None` (default) is
+  unchanged. Empty values raise `ValueError`. CLI `--language TAG`.
 - Optional `pages` on extract APIs, sessions, batch, and swarm
   (`Sequence[int] | None = None`). Default `None` keeps every page. When set,
   only those 1-based PDF pages are considered for local parse-then-window and

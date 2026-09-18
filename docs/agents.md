@@ -49,6 +49,7 @@ Always define a real `pydantic.BaseModel` subclass. Do not ask the library for f
 | Per-item usage / timing | `extract_many_with_results*` + `total_usage` |
 | Per-field source spans (ExtractBench grounding) | `cite=True` on `extract_many_with_results*` or sessions (`Extractor` / `AsyncExtractor`). Read `ExtractionResult.citations`; session `extract()` still returns the schema instance. Swarm: `extract_swarm_with_results*` → `SwarmResult.citations` (per-agent cites stay on each agent). `Citation.confidence` / `match` are local heuristics (not model-provided). `cite_min_confidence` drops weak or unstamped cites after grounding. |
 | Long-document / window progress | `on_progress` on `extract*` or `Extractor` / `AsyncExtractor`. Callback receives `ExtractProgress` (`current`, `total`, `page`, `pages`) before each window. CLI: `--progress`. Default off. |
+| Document language / script | `language="es"` (BCP-47-ish tag or name) on `extract*` / sessions / batch / swarm. Field values keep that language unless the schema or instructions ask to translate. CLI: `--language es`. Default off. |
 | Several agents on **one** input | `extract_swarm` / `extract_swarm_async` |
 | A reusable specialist (model + style + instructions + schema) | `define_agent`, then `extract(agent, input_file)` or `agents=` |
 | An extraction service over HTTP | `define_remote_agent` + `openextract.auth` |

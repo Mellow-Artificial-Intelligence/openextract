@@ -656,6 +656,7 @@ def _run_batch(
         cite=args.cite,
         cite_min_confidence=args.cite_min_confidence,
         pages=args.pages,
+        language=args.language,
     )
     return asyncio.run(_run_batch_async(schema_cls, items, labels, options, args, model))
 
@@ -703,6 +704,7 @@ def _run_single(
         "cite": args.cite,
         "cite_min_confidence": args.cite_min_confidence,
         "pages": args.pages,
+        "language": args.language,
     }
     if args.progress:
         shared["on_progress"] = _window_progress
@@ -759,6 +761,7 @@ def _run_swarm(
         "cite": args.cite,
         "cite_min_confidence": args.cite_min_confidence,
         "pages": args.pages,
+        "language": args.language,
     }
     if args.progress:
         options["on_progress"] = _window_progress
@@ -840,6 +843,16 @@ def _build_parser() -> argparse.ArgumentParser:
         "--instructions",
         default=None,
         help="Optional natural-language instructions for the model.",
+    )
+    parser.add_argument(
+        "--language",
+        default=None,
+        metavar="TAG",
+        help=(
+            "Document primary language (BCP-47 tag or name, e.g. es). "
+            "Preserves that language/script in field values. "
+            "Same language= as the library."
+        ),
     )
     parser.add_argument(
         "--style",

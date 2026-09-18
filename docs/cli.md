@@ -42,7 +42,8 @@ These mappings live in `src/openextract/_cli.py` and are covered by
 CLI option values are validated **before any model call**: invalid
 `--max-concurrency`, `--max-retries`, `--retry-backoff`, `--retry-max-backoff`,
 `--max-input-bytes`, `--pages`, `--out` (missing parent directory or unwritable
-path), or manifest contents exit `1` without contacting a provider.
+path), `--language` (empty), or manifest contents exit `1` without contacting a
+provider.
 
 ## Successful single-file output
 
@@ -395,6 +396,20 @@ merge. Neither extra package; boxes still never invented. `--style search` and
 copy of the document via Pydantic AI Harness. Missing extras exit `6`
 (`ProviderNotInstalledError`). Non-text inputs on search/code raise
 `ValueError` (exit `1`).
+
+## PDF pages
+
+`--pages RANGE` (for example `--pages 1-3,5,8`) limits local parse-then-window
+and citation grounding to those 1-based PDF pages. It uses the same `pages=`
+path as the library. Out-of-range numbers are ignored. Omit it to keep every
+page. Empty or invalid tokens exit `1`.
+
+## Document language
+
+`--language TAG` (for example `--language es`) tells the model the document's
+primary language and to preserve that language/script in field values. It uses
+the same `language=` path as the library. Omit it to leave instructions
+unchanged. An empty tag exits `1`.
 
 ## Related docs
 

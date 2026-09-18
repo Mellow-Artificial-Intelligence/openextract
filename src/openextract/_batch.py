@@ -32,11 +32,12 @@ from ._media import _get_media_async, _item_source_label
 from ._parse import maybe_parsed_inputs
 from ._styles import (
     ExtractionStyle,
+    compose_extract_instructions,
+    normalize_language,
     normalize_style,
     prepared_style_run,
     should_parse,
     uses_workspace,
-    with_style_instructions,
 )
 from ._types import (
     ExtractionInputLike,
@@ -77,6 +78,7 @@ class _BatchOptions:
     cite: bool
     cite_min_confidence: float | None = None
     pages: tuple[int, ...] | None = None
+    language: str | None = None
     on_progress: OnProgress | None = None
 
     @classmethod
@@ -96,6 +98,7 @@ class _BatchOptions:
         cite: bool = False,
         cite_min_confidence: float | None = None,
         pages: Sequence[int] | None = None,
+        language: str | None = None,
         on_progress: OnProgress | None = None,
     ) -> _BatchOptions:
         """Validate and normalize the public batch arguments."""
@@ -115,6 +118,7 @@ class _BatchOptions:
             cite=cite,
             cite_min_confidence=_validate_cite_min_confidence(cite_min_confidence),
             pages=_validate_pages(pages),
+            language=normalize_language(language),
             on_progress=on_progress,
         )
 
@@ -187,7 +191,9 @@ async def _iter_extractions(
     # code styles bind capabilities to a per-item workspace, so those items
     # each get their own agent.
     run_schema, run_instructions = prepare_cited_run(
-        schema, with_style_instructions(options.instructions, options.style), options.cite
+        schema,
+        compose_extract_instructions(options.instructions, options.style, options.language),
+        options.cite,
     )
     shared_agent = (
         _build_agent(run_schema, model, run_instructions)
@@ -389,6 +395,7 @@ def extract_many(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    language: str | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list[T]: ...
 
@@ -411,6 +418,7 @@ def extract_many(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    language: str | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list[T | Exception]: ...
 
@@ -433,6 +441,7 @@ def extract_many(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    language: str | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list[T | Exception]: ...
 
@@ -454,6 +463,7 @@ def extract_many(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    language: str | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list:
     """Run :func:`extract` over many inputs concurrently from sync code.
@@ -489,6 +499,8 @@ def extract_many(
             every citation. Invalid values raise ``ValueError`` at call time.
         pages: Optional 1-based PDF page numbers, same contract as
             :func:`extract`.
+        language: Optional document language hint, same contract as
+            :func:`extract`.
         on_progress: Optional per-window callback, same contract as
             :func:`extract`. Concurrent items may interleave events.
 
@@ -499,8 +511,8 @@ def extract_many(
     Raises:
         ValueError: If ``max_concurrency`` is less than 1, ``max_retries`` is
             negative, a backoff value is negative or non-finite,
-            ``cite_min_confidence`` is outside ``[0, 1]``, or ``pages`` is
-            empty/invalid.
+            ``cite_min_confidence`` is outside ``[0, 1]``, ``pages`` is
+            empty/invalid, or ``language`` is empty.
         RuntimeError: If called from a running event loop. Use
             :func:`extract_many_async` in async code instead.
     """
@@ -522,6 +534,7 @@ def extract_many(
             cite=cite,
             cite_min_confidence=cite_min_confidence,
             pages=pages,
+            language=language,
             on_progress=on_progress,
         ),
         name="extract_many",
@@ -546,6 +559,7 @@ async def extract_many_async(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    language: str | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list[T]: ...
 
@@ -568,6 +582,7 @@ async def extract_many_async(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    language: str | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list[T | Exception]: ...
 
@@ -590,6 +605,7 @@ async def extract_many_async(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    language: str | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list[T | Exception]: ...
 
@@ -611,6 +627,7 @@ async def extract_many_async(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    language: str | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list:
     """Async sibling of :func:`extract_many`."""
@@ -632,6 +649,7 @@ async def extract_many_async(
             cite=cite,
             cite_min_confidence=cite_min_confidence,
             pages=pages,
+            language=language,
             on_progress=on_progress,
         ),
     )
@@ -655,6 +673,7 @@ def iter_extract_many_async(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    language: str | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> AsyncIterator[tuple[int, T]]: ...
 
@@ -677,6 +696,7 @@ def iter_extract_many_async(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    language: str | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> AsyncIterator[tuple[int, T | Exception]]: ...
 
@@ -699,6 +719,7 @@ def iter_extract_many_async(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    language: str | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> AsyncIterator[tuple[int, T | Exception]]: ...
 
@@ -720,6 +741,7 @@ def iter_extract_many_async(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    language: str | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> AsyncIterator[tuple[int, T | Exception]]:
     """Stream ``(input_index, result)`` pairs in completion order.
@@ -758,6 +780,7 @@ def iter_extract_many_async(
                 cite=cite,
                 cite_min_confidence=cite_min_confidence,
                 pages=pages,
+                language=language,
                 on_progress=on_progress,
             ),
         ),
@@ -782,6 +805,7 @@ def extract_many_with_results(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    language: str | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list[ExtractionResult[T]]: ...
 
@@ -804,6 +828,7 @@ def extract_many_with_results(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    language: str | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list[ExtractionResult[T] | Exception]: ...
 
@@ -826,6 +851,7 @@ def extract_many_with_results(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    language: str | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list[ExtractionResult[T] | Exception]: ...
 
@@ -847,6 +873,7 @@ def extract_many_with_results(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    language: str | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list:
     """Run a batch and return per-item :class:`ExtractionResult` diagnostics.
@@ -880,6 +907,7 @@ def extract_many_with_results(
             cite=cite,
             cite_min_confidence=cite_min_confidence,
             pages=pages,
+            language=language,
             on_progress=on_progress,
         ),
         name="extract_many_with_results",
@@ -904,6 +932,7 @@ async def extract_many_with_results_async(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    language: str | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list[ExtractionResult[T]]: ...
 
@@ -926,6 +955,7 @@ async def extract_many_with_results_async(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    language: str | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list[ExtractionResult[T] | Exception]: ...
 
@@ -948,6 +978,7 @@ async def extract_many_with_results_async(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    language: str | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list[ExtractionResult[T] | Exception]: ...
 
@@ -969,6 +1000,7 @@ async def extract_many_with_results_async(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    language: str | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list:
     """Async sibling of :func:`extract_many_with_results`."""
@@ -990,6 +1022,7 @@ async def extract_many_with_results_async(
             cite=cite,
             cite_min_confidence=cite_min_confidence,
             pages=pages,
+            language=language,
             on_progress=on_progress,
         ),
     )

@@ -13,7 +13,7 @@ How-to: [Guide](guide.md). Integration contract for generated code: [For agents]
 
 ## Extraction
 
-### `Extractor(schema, model=None, instructions=None, *, style='direct', agent=None, model_settings=None, timeout=None, instrument=False, retry_policy=None, max_input_bytes=None, url_timeout=None, cite=False, cite_min_confidence=None, pages=None, on_progress=None)`
+### `Extractor(schema, model=None, instructions=None, *, style='direct', agent=None, model_settings=None, timeout=None, instrument=False, retry_policy=None, max_input_bytes=None, url_timeout=None, cite=False, cite_min_confidence=None, pages=None, language=None, on_progress=None)`
 
 Reusable synchronous extraction session. Enter it with `with`; then call
 `extract(input_file, *, media_type=None, on_progress=None, pages=None)` or
@@ -37,8 +37,10 @@ schema so the model returns per-field citations; `extract` still returns the
 schema instance. `cite_min_confidence` drops weak or unstamped citations after
 grounding when `cite=True`. `pages` limits local parse-then-window and
 citation grounding to those 1-based PDF pages (`None` keeps every page).
+`language` appends a document-language hint so field values keep that
+language/script (`None` leaves instructions unchanged).
 
-### `AsyncExtractor(schema, model=None, instructions=None, *, style='direct', agent=None, model_settings=None, timeout=None, instrument=False, retry_policy=None, max_input_bytes=None, url_timeout=None, cite=False, cite_min_confidence=None, pages=None, on_progress=None)`
+### `AsyncExtractor(schema, model=None, instructions=None, *, style='direct', agent=None, model_settings=None, timeout=None, instrument=False, retry_policy=None, max_input_bytes=None, url_timeout=None, cite=False, cite_min_confidence=None, pages=None, language=None, on_progress=None)`
 
 Async session counterpart. Enter it with `async with`; then await `extract` or
 `extract_with_usage`. It shares one async HTTP client and one agent across
@@ -64,7 +66,7 @@ text-only agentic styles powered by
 `"form"`). Non-text inputs on
 `search`/`code` and a missing harness extra fail before the model call.
 
-### `extract(schema, model, input_file=None, instructions=None, *, style='direct', media_type=None, max_input_bytes=None, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, cite=False, cite_min_confidence=None, pages=None, on_progress=None)`
+### `extract(schema, model, input_file=None, instructions=None, *, style='direct', media_type=None, max_input_bytes=None, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, cite=False, cite_min_confidence=None, pages=None, language=None, on_progress=None)`
 
 `model` also accepts an [agent](#agents), and an agent that declares an
 `output_schema` can be passed as `schema` instead — `extract(invoices, "doc.pdf")`
@@ -83,6 +85,9 @@ instance; citations land on [`ExtractionResult`](#extractionresult) from the
 `*_with_results` APIs. `cite_min_confidence` (a float in `[0, 1]`) keeps only
 citations whose heuristic `confidence` is not `None` and is at least that
 threshold; omit it to keep every citation. Invalid values raise `ValueError`.
+`language` is an optional BCP-47-ish tag or plain name (`en`, `es`, `fr`).
+When set, field values should preserve that language/script (do not translate
+unless the schema or instructions ask). Empty values raise `ValueError`.
 `on_progress` is called once per parse window
 immediately before that window is sent to the model; see
 [`ExtractProgress`](#extractprogress). Default `None` is silent.
@@ -91,33 +96,33 @@ those pages are parsed, windowed, and used for citation grounding. Out-of-range
 numbers are ignored; if none remain, `ValueError` is raised. `None` keeps every
 page. Invalid values raise `ValueError` at call time.
 
-### `extract_async(schema, model, input_file=None, instructions=None, *, style='direct', media_type=None, max_input_bytes=None, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, cite=False, cite_min_confidence=None, pages=None, on_progress=None)`
+### `extract_async(schema, model, input_file=None, instructions=None, *, style='direct', media_type=None, max_input_bytes=None, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, cite=False, cite_min_confidence=None, pages=None, language=None, on_progress=None)`
 
 Async counterpart to `extract`. It uses `Agent.run` and returns an instance of
 `schema`.
 
-### `extract_with_usage(schema, model, input_file=None, instructions=None, *, style='direct', media_type=None, max_input_bytes=None, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, cite=False, cite_min_confidence=None, pages=None, on_progress=None)`
+### `extract_with_usage(schema, model, input_file=None, instructions=None, *, style='direct', media_type=None, max_input_bytes=None, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, cite=False, cite_min_confidence=None, pages=None, language=None, on_progress=None)`
 
 Extract one input synchronously and return `(output, Usage)`. It has the same
 retry behavior as `extract`; `Usage` describes the successful model call.
 
-### `extract_with_usage_async(schema, model, input_file=None, instructions=None, *, style='direct', media_type=None, max_input_bytes=None, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, cite=False, cite_min_confidence=None, pages=None, on_progress=None)`
+### `extract_with_usage_async(schema, model, input_file=None, instructions=None, *, style='direct', media_type=None, max_input_bytes=None, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, cite=False, cite_min_confidence=None, pages=None, language=None, on_progress=None)`
 
 Async counterpart to `extract_with_usage`; returns `(output, Usage)`.
 
-### `extract_many(schema, model, input_files, instructions=None, *, style='direct', media_type=None, max_input_bytes=None, max_concurrency=5, return_exceptions=False, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, cite=False, cite_min_confidence=None, pages=None, on_progress=None)`
+### `extract_many(schema, model, input_files, instructions=None, *, style='direct', media_type=None, max_input_bytes=None, max_concurrency=5, return_exceptions=False, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, cite=False, cite_min_confidence=None, pages=None, language=None, on_progress=None)`
 
 Run concurrent extractions from synchronous code. Results preserve input order.
 When `return_exceptions=True`, per-item exceptions appear in the result list.
 Do not call this function from a running event loop; use
 `extract_many_async` instead.
 
-### `extract_many_async(schema, model, input_files, instructions=None, *, style='direct', media_type=None, max_input_bytes=None, max_concurrency=5, return_exceptions=False, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, cite=False, cite_min_confidence=None, pages=None, on_progress=None)`
+### `extract_many_async(schema, model, input_files, instructions=None, *, style='direct', media_type=None, max_input_bytes=None, max_concurrency=5, return_exceptions=False, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, cite=False, cite_min_confidence=None, pages=None, language=None, on_progress=None)`
 
 Async counterpart to `extract_many`; it has the same arguments, result ordering,
 and per-item retry behavior.
 
-### `iter_extract_many_async(schema, model, input_files, instructions=None, *, style='direct', media_type=None, max_input_bytes=None, max_concurrency=5, return_exceptions=False, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, cite=False, cite_min_confidence=None, pages=None, on_progress=None)`
+### `iter_extract_many_async(schema, model, input_files, instructions=None, *, style='direct', media_type=None, max_input_bytes=None, max_concurrency=5, return_exceptions=False, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, cite=False, cite_min_confidence=None, pages=None, language=None, on_progress=None)`
 
 Return an async iterator of `(input_index, result)` pairs in **completion
 order**. Inputs are consumed lazily, at most `max_concurrency` items are
@@ -147,7 +152,7 @@ async for index, result in iter_extract_many_async(
         print(index, result.summary)
 ```
 
-### `extract_many_with_results(schema, model, input_files, instructions=None, *, style='direct', media_type=None, max_input_bytes=None, max_concurrency=5, return_exceptions=False, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, cite=False, cite_min_confidence=None, pages=None, on_progress=None)`
+### `extract_many_with_results(schema, model, input_files, instructions=None, *, style='direct', media_type=None, max_input_bytes=None, max_concurrency=5, return_exceptions=False, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, cite=False, cite_min_confidence=None, pages=None, language=None, on_progress=None)`
 
 Run a batch and return per-item [`ExtractionResult`](#extractionresult) objects
 instead of bare schema instances. It has the same arguments, input ordering,
@@ -157,7 +162,7 @@ source label. With `return_exceptions=True`, failed items appear as
 `Exception` values in place. Use [`total_usage`](#total_usageresults) to
 aggregate token usage across the returned results.
 
-### `extract_many_with_results_async(schema, model, input_files, instructions=None, *, style='direct', media_type=None, max_input_bytes=None, max_concurrency=5, return_exceptions=False, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, cite=False, cite_min_confidence=None, pages=None, on_progress=None)`
+### `extract_many_with_results_async(schema, model, input_files, instructions=None, *, style='direct', media_type=None, max_input_bytes=None, max_concurrency=5, return_exceptions=False, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, cite=False, cite_min_confidence=None, pages=None, language=None, on_progress=None)`
 
 Async counterpart to `extract_many_with_results`; it has the same arguments,
 result ordering, and per-item retry behavior.
@@ -205,7 +210,7 @@ plus `size` fans it out `size` times (1..16); a list is used as-is and `size`
 may not contradict its length. [Defined agents](#agents) are flattened first,
 so a parent with subagents contributes one member per leaf.
 
-### `extract_swarm(schema, agents, input_file, instructions=None, *, size=None, style='direct', reduce='merge', media_type=None, max_input_bytes=None, max_concurrency=None, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, cite=False, cite_min_confidence=None, pages=None, on_progress=None)`
+### `extract_swarm(schema, agents, input_file, instructions=None, *, size=None, style='direct', reduce='merge', media_type=None, max_input_bytes=None, max_concurrency=None, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, cite=False, cite_min_confidence=None, pages=None, language=None, on_progress=None)`
 
 Run the agents concurrently over one input and return the reduced schema
 instance. `max_concurrency` defaults to `min(5, agents)`. Agent failures are
@@ -214,18 +219,18 @@ failure is raised. Raises `RuntimeError` from a running event loop.
 `cite=True` asks each agent for per-field source spans; citations land on
 [`SwarmResult`](#swarmresult) from `extract_swarm_with_results*`.
 
-### `extract_swarm_async(schema, agents, input_file, instructions=None, *, size=None, style='direct', reduce='merge', media_type=None, max_input_bytes=None, max_concurrency=None, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, cite=False, cite_min_confidence=None, pages=None, on_progress=None)`
+### `extract_swarm_async(schema, agents, input_file, instructions=None, *, size=None, style='direct', reduce='merge', media_type=None, max_input_bytes=None, max_concurrency=None, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, cite=False, cite_min_confidence=None, pages=None, language=None, on_progress=None)`
 
 Async counterpart to `extract_swarm`.
 
-### `extract_swarm_with_results(schema, agents, input_file, instructions=None, *, size=None, style='direct', reduce='merge', media_type=None, max_input_bytes=None, max_concurrency=None, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, on_agent_start=None, on_agent=None, cite=False, cite_min_confidence=None, pages=None, on_progress=None)`
+### `extract_swarm_with_results(schema, agents, input_file, instructions=None, *, size=None, style='direct', reduce='merge', media_type=None, max_input_bytes=None, max_concurrency=None, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, on_agent_start=None, on_agent=None, cite=False, cite_min_confidence=None, pages=None, language=None, on_progress=None)`
 
 Same run, returning a [`SwarmResult`](#swarmresult). `on_agent_start(index,
 total)` and `on_agent(index, total, result)` report progress as agents start
 and finish. `on_progress` is the same per-window callback as `extract`;
 concurrent agents may interleave events.
 
-### `extract_swarm_with_results_async(schema, agents, input_file, instructions=None, *, size=None, style='direct', reduce='merge', media_type=None, max_input_bytes=None, max_concurrency=None, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, on_agent_start=None, on_agent=None, cite=False, cite_min_confidence=None, pages=None, on_progress=None)`
+### `extract_swarm_with_results_async(schema, agents, input_file, instructions=None, *, size=None, style='direct', reduce='merge', media_type=None, max_input_bytes=None, max_concurrency=None, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, on_agent_start=None, on_agent=None, cite=False, cite_min_confidence=None, pages=None, language=None, on_progress=None)`
 
 Async counterpart to `extract_swarm_with_results`.
 
@@ -446,6 +451,7 @@ single `current=1, total=1` event with empty pages.
 | `cite` | `bool` | Ask the model for per-field citations. Default `False` (no extra instructions or schema wrap). Citations attach to `ExtractionResult`; `extract()` still returns the schema instance. |
 | `cite_min_confidence` | `float \| None` | When `cite=True`, keep only citations with heuristic `confidence >=` this `[0, 1]` threshold after grounding. `None` (default) keeps every citation. Citations that failed to stamp (`confidence is None`) are dropped when a threshold is set. Invalid values raise `ValueError` at call time. |
 | `pages` | `Sequence[int] \| None` | 1-based PDF pages to extract. When set, only those pages are considered for local parse-then-window and citation grounding (and a PDF is parsed even in `direct` style). Out-of-range numbers are ignored; if none remain, `ValueError`. `None` (default) keeps every page. Invalid values raise `ValueError` at call time. |
+| `language` | `str \| None` | Optional BCP-47-ish tag or plain name (`en`, `es`, `fr`). When set, appends a short instruction that the document's primary language is that value and field values should preserve that language/script. `None` (default) leaves instructions unchanged. Empty values raise `ValueError` at call time. |
 | `on_progress` | `Callable[[ExtractProgress], None] \| None` | Optional window callback. Invoked immediately before each parse window is sent to the model. Default `None` is silent. |
 
 Batch functions also accept:
