@@ -8,6 +8,10 @@ timing when that is known.
 
 ## [Unreleased]
 
+### Changed
+- CLI `--cite` JSON/JSONL citations serialize via `Citation.as_dict()`
+  (`{field, quote, page}` plus optional `bbox`).
+
 ## [0.14.0] - 2026-09-12
 
 ### Added
