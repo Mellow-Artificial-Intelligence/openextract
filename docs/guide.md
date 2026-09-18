@@ -91,14 +91,38 @@ Private/loopback URL hosts are refused unless `OPENEXTRACT_ALLOW_PRIVATE_URLS` i
 | Style | Behavior | Requirements |
 | --- | --- | --- |
 | `direct` (default) | Send the resolved media to the model in one shot. | Any supported modality. |
+| `table` | Same media path as `direct`, plus row-oriented instructions. PDFs are parsed locally and extracted per page window so line items merge. | Any supported modality. `openextract[pdf]` for page-windowed PDFs. |
 | `search` | Grep/read a **text** document with sandboxed file tools. | `pydantic-ai-harness`; UTF-8 text only. |
 | `code` | Write Python against a workspace copy of the **text**. | `pydantic-ai-harness[codemode]`; UTF-8 text only. |
 
 ```python
-extract(schema=Invoice, model="openai:gpt-5", input_file="notes.txt", style="search")
+from pydantic import BaseModel
+from openextract import extract
+
+
+class LineItem(BaseModel):
+    description: str
+    quantity: float
+    amount: float
+
+
+class Invoice(BaseModel):
+    vendor: str | None = None
+    line_items: list[LineItem]
+    total: float | None = None
+
+
+invoice = extract(
+    schema=Invoice,
+    model="openai:gpt-5",
+    input_file="statement.pdf",
+    style="table",
+)
 ```
 
-PDFs, Office files, images, audio, and video stay on `direct`. The CLI flag is `--style`. Written against `pydantic-ai-harness` 0.18.x.
+`style='table'` is the default to reach for on invoices, statements, receipts, and other line-item documents. It does not invent bounding boxes — pass `cite=True` when you need parser-backed citations. For huge CSV/TSV files, `style='code'` can parse rows in Python instead.
+
+PDFs, Office files, images, audio, and video stay on `direct` or `table`. `search`/`code` are text-only. The CLI flag is `--style`. Written against `pydantic-ai-harness` 0.18.x.
 
 ## Sessions
 
@@ -117,7 +141,7 @@ with Extractor(
     q4, usage = extractor.extract_with_usage("./invoices/q4.pdf")
 ```
 
-`Extractor` is thread-bound and not thread-safe. `AsyncExtractor` is bound to one event loop; concurrent awaits on that loop are fine. Pass a configured `pydantic_ai.models.Model` as `model=`, or a fully configured `Agent` as `agent=` (mutually exclusive with `model=`; not combinable with `search`/`code`).
+`Extractor` is thread-bound and not thread-safe. `AsyncExtractor` is bound to one event loop; concurrent awaits on that loop are fine. Pass a configured `pydantic_ai.models.Model` as `model=`, or a fully configured `Agent` as `agent=` (mutually exclusive with `model=`; not combinable with `search`/`code`/`table`).
 
 ## Retries and usage
 

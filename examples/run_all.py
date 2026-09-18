@@ -34,6 +34,7 @@ NO_API_EXAMPLES: list[str] = [
     "examples.advanced.extraction_styles",
     "examples.advanced.extract_with_citations",
     "examples.batch.stream_batch_extract",
+    "examples.documents.line_item_extraction",
 ]
 
 

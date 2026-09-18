@@ -382,11 +382,13 @@ openextract ./invoices/q4.pdf --agent ./agents/invoices
 ## Extraction styles
 
 `--style direct` (default) sends the resolved media to the model in one shot.
-`--style search` and `--style code` are text-only: search gives the model
-sandboxed file tools (read, regex search, glob), and code lets it write Python
-against a workspace copy of the document via Pydantic AI Harness. Missing extras
-exit `6` (`ProviderNotInstalledError`). Non-text inputs raise `ValueError`
-(exit `1`).
+`--style table` adds line-item guidance and parses PDFs by page so rows merge
+(no extra package; boxes still never invented). `--style search` and
+`--style code` are text-only: search gives the model sandboxed file tools
+(read, regex search, glob), and code lets it write Python against a workspace
+copy of the document via Pydantic AI Harness. Missing extras exit `6`
+(`ProviderNotInstalledError`). Non-text inputs on search/code raise
+`ValueError` (exit `1`).
 
 ## Related docs
 

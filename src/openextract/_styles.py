@@ -7,6 +7,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from enum import StrEnum
 from pathlib import Path
+from typing import assert_never
 
 from .exceptions import ProviderNotInstalledError
 
@@ -71,11 +72,23 @@ _DOCUMENT_FILENAMES = {
 }
 
 
+TABLE_INSTRUCTIONS = (
+    "The document contains a table or line items (invoice, statement, or similar). "
+    "Extract every row in order. Do not drop, merge, invent, or summarize rows. "
+    "Map columns from the header row. Keep numeric amounts as written. "
+    "Use null for fields that are not present. Continue a table across page breaks. "
+    "Empty tables are an empty list, not omitted."
+)
+
+
 class ExtractionStyle(StrEnum):
     """How an extraction run inspects the input.
 
     ``direct``
         Pass the media bytes to the model in one shot (default).
+    ``table``
+        Same media path as ``direct``, with row-oriented guidance. PDFs reuse
+        the local parse-then-window path so line items across pages merge.
     ``search``
         For text, give the model sandboxed file tools (read, regex search,
         glob) against a workspace copy of the document.
@@ -85,6 +98,7 @@ class ExtractionStyle(StrEnum):
     """
 
     DIRECT = "direct"
+    TABLE = "table"
     SEARCH = "search"
     CODE = "code"
 
@@ -96,6 +110,40 @@ def normalize_style(style: ExtractionStyle | str) -> ExtractionStyle:
     except ValueError:
         allowed = ", ".join(repr(item.value) for item in ExtractionStyle)
         raise ValueError(f"style must be one of {allowed}; got {style!r}.") from None
+
+
+def uses_workspace(style: ExtractionStyle) -> bool:
+    """Return whether ``style`` materializes a text workspace (search/code)."""
+    match style:
+        case ExtractionStyle.SEARCH | ExtractionStyle.CODE:
+            return True
+        case ExtractionStyle.DIRECT | ExtractionStyle.TABLE:
+            return False
+        case _:  # pragma: no cover - exhaustive ExtractionStyle
+            assert_never(style)
+
+
+def should_parse(cite: bool, style: ExtractionStyle) -> bool:
+    """Return whether this run should locally parse a PDF before extract.
+
+    ``cite=True`` always parses so citations can be grounded. ``table`` also
+    parses so line items are extracted per page window and merged.
+    """
+    return cite or style is ExtractionStyle.TABLE
+
+
+def with_table_instructions(instructions: str | None) -> str:
+    """Prepend table/line-item guidance without dropping caller instructions."""
+    if instructions and instructions.strip():
+        return f"{TABLE_INSTRUCTIONS}\n\n{instructions.strip()}"
+    return TABLE_INSTRUCTIONS
+
+
+def with_style_instructions(instructions: str | None, style: ExtractionStyle) -> str | None:
+    """Return caller instructions, with table guidance when ``style`` is table."""
+    if style is ExtractionStyle.TABLE:
+        return with_table_instructions(instructions)
+    return instructions
 
 
 def _bare_media_type(media_type: str) -> str:
@@ -199,27 +247,37 @@ def _code_capabilities(workspace: Path) -> list[object]:
 
 def style_capabilities(style: ExtractionStyle, workspace: Path) -> list[object]:
     """Return Pydantic AI capabilities that implement ``style``."""
-    if style is ExtractionStyle.SEARCH:
-        return _search_capabilities(workspace)
-    if style is ExtractionStyle.CODE:
-        return _code_capabilities(workspace)
-    return []
+    match style:
+        case ExtractionStyle.SEARCH:
+            return _search_capabilities(workspace)
+        case ExtractionStyle.CODE:
+            return _code_capabilities(workspace)
+        case ExtractionStyle.DIRECT | ExtractionStyle.TABLE:
+            return []
+        case _:  # pragma: no cover - exhaustive ExtractionStyle
+            assert_never(style)
 
 
 def style_run_inputs(style: ExtractionStyle, filename: str) -> list[str]:
     """Return the user prompt for a search or code extraction."""
-    if style is ExtractionStyle.SEARCH:
-        return [
-            "Extract the requested information from the document "
-            f"{filename!r} in the workspace. Use search_files, read_file, "
-            "find_files, list_directory, and file_info to inspect it. Search "
-            "before reading large files; do not assume unseen contents."
-        ]
-    return [
-        "Extract the requested information by writing Python against "
-        f"{_CODE_VIRTUAL_ROOT}/{filename}. Read the file with pathlib or "
-        "open(), then parse, filter, and compute the structured result."
-    ]
+    match style:
+        case ExtractionStyle.SEARCH:
+            return [
+                "Extract the requested information from the document "
+                f"{filename!r} in the workspace. Use search_files, read_file, "
+                "find_files, list_directory, and file_info to inspect it. Search "
+                "before reading large files; do not assume unseen contents."
+            ]
+        case ExtractionStyle.CODE:
+            return [
+                "Extract the requested information by writing Python against "
+                f"{_CODE_VIRTUAL_ROOT}/{filename}. Read the file with pathlib or "
+                "open(), then parse, filter, and compute the structured result."
+            ]
+        case ExtractionStyle.DIRECT | ExtractionStyle.TABLE:
+            raise ValueError(f"style {style.value!r} does not use workspace run inputs.")
+        case _:  # pragma: no cover - exhaustive ExtractionStyle
+            assert_never(style)
 
 
 @contextmanager
@@ -230,11 +288,12 @@ def prepared_style_run(
 ) -> Iterator[tuple[list[object], list[str] | None]]:
     """Yield ``(extra_capabilities, run_inputs)`` for one extraction.
 
-    ``direct`` yields no extra capabilities and ``None`` inputs so the caller
-    can pass media as ``BinaryContent``. ``search`` and ``code`` materialize a
-    UTF-8 workspace that lives until the context exits, including retries.
+    ``direct`` and ``table`` yield no extra capabilities and ``None`` inputs so
+    the caller can pass media as ``BinaryContent`` (or parsed page text).
+    ``search`` and ``code`` materialize a UTF-8 workspace that lives until the
+    context exits, including retries.
     """
-    if style is ExtractionStyle.DIRECT:
+    if not uses_workspace(style):
         yield [], None
         return
     with tempfile.TemporaryDirectory(prefix="openextract-") as tmp:

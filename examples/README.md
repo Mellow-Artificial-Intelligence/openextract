@@ -43,8 +43,9 @@ uv run python -m examples.run_all
 | `basic/` | `bytes_input.py` | Anthropic | `extract()` with `bytes` + `media_type` |
 | `basic/` | `url_extract.py` | xAI | `extract()` with a public HTTPS URL |
 | `images/` | `document_summary.py` | xAI | Summarize a document page image |
-| `images/` | `receipt_extraction.py` | Anthropic | Receipt-style fields from an image |
-| `documents/` | `invoice_extraction.py` | Anthropic | Invoice schema from PDF or image (`--fixture`) |
+| `images/` | `receipt_extraction.py` | Anthropic | Receipt-style fields from an image (`style='table'`) |
+| `documents/` | `invoice_extraction.py` | Anthropic | Invoice schema from PDF or image (`--fixture`); `style='table'` |
+| `documents/` | `line_item_extraction.py` | TestModel | `style='table'` line items from a PDF snippet |
 | `batch/` | `batch_extract.py` | OpenAI | Concurrent `extract_many()` |
 | `advanced/` | `swarm_extract.py` | OpenAI + Anthropic | Parallel agents on one input via `extract_swarm_with_results()` |
 | `batch/` | `stream_batch_extract.py` | TestModel | `iter_extract_many_async` completion order vs `extract_many` input order |
@@ -53,7 +54,7 @@ uv run python -m examples.run_all
 | `advanced/` | `extract_with_citations.py` | TestModel | `cite=True` on `extract_with_usage` / `extract_many_with_results` |
 | `advanced/` | `retry_extract.py` | OpenAI | `max_retries` / `retry_backoff` |
 | `advanced/` | `reusable_sessions.py` | TestModel | Sync/async sessions and dependency-injected agents |
-| `advanced/` | `extraction_styles.py` | TestModel | `style='direct'` vs `search` / `code` |
+| `advanced/` | `extraction_styles.py` | TestModel | `style='direct'` vs `table` / `search` / `code` |
 | `advanced/` | `error_handling.py` | — | Catching `UrlFetchError` (no model call) |
 | `audio/` | `meeting_notes.py` | xAI | Audio → structured meeting notes (bring your own file) |
 | `cli/` | `schemas.py` | — | Pydantic models for CLI `--schema` |
@@ -103,6 +104,14 @@ uv run python -m examples.audio.meeting_notes /path/to/meeting.mp3
 ```
 
 Requires `XAI_API_KEY` (or override with `OPENEXTRACT_MODEL`).
+
+### Line items / tables (no API key)
+
+```bash
+uv run python -m examples.documents.line_item_extraction
+```
+
+Uses `style='table'` with TestModel. Swap the model and pass a real invoice or statement PDF for a live run.
 
 ### Your own PDF invoice
 

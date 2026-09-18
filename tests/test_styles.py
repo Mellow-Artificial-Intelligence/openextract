@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import sys
 import tempfile
 from pathlib import Path
@@ -9,10 +10,13 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from pydantic import BaseModel
 from pydantic_ai import BinaryContent
+from pydantic_ai.models.test import TestModel
 
 from openextract import (
     AsyncExtractor,
+    ExtractionInput,
     ExtractionStyle,
     Extractor,
     ModelError,
@@ -21,11 +25,14 @@ from openextract import (
     extract,
     extract_async,
     extract_many,
+    extract_many_with_results,
+    extract_swarm,
     extract_with_usage,
     extract_with_usage_async,
 )
 from openextract._cli import main
 from openextract._styles import (
+    TABLE_INSTRUCTIONS,
     decode_text_document,
     document_filename,
     is_binary_media_type,
@@ -33,10 +40,25 @@ from openextract._styles import (
     materialize_text_document,
     normalize_style,
     prepared_style_run,
+    should_parse,
     style_capabilities,
     style_run_inputs,
+    uses_workspace,
+    with_style_instructions,
+    with_table_instructions,
 )
+from tests.pdf_fixture import synthetic_pdf
 from tests.test_extract import _make_agent_mock, _Person
+
+
+class _LineItem(BaseModel):
+    description: str
+    amount: float
+
+
+class _Invoice(BaseModel):
+    vendor: str | None = None
+    line_items: list[_LineItem]
 
 
 def _install_harness(mocker, *, filesystem=None, code_mode=None, mount_dir=None):
@@ -53,6 +75,22 @@ class TestStyleHelpers:
     def test_normalize_accepts_enum_and_string(self):
         assert normalize_style("search") is ExtractionStyle.SEARCH
         assert normalize_style(ExtractionStyle.CODE) is ExtractionStyle.CODE
+        assert normalize_style("table") is ExtractionStyle.TABLE
+
+    def test_workspace_and_parse_helpers(self):
+        assert uses_workspace(ExtractionStyle.SEARCH)
+        assert uses_workspace(ExtractionStyle.CODE)
+        assert not uses_workspace(ExtractionStyle.DIRECT)
+        assert not uses_workspace(ExtractionStyle.TABLE)
+        assert should_parse(False, ExtractionStyle.TABLE)
+        assert not should_parse(False, ExtractionStyle.DIRECT)
+        assert should_parse(True, ExtractionStyle.DIRECT)
+        assert with_table_instructions(None) == TABLE_INSTRUCTIONS
+        assert with_table_instructions("  ").strip() == TABLE_INSTRUCTIONS
+        assert with_table_instructions("rows only").startswith(TABLE_INSTRUCTIONS)
+        assert with_table_instructions("rows only").endswith("rows only")
+        assert with_style_instructions("keep", ExtractionStyle.DIRECT) == "keep"
+        assert TABLE_INSTRUCTIONS in with_style_instructions("keep", ExtractionStyle.TABLE)
 
     def test_normalize_rejects_unknown(self):
         with pytest.raises(ValueError, match="style must be one of"):
@@ -119,17 +157,30 @@ class TestStyleHelpers:
 
     def test_direct_capabilities_are_empty(self, tmp_path):
         assert style_capabilities(ExtractionStyle.DIRECT, tmp_path) == []
+        assert style_capabilities(ExtractionStyle.TABLE, tmp_path) == []
 
     def test_style_run_inputs_mention_tools_or_code(self):
         search = style_run_inputs(ExtractionStyle.SEARCH, "document.txt")
         code = style_run_inputs(ExtractionStyle.CODE, "document.txt")
         assert "search_files" in search[0]
         assert "/work/document.txt" in code[0]
+        with pytest.raises(ValueError, match="does not use workspace"):
+            style_run_inputs(ExtractionStyle.DIRECT, "document.txt")
+        with pytest.raises(ValueError, match="does not use workspace"):
+            style_run_inputs(ExtractionStyle.TABLE, "document.txt")
 
 
 class TestPreparedStyleRun:
     def test_direct_yields_no_workspace_inputs(self):
         with prepared_style_run(ExtractionStyle.DIRECT, b"abc", "text/plain") as (
+            caps,
+            inputs,
+        ):
+            assert caps == []
+            assert inputs is None
+
+    def test_table_yields_no_workspace_inputs(self):
+        with prepared_style_run(ExtractionStyle.TABLE, b"row", "text/plain") as (
             caps,
             inputs,
         ):
@@ -436,6 +487,140 @@ class TestSessionStyles:
         assert usage.total_tokens == 3
 
 
+class TestTableStyle:
+    def test_table_prepends_row_guidance(self, mocker):
+        expected = _Person(name="Ada", age=36)
+        agent_cls, _ = _make_agent_mock(mocker, output=expected)
+        result = extract(
+            schema=_Person,
+            model="openai:gpt-5",
+            input_file=b"Ada is 36",
+            media_type="text/plain",
+            style="table",
+            instructions="pull the person",
+        )
+        assert result is expected
+        instructions = agent_cls.call_args.kwargs["instructions"]
+        assert instructions.startswith(TABLE_INSTRUCTIONS)
+        assert instructions.endswith("pull the person")
+
+    def test_table_accepts_images_without_harness(self, mocker):
+        expected = _Person(name="Ada", age=36)
+        _make_agent_mock(mocker, output=expected)
+        result = extract(
+            schema=_Person,
+            model="openai:gpt-5",
+            input_file=b"\x89PNG",
+            media_type="image/png",
+            style=ExtractionStyle.TABLE,
+        )
+        assert result is expected
+
+    def test_table_parses_pdf_windows_and_merges_rows(self, mocker):
+        pdf = synthetic_pdf(pages=["Widget 10.00", "Gadget 20.00"])
+        rows = [
+            _Invoice(vendor="Acme", line_items=[_LineItem(description="Widget", amount=10.0)]),
+            _Invoice(vendor="Acme", line_items=[_LineItem(description="Gadget", amount=20.0)]),
+        ]
+        agent_cls, agent = _make_agent_mock(mocker)
+        agent.run_sync.side_effect = [SimpleNamespace(output=row) for row in rows]
+
+        result = extract(
+            schema=_Invoice,
+            model="openai:gpt-5",
+            input_file=pdf,
+            media_type="application/pdf",
+            style="table",
+        )
+
+        assert result.vendor == "Acme"
+        assert result.line_items == [
+            _LineItem(description="Widget", amount=10.0),
+            _LineItem(description="Gadget", amount=20.0),
+        ]
+        assert agent.run_sync.call_count == 2
+        assert TABLE_INSTRUCTIONS in agent_cls.call_args.kwargs["instructions"]
+        prompt = agent.run_sync.call_args_list[0].args[0]
+        assert all(not isinstance(part, BinaryContent) for part in prompt)
+        assert any("--- Page" in part for part in prompt if isinstance(part, str))
+
+    def test_table_cite_ignores_model_boxes(self):
+        pdf = synthetic_pdf("Acme Corp")
+        model = TestModel(
+            custom_output_args={
+                "output": {"name": "Ada", "age": 36},
+                "citations": [
+                    {
+                        "field": "name",
+                        "quote": "Acme Corp",
+                        "page": 1,
+                        "bbox": [0.9, 0.9, 0.1, 0.1],
+                    }
+                ],
+            }
+        )
+        result = extract_many_with_results(
+            _Person,
+            model,
+            [ExtractionInput(pdf, media_type="application/pdf")],
+            style="table",
+            cite=True,
+        )[0]
+        assert result.output == _Person(name="Ada", age=36)
+        citation = result.citations[0]
+        assert citation.quote == "Acme Corp"
+        assert citation.bbox != (0.9, 0.9, 0.1, 0.1)
+        assert citation.bbox is not None
+
+    def test_table_session_builds_agent_without_workspace(self, mocker):
+        from tests.test_sessions import FakeAgent
+
+        agent = FakeAgent([{"name": "Ada", "age": 36}])
+        build = mocker.patch("openextract._session._build_agent", return_value=agent)
+        extractor = Extractor(_Person, "openai:gpt-5", style="table", instructions="rows")
+        build.assert_called_once()
+        assert TABLE_INSTRUCTIONS in build.call_args.args[2]
+        assert "rows" in build.call_args.args[2]
+        with extractor:
+            result = extractor.extract(b"Ada", media_type="text/plain")
+        assert result == _Person(name="Ada", age=36)
+
+    def test_injected_agent_rejects_table_style(self):
+        with pytest.raises(ValueError, match="injected agent"):
+            Extractor(_Person, agent=MagicMock(), style="table")
+
+    def test_batch_table_shares_one_agent(self, mocker):
+        people = [_Person(name="Ada", age=36), _Person(name="Grace", age=85)]
+        agent = MagicMock()
+
+        async def run(inputs):
+            return SimpleNamespace(output=people.pop(0))
+
+        agent.run.side_effect = run
+        build = mocker.patch("openextract._batch._build_agent", return_value=agent)
+
+        results = extract_many(
+            schema=_Person,
+            model="openai:gpt-5",
+            input_files=[b"a", b"b"],
+            media_type="text/plain",
+            style="table",
+        )
+
+        assert [item.name for item in results] == ["Ada", "Grace"]
+        assert build.call_count == 1
+        assert TABLE_INSTRUCTIONS in build.call_args.args[2]
+
+    def test_swarm_and_async_table(self):
+        model = TestModel(custom_output_args={"name": "Ada", "age": 36})
+        assert extract_swarm(
+            _Person, model, b"Ada 36", media_type="text/plain", style="table"
+        ) == _Person(name="Ada", age=36)
+        assert asyncio.run(
+            extract_async(_Person, model, b"Ada 36", media_type="text/plain", style="table")
+        ) == _Person(name="Ada", age=36)
+
+
 class TestCliStyle:
     def test_style_is_forwarded(self, mocker):
         fake = _Person(name="Ada", age=36)
@@ -456,3 +641,23 @@ class TestCliStyle:
             == 0
         )
         assert mock_extract.call_args.kwargs["style"] == "search"
+
+    def test_table_style_is_forwarded(self, mocker):
+        fake = _Person(name="Ada", age=36)
+        mock_extract = mocker.patch("openextract._cli.extract", return_value=fake)
+
+        assert (
+            main(
+                [
+                    "input.txt",
+                    "--schema",
+                    "tests.test_cli:_FixtureSchema",
+                    "--model",
+                    "openai:gpt-5",
+                    "--style",
+                    "table",
+                ]
+            )
+            == 0
+        )
+        assert mock_extract.call_args.kwargs["style"] == "table"

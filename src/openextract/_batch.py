@@ -28,7 +28,14 @@ from ._config import (
 from ._errors import _extraction_errors
 from ._media import _get_media_async, _item_source_label
 from ._parse import maybe_parsed_inputs
-from ._styles import ExtractionStyle, normalize_style, prepared_style_run
+from ._styles import (
+    ExtractionStyle,
+    normalize_style,
+    prepared_style_run,
+    should_parse,
+    uses_workspace,
+    with_style_instructions,
+)
 from ._types import (
     ExtractionInputLike,
     ExtractionResult,
@@ -171,10 +178,12 @@ async def _iter_extractions(
     # between runs and stays inside this event loop, so this is safe. Search and
     # code styles bind capabilities to a per-item workspace, so those items
     # each get their own agent.
-    run_schema, run_instructions = prepare_cited_run(schema, options.instructions, options.cite)
+    run_schema, run_instructions = prepare_cited_run(
+        schema, with_style_instructions(options.instructions, options.style), options.cite
+    )
     shared_agent = (
         _build_agent(run_schema, model, run_instructions)
-        if options.style is ExtractionStyle.DIRECT
+        if not uses_workspace(options.style)
         else None
     )
     stop = asyncio.Event()
@@ -200,7 +209,7 @@ async def _iter_extractions(
                         max_input_bytes=options.max_input_bytes,
                     )
                 parsed_inputs, parsed = maybe_parsed_inputs(
-                    file_bytes, file_type, parse=options.cite
+                    file_bytes, file_type, parse=should_parse(options.cite, options.style)
                 )
                 with prepared_style_run(options.style, file_bytes, file_type) as (
                     capabilities,
