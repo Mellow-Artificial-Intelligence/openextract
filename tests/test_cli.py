@@ -459,6 +459,145 @@ class TestMainSuccess:
 
 
 # ---------------------------------------------------------------------------
+# --out PATH
+# ---------------------------------------------------------------------------
+
+
+class TestOutFile:
+    def test_writes_single_json_and_leaves_stdout_empty(self, mocker, capsys, tmp_path):
+        dest = tmp_path / "result.json"
+        _patch_extract(mocker, return_value=_FixtureSchema(name="Ada", age=36))
+
+        assert main(["input.txt", *_BASE_ARGS, "--out", str(dest)]) == 0
+
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert json.loads(dest.read_text(encoding="utf-8")) == {"name": "Ada", "age": 36}
+
+    def test_overwrites_existing_file(self, mocker, capsys, tmp_path):
+        dest = tmp_path / "result.json"
+        dest.write_text("stale\n", encoding="utf-8")
+        _patch_extract(mocker, return_value=_FixtureSchema(name="Ada", age=36))
+
+        assert main(["input.txt", *_BASE_ARGS, "--out", str(dest)]) == 0
+
+        capsys.readouterr()
+        assert json.loads(dest.read_text(encoding="utf-8")) == {"name": "Ada", "age": 36}
+
+    def test_missing_parent_returns_1_before_extraction(self, mocker, capsys, tmp_path):
+        dest = tmp_path / "missing" / "result.json"
+        mock_extract = _patch_extract(mocker)
+
+        assert main(["input.txt", *_BASE_ARGS, "--out", str(dest)]) == 1
+
+        mock_extract.assert_not_called()
+        error = capsys.readouterr().err
+        assert "parent directory does not exist" in error
+        assert str(dest) in error
+        assert not dest.exists()
+
+    def test_directory_target_returns_1_before_extraction(self, mocker, capsys, tmp_path):
+        mock_extract = _patch_extract(mocker)
+
+        assert main(["input.txt", *_BASE_ARGS, "--out", str(tmp_path)]) == 1
+
+        mock_extract.assert_not_called()
+        assert "cannot write output file" in capsys.readouterr().err
+
+    def test_invalid_options_do_not_create_out_file(self, mocker, capsys, tmp_path):
+        dest = tmp_path / "result.json"
+        mock_extract = _patch_extract(mocker)
+
+        assert main(["input.txt", *_BASE_ARGS, "--out", str(dest), "--max-concurrency", "0"]) == 1
+
+        mock_extract.assert_not_called()
+        assert not dest.exists()
+        assert "max_concurrency" in capsys.readouterr().err
+
+    def test_extract_error_keeps_payload_off_stdout(self, mocker, capsys, tmp_path):
+        dest = tmp_path / "result.json"
+        _patch_extract(mocker, side_effect=ModelError("upstream"))
+
+        assert main(["input.txt", *_BASE_ARGS, "--out", str(dest)]) == 4
+
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert "upstream" in captured.err
+        assert dest.read_text(encoding="utf-8") == ""
+
+    def test_batch_writes_json_array(self, mocker, capsys, tmp_path):
+        dest = tmp_path / "batch.json"
+        ada = _FixtureSchema(name="Ada", age=36)
+        _patch_iter_extractions(mocker, events=[(0, ada), (1, ada)])
+
+        assert main(["a.pdf", "b.pdf", *_BASE_ARGS, "--out", str(dest)]) == 0
+
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert json.loads(dest.read_text(encoding="utf-8")) == [
+            {"name": "Ada", "age": 36},
+            {"name": "Ada", "age": 36},
+        ]
+
+    def test_directory_run_writes_batch_payload(self, mocker, capsys, tmp_path):
+        root = tmp_path / "invoices"
+        root.mkdir()
+        (root / "a.pdf").write_text("body", encoding="utf-8")
+        dest = tmp_path / "out.json"
+        ada = _FixtureSchema(name="Ada", age=36)
+        _patch_iter_extractions(mocker, events=[(0, ada)])
+
+        assert main([str(root), *_BASE_ARGS, "--out", str(dest)]) == 0
+
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert json.loads(dest.read_text(encoding="utf-8")) == [{"name": "Ada", "age": 36}]
+
+    def test_jsonl_writes_records_and_keeps_progress_on_stderr(self, mocker, capsys, tmp_path):
+        dest = tmp_path / "out.jsonl"
+        ada = _FixtureSchema(name="Ada", age=36)
+        _patch_iter_extractions(mocker, events=[(0, ada), (1, ada)])
+
+        assert (
+            main(
+                [
+                    "a.pdf",
+                    "b.pdf",
+                    *_BASE_ARGS,
+                    "--out",
+                    str(dest),
+                    "--output",
+                    "jsonl",
+                    "--progress",
+                ]
+            )
+            == 0
+        )
+
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert "progress: 1/2 completed (0 failed): a.pdf" in captured.err
+        lines = [json.loads(line) for line in dest.read_text(encoding="utf-8").splitlines()]
+        assert lines == [
+            {"index": 0, "input": "a.pdf", "result": {"name": "Ada", "age": 36}},
+            {"index": 1, "input": "b.pdf", "result": {"name": "Ada", "age": 36}},
+        ]
+
+    def test_partial_failure_warning_stays_on_stderr(self, mocker, capsys, tmp_path):
+        dest = tmp_path / "batch.json"
+        ada = _FixtureSchema(name="Ada", age=36)
+        _patch_iter_extractions(mocker, events=[(0, ada), (1, ModelError("boom"))])
+
+        assert main(["a.pdf", "b.pdf", *_BASE_ARGS, "--out", str(dest), "--continue-on-error"]) == 7
+
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert "1 of 2 input(s) failed" in captured.err
+        payload = json.loads(dest.read_text(encoding="utf-8"))
+        assert payload[1]["error_type"] == "ModelError"
+
+
+# ---------------------------------------------------------------------------
 # main error paths / exit codes
 # ---------------------------------------------------------------------------
 

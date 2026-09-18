@@ -44,7 +44,7 @@ CLI: `--swarm N`, `--models a,b`, `--agent SPEC`, `--agents SPEC,SPEC`, `--reduc
 
 Exceptions (all subclass `ExtractionError`): `UrlFetchError`, `InputTooLargeError`, `SchemaValidationError` (field path + expected type; `.errors`), `ModelError` (`.retryable`, `.status_code`, `.provider`, `.retry_after`), `ProviderNotInstalledError`, `RemoteAgentError` (`.url`, `.status_code`, `.retryable`). Invalid retry/concurrency options raise `ValueError`.
 
-CLI: `openextract INPUT --schema mod:Class --model openai:gpt-5`. Exit 0 success; 1 usage; 2–6 mapped errors; 7 partial batch. Parse stdout only.
+CLI: `openextract INPUT --schema mod:Class --model openai:gpt-5`. Exit 0 success; 1 usage (including `--out` missing parent / unwritable path); 2–6 mapped errors; 7 partial batch. Parse stdout, or `--out PATH` when set (parent directory must already exist).
 
 Retries: `max_retries` default 0; only transient `ModelError`. Media is resolved once and reused.
 

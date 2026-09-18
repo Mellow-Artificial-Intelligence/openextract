@@ -466,7 +466,8 @@ openextract ./bill.pdf \
   --instructions "Extract vendor, total, and currency."
 ```
 
-- Success goes to **stdout**; errors to **stderr**.
+- Success goes to **stdout** (or `--out PATH`; parent directory must exist);
+  errors to **stderr**.
 - `--schema` is `module:ClassName` on `PYTHONPATH`.
 - Batch: pass multiple paths. `--continue-on-error` emits per-item errors inline and exits `7` if any failed.
 - `--usage` is single-input only.

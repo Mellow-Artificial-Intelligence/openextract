@@ -9,10 +9,11 @@ import json
 import mimetypes
 import os
 import sys
-from collections.abc import AsyncGenerator, Sequence
+from collections.abc import AsyncGenerator, Iterator, Sequence
+from contextlib import contextmanager
 from pathlib import Path
 from types import GenericAlias
-from typing import Any, BinaryIO, cast
+from typing import Any, BinaryIO, TextIO, cast
 
 from dotenv import load_dotenv
 from pydantic import BaseModel, create_model
@@ -484,6 +485,33 @@ def _array_entry(
     return _result_dump(result)
 
 
+def _open_output_file(path: str) -> TextIO:
+    """Open ``path`` for overwrite; the parent directory must already exist."""
+    dest = Path(path).expanduser()
+    if not dest.parent.exists():
+        raise ValueError(f"cannot write output file '{path}': parent directory does not exist")
+    try:
+        return dest.open("w", encoding="utf-8")
+    except OSError as exc:
+        raise ValueError(f"cannot write output file '{path}': {exc}") from exc
+
+
+@contextmanager
+def _payload_stdout(path: str | None) -> Iterator[None]:
+    """Send payload prints to ``path`` when set; otherwise leave stdout alone."""
+    if path is None:
+        yield
+        return
+    handle = _open_output_file(path)
+    saved = sys.stdout
+    sys.stdout = handle
+    try:
+        yield
+    finally:
+        sys.stdout = saved
+        handle.close()
+
+
 def _print_json(payload: Any, *, as_repr: bool) -> None:
     if as_repr:
         print(repr(payload), flush=True)
@@ -896,6 +924,16 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--out",
+        default=None,
+        metavar="PATH",
+        help=(
+            "Write extraction results to PATH instead of stdout (create/overwrite). "
+            "The parent directory must already exist (exit 1 otherwise). "
+            "Progress, warnings, and errors stay on stderr."
+        ),
+    )
+    parser.add_argument(
         "--max-concurrency",
         type=int,
         default=5,
@@ -977,11 +1015,17 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     try:
         _validate_max_concurrency(args.max_concurrency)
-        if swarm_agents is not None:
-            return _run_swarm(schema_cls, swarm_agents, items[0], args)
-        if args.manifest is not None or from_directory or len(items) > 1 or args.output == "jsonl":
-            return _run_batch(schema_cls, items, labels, args, cast(str, single_model))
-        return _run_single(schema_cls, items[0], args, single_model)
+        with _payload_stdout(args.out):
+            if swarm_agents is not None:
+                return _run_swarm(schema_cls, swarm_agents, items[0], args)
+            if (
+                args.manifest is not None
+                or from_directory
+                or len(items) > 1
+                or args.output == "jsonl"
+            ):
+                return _run_batch(schema_cls, items, labels, args, cast(str, single_model))
+            return _run_single(schema_cls, items[0], args, single_model)
     except BrokenPipeError:
         _discard_stdout()
         return _EXIT_BROKEN_PIPE

@@ -9,6 +9,11 @@ timing when that is known.
 ## [Unreleased]
 
 ### Added
+- CLI `--out PATH` writes the JSON / JSONL / `repr` payload to a file
+  instead of stdout (create/overwrite). Progress, warnings, and errors stay
+  on stderr. The parent directory must already exist (exit `1` otherwise).
+  Default (flag omitted) is unchanged stdout. Single-file and
+  batch/directory runs both apply.
 - CLI `--schema` accepts a JSON Schema file path (`.json`, or an existing file
   that parses as a JSON Schema object) in addition to `module:ClassName`.
   Missing files, invalid JSON, and non-object schemas exit `1` with a clear

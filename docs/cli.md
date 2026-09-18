@@ -6,25 +6,26 @@ title: CLI contracts
 # CLI stdout, stderr, and exit codes
 
 This page is the contract for the `openextract` command. Successful results go
-to **stdout**. Errors, warnings, and progress go to **stderr**. Exit codes are
-stable for automation.
+to **stdout**, or to `--out PATH` when that flag is set. Errors, warnings, and
+progress go to **stderr**. Exit codes are stable for automation.
 
 ## Streams
 
 | Stream | Contents |
 | ------ | -------- |
-| stdout | Successful extraction payloads (`json`, `jsonl`, or `repr`) |
+| stdout | Successful extraction payloads (`json`, `jsonl`, or `repr`), unless `--out` is set |
+| `--out PATH` | Same payload that would have gone to stdout (create/overwrite) |
 | stderr | `error: ...` messages, a `warning: ...` line for partial batch failures, and `progress: ...` lines when `--progress` is set |
 
-Never parse stderr for successful results. Never treat stdout as empty when
-exit code `7` is returned — the batch output is still written.
+Never parse stderr for successful results. Never treat stdout (or `--out`) as
+empty when exit code `7` is returned — the batch output is still written.
 
 ## Exit codes
 
 | Code | Meaning | Typical cause |
 | ---- | ------- | ------------- |
 | `0` | Success | Single-file or full-batch success |
-| `1` | Usage / setup error | Missing or bad `--schema` / `--model`, stdin without `--media-type`, invalid manifest, empty or unreadable directory, `--recursive` with `--manifest` or stdin, invalid concurrency/retry/size/swarm options, unloadable `--agent`, argparse failures |
+| `1` | Usage / setup error | Missing or bad `--schema` / `--model`, stdin without `--media-type`, invalid manifest, empty or unreadable directory, `--recursive` with `--manifest` or stdin, invalid concurrency/retry/size/swarm options, unloadable `--agent`, `--out` with a missing parent directory or unwritable path, argparse failures |
 | `2` | URL fetch error | `UrlFetchError` (network failure, HTTP error, SSRF refusal) |
 | `3` | Schema validation error | `SchemaValidationError` |
 | `4` | Model API error | `ModelError` |
@@ -40,8 +41,8 @@ These mappings live in `src/openextract/_cli.py` and are covered by
 
 CLI option values are validated **before any model call**: invalid
 `--max-concurrency`, `--max-retries`, `--retry-backoff`, `--retry-max-backoff`,
-`--max-input-bytes`, or manifest contents exit `1` without contacting a
-provider.
+`--max-input-bytes`, `--out` (missing parent directory or unwritable path), or
+manifest contents exit `1` without contacting a provider.
 
 ## Successful single-file output
 
@@ -283,7 +284,9 @@ are dropped too). Only meaningful with `--cite`.
 | `--output jsonl` | One compact JSON record per completed input, written incrementally in completion order. |
 | `--output repr` | Python `repr(...)` of the same payload object as `json`. |
 
-All formats write only to stdout on success.
+All formats write to stdout on success, or to `--out PATH` when that flag is
+set. `--out` creates or overwrites `PATH`; the parent directory must already
+exist (exit `1` otherwise). Progress, warnings, and errors stay on stderr.
 
 ## Stdin input
 
