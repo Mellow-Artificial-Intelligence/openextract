@@ -166,3 +166,27 @@ def test_cli_single_progress_forwards_callback(mocker, capsys):
     assert "progress: window 1/2 (page 1)" in captured.err
     assert "progress: window 2/2 (page 2)" in captured.err
     assert "progress" not in captured.out
+
+
+def test_cli_swarm_progress_forwards_callback(mocker, capsys):
+    fake = Person(name="Ada", age=36)
+
+    def _swarm(*_args, **kwargs):
+        kwargs["on_progress"](ExtractProgress(current=1, total=1))
+        return fake
+
+    mocker.patch("openextract._cli.extract_swarm", side_effect=_swarm)
+    exit_code = main(
+        [
+            "doc.pdf",
+            "--schema",
+            "tests.test_progress:Person",
+            "--model",
+            "xai:grok-4.3",
+            "--swarm",
+            "2",
+            "--progress",
+        ]
+    )
+    assert exit_code == 0
+    assert "progress: window 1/1" in capsys.readouterr().err
