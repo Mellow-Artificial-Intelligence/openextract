@@ -165,7 +165,7 @@ class TestReduceOutputs:
             def model_dump(self, *args, **kwargs):
                 return {"values": ["not-an-int"]}
 
-        with pytest.raises(SchemaValidationError):
+        with pytest.raises(SchemaValidationError, match=r"values\[0\]: expected int, got str"):
             reduce_outputs([Strict(), Strict()], "merge")
 
 

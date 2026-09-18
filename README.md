@@ -602,8 +602,8 @@ except UrlFetchError:
     ...  # The URL could not be fetched
 except InputTooLargeError:
     ...  # The input exceeded the configured byte limit
-except SchemaValidationError:
-    ...  # The model's output did not match your schema
+except SchemaValidationError as exc:
+    ...  # Output did not match the schema; str(exc) lists field: expected T, got U
 except ProviderNotInstalledError:
     ...  # The provider extra isn't installed (e.g. pip install openextract[xai])
 except ModelError as exc:
@@ -652,7 +652,7 @@ below even though it is not exported from `__all__`.
 | `ExtractionError` | Stable | Base class for all public `openextract` exceptions. Catch this for a broad fallback. |
 | `UrlFetchError` | Stable | Raised for URL fetch and URL safety failures. Message wording may improve, but the exception type is stable. |
 | `InputTooLargeError` | Stable | Raised before a model call when resolved media exceeds the configured per-input byte limit. |
-| `SchemaValidationError` | Stable | Raised when model output cannot be validated against the requested schema. |
+| `SchemaValidationError` | Stable | Raised when model output cannot be validated against the requested schema. Messages list field paths and expected types; additive `.errors` details. |
 | `ModelError` | Stable | Raised for provider/model API failures, with `provider`, `status_code`, `retryable`, and `retry_after` metadata where available. |
 | `ProviderNotInstalledError` | Stable | Raised when the requested model provider extra is missing. Install hints may become more specific as providers are added. |
 | `openextract` CLI | Provisional | The command, core flags, JSON output, stderr error reporting, provider-install exit code `6`, partial-batch exit code `7`, and remote-agent exit code `8` are intended to remain. |

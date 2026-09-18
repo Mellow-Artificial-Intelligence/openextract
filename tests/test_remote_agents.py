@@ -165,7 +165,7 @@ class TestResponse:
         assert output == Person(name="Ada")
 
     async def test_output_that_does_not_match_the_schema_fails(self, mocker):
-        with pytest.raises(SchemaValidationError):
+        with pytest.raises(SchemaValidationError, match=r"age: expected int, got str"):
             await run(AGENT, mocker, json_handler({"output": {"age": "old"}}))
 
     async def test_non_json_bodies_are_reported(self, mocker):

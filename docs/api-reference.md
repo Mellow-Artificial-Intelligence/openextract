@@ -325,7 +325,8 @@ Return a valid `SwarmReduce` for an enum member or string, or raise
 Fold a sequence of same-schema Pydantic model instances into one instance.
 `merge` and `vote` reduce the dumped payloads and re-validate the combined
 value, so the return value always satisfies the schema; a combination that no
-longer validates raises `SchemaValidationError`. An empty `values` raises
+longer validates raises `SchemaValidationError` with field-path and expected-type
+details. An empty `values` raises
 `ValueError`.
 
 ## Choosing a batch API

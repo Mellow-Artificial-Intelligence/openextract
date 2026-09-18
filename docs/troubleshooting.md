@@ -88,10 +88,13 @@ matrix](providers.md) for the credential column.
 **Cause**
 
 The model returned output that could not be validated against your Pydantic
-schema.
+schema. The exception message lists each failing field path and the type that
+was expected, for example `lines[0].qty: expected int, got str`.
+`exc.errors` is a tuple of `{field, expected, received}` mappings.
 
 **Next step**
 
+- Read the field paths in the error; those are the values to fix.
 - Tighten `instructions` and keep the schema fields extractable from the media.
 - Prefer capable models for the modality (for example vision for images).
 - Retry with `max_retries` if the failure is intermittent model drift.
