@@ -11,6 +11,7 @@ import os
 import sys
 from collections.abc import AsyncGenerator, Sequence
 from pathlib import Path
+from types import GenericAlias
 from typing import Any, BinaryIO, cast
 
 from dotenv import load_dotenv
@@ -61,27 +62,40 @@ def _json_schema_model_name(schema: dict[str, Any], path: Path) -> str:
     return stem if stem.isidentifier() else "JsonSchema"
 
 
+def _schema_object(node: object) -> dict[str, Any] | None:
+    """Narrow a JSON object to ``dict[str, Any]``."""
+    if not isinstance(node, dict):
+        return None
+    return cast(dict[str, Any], node)
+
+
 def _json_schema_annotation(node: object, *, name: str) -> Any:
     """Map a JSON Schema node to a Pydantic annotation."""
-    if not isinstance(node, dict):
+    schema = _schema_object(node)
+    if schema is None:
         return Any
-    schema_type = node.get("type")
+    schema_type = schema.get("type")
     if schema_type == "array":
-        return list[_json_schema_annotation(node.get("items"), name=f"{name}Item")]
-    if schema_type == "object" or (schema_type is None and "properties" in node):
-        return _model_from_json_schema(node, name)
-    return _JSON_PRIMITIVES.get(schema_type, Any) if isinstance(schema_type, str) else Any
+        item = _json_schema_annotation(schema.get("items"), name=f"{name}Item")
+        return GenericAlias(list, (item,))
+    if schema_type == "object" or (schema_type is None and "properties" in schema):
+        return _model_from_json_schema(schema, name)
+    if isinstance(schema_type, str):
+        return _JSON_PRIMITIVES.get(schema_type, Any)
+    return Any
 
 
 def _model_from_json_schema(schema: dict[str, Any], name: str) -> type[BaseModel]:
     """Build a Pydantic model from a JSON Schema object."""
     required_raw = schema.get("required")
     required = set(required_raw) if isinstance(required_raw, list) else set()
-    properties = schema.get("properties")
-    if not isinstance(properties, dict):
-        properties = {}
+    properties: dict[str, Any] = _schema_object(schema.get("properties")) or {}
     fields: dict[str, Any] = {}
     for key, spec in properties.items():
+        if not key.isidentifier():
+            raise ValueError(
+                f"cannot build a Pydantic model from '{name}': invalid field name {key!r}"
+            )
         annotation = _json_schema_annotation(spec, name=f"{name}{key.title()}")
         fields[key] = (annotation, ...) if key in required else (annotation | None, None)
     try:
@@ -92,12 +106,13 @@ def _model_from_json_schema(schema: dict[str, Any], name: str) -> type[BaseModel
 
 def _require_object_schema(data: object, path: Path) -> dict[str, Any]:
     """Reject non-object JSON Schema documents."""
-    if not isinstance(data, dict):
+    schema = _schema_object(data)
+    if schema is None:
         raise ValueError(f"schema file '{path}' must be a JSON Schema object")
-    schema_type = data.get("type")
+    schema_type = schema.get("type")
     if schema_type is not None and schema_type != "object":
         raise ValueError(f"schema file '{path}' must be a JSON Schema object")
-    return data
+    return schema
 
 
 def _read_json_schema_file(path: Path) -> dict[str, Any]:

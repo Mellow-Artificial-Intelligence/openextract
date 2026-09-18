@@ -269,6 +269,12 @@ class TestResolveSchema:
         with pytest.raises(ValueError, match="cannot build a Pydantic model"):
             _resolve_schema(str(path))
 
+    def test_create_model_error_raises(self, tmp_path, mocker):
+        path = _write_schema(tmp_path, {"type": "object", "properties": {"ok": {"type": "string"}}})
+        mocker.patch("openextract._cli.create_model", side_effect=TypeError("boom"))
+        with pytest.raises(ValueError, match="cannot build a Pydantic model"):
+            _resolve_schema(str(path))
+
 
 # ---------------------------------------------------------------------------
 # argparse behavior
