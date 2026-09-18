@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 
 _DEFAULT_URL_FETCH_TIMEOUT = 30.0
 _DEFAULT_MAX_REDIRECTS = 10
@@ -133,3 +133,72 @@ def _validate_cite_min_confidence(value: object) -> float | None:
     if number is None or number < 0 or number > 1:
         raise ValueError("cite_min_confidence must be a finite number in [0, 1].")
     return number
+
+
+def _validate_pages(value: object) -> tuple[int, ...] | None:
+    """Return unique 1-based page numbers, or ``None`` for all pages.
+
+    Out-of-range numbers are left in the tuple; the parser ignores them after
+    the document's page count is known. An empty sequence raises ``ValueError``.
+    """
+    if value is None:
+        return None
+    if isinstance(value, str | bytes) or not isinstance(value, Sequence):
+        raise ValueError("pages must be a sequence of 1-based page numbers.")
+    pages: list[int] = []
+    seen: set[int] = set()
+    for item in value:
+        page = _positive_int(item)
+        if page is None:
+            raise ValueError("pages must be a sequence of 1-based page numbers.")
+        if page not in seen:
+            seen.add(page)
+            pages.append(page)
+    if not pages:
+        raise ValueError("pages must include at least one 1-based page number.")
+    return tuple(pages)
+
+
+def parse_page_range(spec: str) -> tuple[int, ...]:
+    """Parse compact 1-based page ranges such as ``1-3,5,8``.
+
+    Tokens are comma-separated singles or ``start-end`` spans (inclusive).
+    Whitespace around tokens is ignored. Duplicates keep first-seen order.
+    Empty specs, empty tokens, non-digits, and inverted ranges raise
+    ``ValueError``.
+    """
+    if not isinstance(spec, str) or not spec.strip():
+        raise ValueError("pages must be a non-empty range such as '1-3,5,8'.")
+    collected: list[int] = []
+    for raw in spec.split(","):
+        token = raw.strip()
+        if not token:
+            raise ValueError("pages contains an empty token.")
+        parts = token.split("-")
+        if len(parts) == 1:
+            collected.append(_parse_page_number(parts[0].strip(), token))
+            continue
+        if len(parts) != 2:
+            raise ValueError(f"invalid page range {token!r}.")
+        start_text, end_text = parts[0].strip(), parts[1].strip()
+        if not start_text or not end_text:
+            raise ValueError(f"invalid page range {token!r}.")
+        start = _parse_page_number(start_text, token)
+        end = _parse_page_number(end_text, token)
+        if end < start:
+            raise ValueError(f"invalid page range {token!r}.")
+        collected.extend(range(start, end + 1))
+    pages = _validate_pages(collected)
+    assert pages is not None
+    return pages
+
+
+def _parse_page_number(text: str, token: str) -> int:
+    """Parse one 1-based page number; ``token`` is the original range fragment."""
+    if not text.isdigit():
+        label = "page range" if "-" in token else "page number"
+        raise ValueError(f"invalid {label} {token!r}.")
+    page = int(text)
+    if page < 1:
+        raise ValueError(f"invalid page number {token!r}.")
+    return page

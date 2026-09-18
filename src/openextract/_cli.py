@@ -20,7 +20,7 @@ from pydantic import BaseModel, create_model
 
 from ._agents import DefinedAgent, RemoteAgent, is_agent, load_agent, load_agents
 from ._batch import _BatchOptions, _iter_extractions, extract_many_with_results
-from ._config import _validate_max_concurrency
+from ._config import _validate_max_concurrency, parse_page_range
 from ._extract import _plan_agent, extract, extract_with_usage
 from ._reduce import SwarmReduce
 from ._styles import ExtractionStyle
@@ -655,6 +655,7 @@ def _run_batch(
         rich=args.usage or args.cite,
         cite=args.cite,
         cite_min_confidence=args.cite_min_confidence,
+        pages=args.pages,
     )
     return asyncio.run(_run_batch_async(schema_cls, items, labels, options, args, model))
 
@@ -701,6 +702,7 @@ def _run_single(
         "retry_max_backoff": args.retry_max_backoff,
         "cite": args.cite,
         "cite_min_confidence": args.cite_min_confidence,
+        "pages": args.pages,
     }
     if args.progress:
         shared["on_progress"] = _window_progress
@@ -756,6 +758,7 @@ def _run_swarm(
         "retry_max_backoff": args.retry_max_backoff,
         "cite": args.cite,
         "cite_min_confidence": args.cite_min_confidence,
+        "pages": args.pages,
     }
     if args.progress:
         options["on_progress"] = _window_progress
@@ -907,6 +910,16 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--pages",
+        default=None,
+        metavar="RANGE",
+        help=(
+            "1-based PDF pages to extract, compact ranges like '1-3,5,8'. "
+            "Out-of-range pages are ignored. Default is all pages. Same pages "
+            "as the library (local parse-then-window / citation grounding)."
+        ),
+    )
+    parser.add_argument(
         "--continue-on-error",
         action="store_true",
         help=(
@@ -996,6 +1009,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         if not args.model and not args.models and not agents:
             raise ValueError("--model, --models, or --agent/--agents is required")
+        args.pages = parse_page_range(args.pages) if args.pages is not None else None
     except (ImportError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

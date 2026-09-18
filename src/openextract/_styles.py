@@ -134,14 +134,17 @@ def uses_workspace(style: ExtractionStyle) -> bool:
             assert_never(style)
 
 
-def should_parse(cite: bool, style: ExtractionStyle) -> bool:
+def should_parse(cite: bool, style: ExtractionStyle, pages: object = None) -> bool:
     """Return whether this run should locally parse a PDF before extract.
 
     ``cite=True`` always parses so citations can be grounded. ``table`` and
     ``form`` also parse so rows and labeled fields are extracted per page
-    window and merged.
+    window and merged. A ``pages`` filter parses so only those 1-based pages
+    are sent to the model.
     """
-    return cite or style is ExtractionStyle.TABLE or style is ExtractionStyle.FORM
+    return (
+        cite or pages is not None or style is ExtractionStyle.TABLE or style is ExtractionStyle.FORM
+    )
 
 
 def _with_prefixed_instructions(prefix: str, instructions: str | None) -> str:

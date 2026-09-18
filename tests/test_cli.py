@@ -374,6 +374,7 @@ class TestMainSuccess:
             retry_max_backoff=60.0,
             cite=False,
             cite_min_confidence=None,
+            pages=None,
         )
 
     def test_repr_output(self, mocker, capsys):

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable, Iterator
+from collections.abc import AsyncIterator, Callable, Iterator, Sequence
 from contextlib import asynccontextmanager, contextmanager
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 
@@ -43,6 +43,7 @@ from ._config import (
     _resolve_max_input_bytes,
     _url_fetch_timeout,
     _validate_cite_min_confidence,
+    _validate_pages,
     _validate_retry_options,
 )
 from ._errors import (
@@ -109,13 +110,14 @@ def _bind_agent_inputs(
     file_type: str,
     style: ExtractionStyle,
     cite: bool,
+    pages: Sequence[int] | None = None,
 ) -> Iterator[tuple[PydanticAgent, list, ParsedDocument | None]]:
     """Build the agent and run inputs after media has already been loaded."""
     run_schema, run_instructions = prepare_cited_run(
         schema, with_style_instructions(instructions, style), cite
     )
     parsed_inputs, parsed = maybe_parsed_inputs(
-        file_bytes, file_type, parse=should_parse(cite, style)
+        file_bytes, file_type, parse=should_parse(cite, style, pages), pages=pages
     )
     with prepared_style_run(style, file_bytes, file_type) as (capabilities, style_inputs):
         with _extraction_errors():
@@ -143,6 +145,7 @@ def _prepare_extraction(
     max_input_bytes: int,
     style: ExtractionStyle,
     cite: bool = False,
+    pages: Sequence[int] | None = None,
 ) -> Iterator[tuple[PydanticAgent, list, ParsedDocument | None]]:
     """Prepare one extraction while applying the public exception mapping."""
     with _extraction_errors():
@@ -152,7 +155,7 @@ def _prepare_extraction(
             max_input_bytes=max_input_bytes,
         )
     with _bind_agent_inputs(
-        schema, model, instructions, file_bytes, file_type, style, cite
+        schema, model, instructions, file_bytes, file_type, style, cite, pages
     ) as prepared:
         yield prepared
 
@@ -168,6 +171,7 @@ async def _prepare_extraction_async(
     style: ExtractionStyle,
     cite: bool = False,
     client: httpx.AsyncClient | None = None,
+    pages: Sequence[int] | None = None,
 ) -> AsyncIterator[tuple[PydanticAgent, list, ParsedDocument | None]]:
     """Prepare one async extraction while applying public exception mapping."""
     with _extraction_errors():
@@ -178,7 +182,7 @@ async def _prepare_extraction_async(
             max_input_bytes=max_input_bytes,
         )
     with _bind_agent_inputs(
-        schema, model, instructions, file_bytes, file_type, style, cite
+        schema, model, instructions, file_bytes, file_type, style, cite, pages
     ) as prepared:
         yield prepared
 
@@ -279,6 +283,7 @@ def _swarm_kwargs(
     retry_max_backoff: float,
     cite: bool,
     cite_min_confidence: float | None,
+    pages: Sequence[int] | None,
     on_progress: Callable[[ExtractProgress], None] | None,
 ) -> dict[str, Any]:
     """Keyword arguments shared by every oneshot-to-swarm dispatch."""
@@ -291,6 +296,7 @@ def _swarm_kwargs(
         "retry_max_backoff": retry_max_backoff,
         "cite": cite,
         "cite_min_confidence": cite_min_confidence,
+        "pages": pages,
         "on_progress": on_progress,
     }
 
@@ -309,11 +315,13 @@ def _extract_sync(
     retry_max_backoff: float,
     cite: bool,
     cite_min_confidence: float | None,
+    pages: Sequence[int] | None,
     with_usage: bool,
     on_progress: Callable[[ExtractProgress], None] | None,
 ) -> tuple[T, Usage, tuple[Citation, ...]]:
     """Shared sync oneshot path used by ``extract`` and ``extract_with_usage``."""
     cite_min_confidence = _validate_cite_min_confidence(cite_min_confidence)
+    pages = _validate_pages(pages)
     schema, model, input_file, instructions, style, use_swarm = _resolve_oneshot(
         schema, model, input_file, instructions, style
     )
@@ -327,6 +335,7 @@ def _extract_sync(
             retry_max_backoff=retry_max_backoff,
             cite=cite,
             cite_min_confidence=cite_min_confidence,
+            pages=pages,
             on_progress=on_progress,
         )
         if with_usage:
@@ -349,6 +358,7 @@ def _extract_sync(
         limit,
         style,
         cite,
+        pages,
     ) as (agent, inputs, parsed):
 
         def _run(window: list) -> tuple[object, Usage]:
@@ -385,11 +395,13 @@ async def _extract_async(
     retry_max_backoff: float,
     cite: bool,
     cite_min_confidence: float | None,
+    pages: Sequence[int] | None,
     with_usage: bool,
     on_progress: Callable[[ExtractProgress], None] | None,
 ) -> tuple[T, Usage, tuple[Citation, ...]]:
     """Shared async oneshot path used by the async extract entry points."""
     cite_min_confidence = _validate_cite_min_confidence(cite_min_confidence)
+    pages = _validate_pages(pages)
     schema, model, input_file, instructions, style, use_swarm = _resolve_oneshot(
         schema, model, input_file, instructions, style
     )
@@ -403,6 +415,7 @@ async def _extract_async(
             retry_max_backoff=retry_max_backoff,
             cite=cite,
             cite_min_confidence=cite_min_confidence,
+            pages=pages,
             on_progress=on_progress,
         )
         if with_usage:
@@ -427,6 +440,7 @@ async def _extract_async(
         limit,
         style,
         cite,
+        pages=pages,
     ) as (agent, inputs, parsed):
 
         async def _run(window: list) -> tuple[object, Usage]:
@@ -461,6 +475,7 @@ def extract(
     retry_max_backoff: float = _DEFAULT_RETRY_MAX_BACKOFF,
     cite: bool = False,
     cite_min_confidence: float | None = None,
+    pages: Sequence[int] | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> T:
     """
@@ -509,6 +524,12 @@ def extract(
             heuristic ``confidence`` is not ``None`` and is at least this
             threshold in ``[0, 1]``. ``None`` (default) keeps every citation.
             Invalid values raise ``ValueError`` at call time.
+        pages: Optional 1-based PDF page numbers to extract. When set, only
+            those pages are considered for local parse-then-window and
+            citation grounding. Out-of-range numbers are ignored; if none
+            remain, raises ``ValueError``. ``None`` (default) keeps every
+            page. Invalid values raise ``ValueError`` at call time. Has no
+            effect when the input is not locally parsed.
         on_progress: Optional callback invoked once per parse window immediately
             before that window is sent to the model. Receives
             :class:`ExtractProgress` (1-indexed ``current`` / ``total``, plus
@@ -531,6 +552,7 @@ def extract(
         ExtractionError: For other extraction failures.
         ValueError: If ``style`` is invalid, ``search``/``code`` is used with
             a non-text document, or ``cite_min_confidence`` is outside ``[0, 1]``.
+            Also raised if ``pages`` is empty/invalid or matches no PDF page.
     """
     output, _usage, _citations = _extract_sync(
         schema,
@@ -545,6 +567,7 @@ def extract(
         retry_max_backoff=retry_max_backoff,
         cite=cite,
         cite_min_confidence=cite_min_confidence,
+        pages=pages,
         with_usage=False,
         on_progress=on_progress,
     )
@@ -565,12 +588,13 @@ def extract_with_usage(
     retry_max_backoff: float = _DEFAULT_RETRY_MAX_BACKOFF,
     cite: bool = False,
     cite_min_confidence: float | None = None,
+    pages: Sequence[int] | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> tuple[T, Usage]:
     """Extract structured data and return ``(output, Usage)`` for token accounting.
 
-    Same retry, agent, ``cite`` / ``cite_min_confidence``, and ``on_progress``
-    semantics as :func:`extract`.
+    Same retry, agent, ``cite`` / ``cite_min_confidence``, ``pages``, and
+    ``on_progress`` semantics as :func:`extract`.
     Returns a :class:`Usage` describing the tokens consumed by the successful
     model call, or summed across the agents when an agent fans out into a swarm.
     """
@@ -587,6 +611,7 @@ def extract_with_usage(
         retry_max_backoff=retry_max_backoff,
         cite=cite,
         cite_min_confidence=cite_min_confidence,
+        pages=pages,
         with_usage=True,
         on_progress=on_progress,
     )
@@ -607,6 +632,7 @@ async def extract_with_usage_async(
     retry_max_backoff: float = _DEFAULT_RETRY_MAX_BACKOFF,
     cite: bool = False,
     cite_min_confidence: float | None = None,
+    pages: Sequence[int] | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> tuple[T, Usage]:
     """Async sibling of :func:`extract_with_usage`; returns ``(output, Usage)``."""
@@ -623,6 +649,7 @@ async def extract_with_usage_async(
         retry_max_backoff=retry_max_backoff,
         cite=cite,
         cite_min_confidence=cite_min_confidence,
+        pages=pages,
         with_usage=True,
         on_progress=on_progress,
     )
@@ -643,6 +670,7 @@ async def extract_async(
     retry_max_backoff: float = _DEFAULT_RETRY_MAX_BACKOFF,
     cite: bool = False,
     cite_min_confidence: float | None = None,
+    pages: Sequence[int] | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> T:
     """Async sibling of :func:`extract`; uses ``Agent.run`` instead of ``run_sync``.
@@ -662,6 +690,7 @@ async def extract_async(
         retry_max_backoff=retry_max_backoff,
         cite=cite,
         cite_min_confidence=cite_min_confidence,
+        pages=pages,
         with_usage=False,
         on_progress=on_progress,
     )
