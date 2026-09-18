@@ -24,6 +24,7 @@ from ._config import (
     _DEFAULT_RETRY_MAX_BACKOFF,
     _resolve_max_input_bytes,
     _url_fetch_timeout,
+    _validate_cite_min_confidence,
     _validate_max_concurrency,
     _validate_retry_options,
     _validate_swarm_size,
@@ -161,6 +162,7 @@ async def _run_member(
     retry_backoff: float,
     retry_max_backoff: float,
     cite: bool,
+    cite_min_confidence: float | None = None,
     on_progress: OnProgress | None = None,
 ) -> ExtractionResult[T]:
     """Run one swarm agent over already-loaded media and build its result."""
@@ -189,7 +191,13 @@ async def _run_member(
             retry_backoff=retry_backoff,
             retry_max_backoff=retry_max_backoff,
         )
-        output, citations = split_cited_output(output, schema, cite=cite, parsed=parsed)
+        output, citations = split_cited_output(
+            output,
+            schema,
+            cite=cite,
+            parsed=parsed,
+            cite_min_confidence=cite_min_confidence,
+        )
         return _extraction_result(
             output,
             usage,
@@ -226,6 +234,7 @@ async def _run_member(
             parsed,
             schema,
             cite,
+            cite_min_confidence=cite_min_confidence,
             max_retries=max_retries,
             retry_backoff=retry_backoff,
             retry_max_backoff=retry_max_backoff,
@@ -261,6 +270,7 @@ async def _run_swarm(
     on_agent_start: Callable[[int, int], None] | None,
     on_agent: Callable[[int, int, ExtractionResult[T] | Exception], None] | None,
     cite: bool = False,
+    cite_min_confidence: float | None = None,
     on_progress: OnProgress | None = None,
 ) -> SwarmResult[T]:
     """Load the input once, fan it out across agents, and reduce the outputs."""
@@ -268,6 +278,7 @@ async def _run_swarm(
     strategy = normalize_reduce(reduce)
     resolved_style = normalize_style(style)
     _validate_retry_options(max_retries, retry_backoff, retry_max_backoff)
+    cite_min_confidence = _validate_cite_min_confidence(cite_min_confidence)
     concurrency = (
         min(_DEFAULT_SWARM_CONCURRENCY, len(members))
         if max_concurrency is None
@@ -315,6 +326,7 @@ async def _run_swarm(
                     retry_backoff=retry_backoff,
                     retry_max_backoff=retry_max_backoff,
                     cite=cite,
+                    cite_min_confidence=cite_min_confidence,
                     on_progress=on_progress,
                 )
             except Exception as exc:
@@ -363,6 +375,7 @@ def extract_swarm(
     retry_backoff: float = 1.0,
     retry_max_backoff: float = _DEFAULT_RETRY_MAX_BACKOFF,
     cite: bool = False,
+    cite_min_confidence: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> T:
     """Run several agents over one input and return the reduced result.
@@ -398,6 +411,10 @@ def extract_swarm(
             ``extract_swarm`` still returns the reduced schema instance;
             citations land on :class:`SwarmResult` from the ``*_with_results``
             APIs.
+        cite_min_confidence: When ``cite=True``, drop citations below this
+            ``[0, 1]`` heuristic threshold after grounding. Applies to each
+            agent's citations and therefore to the reduced set. ``None`` keeps
+            every citation. Invalid values raise ``ValueError`` at call time.
         on_progress: Optional per-window callback, same contract as
             :func:`extract`. Concurrent agents may interleave events.
 
@@ -406,8 +423,9 @@ def extract_swarm(
 
     Raises:
         ValueError: If ``agents`` is empty, ``size`` is out of range or
-            disagrees with the agent list, or a retry/concurrency option is
-            invalid. Raised before any model call.
+            disagrees with the agent list, a retry/concurrency option is
+            invalid, or ``cite_min_confidence`` is outside ``[0, 1]``.
+            Raised before any model call.
         ExtractionError: The first agent's failure, when every agent failed.
         RuntimeError: If called from a running event loop. Use
             :func:`extract_swarm_async` in async code instead.
@@ -432,6 +450,7 @@ def extract_swarm(
             on_agent_start=None,
             on_agent=None,
             cite=cite,
+            cite_min_confidence=cite_min_confidence,
             on_progress=on_progress,
         ),
     ).output
@@ -453,6 +472,7 @@ async def extract_swarm_async(
     retry_backoff: float = 1.0,
     retry_max_backoff: float = _DEFAULT_RETRY_MAX_BACKOFF,
     cite: bool = False,
+    cite_min_confidence: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> T:
     """Async sibling of :func:`extract_swarm`."""
@@ -473,6 +493,7 @@ async def extract_swarm_async(
         on_agent_start=None,
         on_agent=None,
         cite=cite,
+        cite_min_confidence=cite_min_confidence,
         on_progress=on_progress,
     )
     return result.output
@@ -496,6 +517,7 @@ def extract_swarm_with_results(
     on_agent_start: Callable[[int, int], None] | None = None,
     on_agent: Callable[[int, int, ExtractionResult[T] | Exception], None] | None = None,
     cite: bool = False,
+    cite_min_confidence: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> SwarmResult[T]:
     """Run a swarm and return the reduced output plus per-agent diagnostics.
@@ -528,6 +550,7 @@ def extract_swarm_with_results(
             on_agent_start=on_agent_start,
             on_agent=on_agent,
             cite=cite,
+            cite_min_confidence=cite_min_confidence,
             on_progress=on_progress,
         ),
     )
@@ -551,6 +574,7 @@ async def extract_swarm_with_results_async(
     on_agent_start: Callable[[int, int], None] | None = None,
     on_agent: Callable[[int, int, ExtractionResult[T] | Exception], None] | None = None,
     cite: bool = False,
+    cite_min_confidence: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> SwarmResult[T]:
     """Async sibling of :func:`extract_swarm_with_results`."""
@@ -571,5 +595,6 @@ async def extract_swarm_with_results_async(
         on_agent_start=on_agent_start,
         on_agent=on_agent,
         cite=cite,
+        cite_min_confidence=cite_min_confidence,
         on_progress=on_progress,
     )

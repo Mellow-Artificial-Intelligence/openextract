@@ -99,8 +99,8 @@ openextract ./invoices --recursive \
 - Mix directories with files or URLs; expansion happens in argument order,
   files inside each directory in sorted path order.
 - `--recursive` cannot be combined with `--manifest` or stdin (`-`).
-- `--cite`, `--usage`, `--output json` / `jsonl`, and `--progress` use the
-  same batch shapes as an explicit file list.
+- `--cite`, `--usage`, `--output json` / `jsonl`, `--progress`, and
+  `--cite-min-confidence` use the same batch shapes as an explicit file list.
 
 ## JSONL output for large batches
 
@@ -265,7 +265,9 @@ Each citation is `Citation.as_dict()` (`{field, quote, page}` plus optional
 `match` are omitted. `bbox` is normalized COCO, parser-backed only.
 `confidence` / `match` are quote/value match strength, not a model-provided
 probability. `quote` / `page` may be `null`. Combine with `--usage` to
-keep `{result, usage, citations}`.
+keep `{result, usage, citations}`. `--cite-min-confidence FLOAT` drops
+citations below that heuristic threshold after grounding (unstamped cites
+are dropped too). Only meaningful with `--cite`.
 
 - Batch JSON array: `[{ "result", "citations" }, ...]` in input order.
 - JSONL success records add `"citations"`; failure records are unchanged.

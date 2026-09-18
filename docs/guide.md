@@ -184,7 +184,12 @@ omitted (page-level grounding can still score).
 
 Each citation also carries a **heuristic** `confidence` in `[0, 1]` and a
 `match` label. These are computed locally from quote/value match strength —
-not a model-reported probability, and not calibrated as one. `match` is one
+not a model-reported probability, and not calibrated as one. The filter is
+additive: omit `cite_min_confidence` (default `None`) to keep every citation.
+Pass a float in `[0, 1]` with `cite=True` to drop citations whose
+`confidence` is `None` or below that threshold after grounding. Extracted
+field values are unchanged; `match` is not a filter key. Invalid values
+raise `ValueError` at call time. `match` is one
 of:
 
 | `match` | Meaning | Typical score |
@@ -212,7 +217,11 @@ invoice, usage = extract_with_usage(
     schema=Invoice, model="openai:gpt-5", input_file="bill.pdf", cite=True
 )
 results = extract_many_with_results(
-    schema=Invoice, model="openai:gpt-5", input_files=["bill.pdf"], cite=True
+    schema=Invoice,
+    model="openai:gpt-5",
+    input_files=["bill.pdf"],
+    cite=True,
+    cite_min_confidence=0.5,
 )
 for citation in results[0].citations:
     print(citation.as_dict())
@@ -221,7 +230,8 @@ for citation in results[0].citations:
 
 Default is off: no extra instructions or schema wrap. Citations never retain
 raw media or credentials. CLI `--cite` uses the same path and adds a
-`citations` array to JSON/jsonl — see [CLI](cli.md). See
+`citations` array to JSON/jsonl; `--cite-min-confidence` is the same filter
+— see [CLI](cli.md). See
 [ExtractBench](extractbench.md) for grounding scores, and
 [`examples/advanced/extract_with_citations.py`](https://github.com/Mellow-Artificial-Intelligence/openextract/blob/main/examples/advanced/extract_with_citations.py)
 for a runnable `cite=True` walkthrough.
@@ -462,7 +472,8 @@ openextract ./bill.pdf \
 - `--usage` is single-input only.
 - `--cite` adds a `citations` array to JSON/jsonl (`field`, `quote`, `page`,
   optional `bbox` / heuristic `confidence` / `match`). Same as `cite=True`
-  on the Python API.
+  on the Python API. `--cite-min-confidence FLOAT` drops weak or unstamped
+  citations (only meaningful with `--cite`).
 - `--progress` writes window lines to stderr for one input, or per-item
   completion for a batch.
 - `--style`, `--max-retries`, `--max-input-bytes` match the Python API.

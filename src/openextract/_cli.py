@@ -521,6 +521,7 @@ def _run_batch(
         retry_max_backoff=args.retry_max_backoff,
         rich=args.usage or args.cite,
         cite=args.cite,
+        cite_min_confidence=args.cite_min_confidence,
     )
     return asyncio.run(_run_batch_async(schema_cls, items, labels, options, args, model))
 
@@ -566,6 +567,7 @@ def _run_single(
         "retry_backoff": args.retry_backoff,
         "retry_max_backoff": args.retry_max_backoff,
         "cite": args.cite,
+        "cite_min_confidence": args.cite_min_confidence,
     }
     if args.progress:
         shared["on_progress"] = _window_progress
@@ -620,6 +622,7 @@ def _run_swarm(
         "retry_backoff": args.retry_backoff,
         "retry_max_backoff": args.retry_max_backoff,
         "cite": args.cite,
+        "cite_min_confidence": args.cite_min_confidence,
     }
     if args.progress:
         options["on_progress"] = _window_progress
@@ -757,6 +760,17 @@ def _build_parser() -> argparse.ArgumentParser:
             "Request per-field source citations (field, quote, page, optional "
             "bbox/confidence/match). JSON/jsonl include a citations array. "
             "Same cite=True path as the library."
+        ),
+    )
+    parser.add_argument(
+        "--cite-min-confidence",
+        type=float,
+        default=None,
+        metavar="FLOAT",
+        help=(
+            "Drop citations whose heuristic confidence is below FLOAT ([0, 1]). "
+            "Only meaningful with --cite; unstamped citations are dropped. "
+            "Same cite_min_confidence as the library."
         ),
     )
     parser.add_argument(

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Sequence
 
-from ._citations import split_cited_output
+from ._citations import filter_citations, split_cited_output
 from ._parse import ParsedDocument, ground_citations, parsed_window_pairs
 from ._reduce import reduce_outputs
 from ._retry import _run_with_retries_async, _run_with_retries_sync
@@ -41,6 +41,7 @@ def extract_windows_sync(
     schema: type[T],
     cite: bool,
     *,
+    cite_min_confidence: float | None = None,
     max_retries: int,
     retry_backoff: float,
     retry_max_backoff: float,
@@ -61,7 +62,12 @@ def extract_windows_sync(
         ) -> tuple[T, Usage, tuple[Citation, ...]]:
             raw, usage = run(window)
             output, cites = split_cited_output(
-                raw, schema, cite=cite, parsed=parsed, window=window_parse
+                raw,
+                schema,
+                cite=cite,
+                parsed=parsed,
+                window=window_parse,
+                cite_min_confidence=cite_min_confidence,
             )
             return output, usage, cites
 
@@ -74,7 +80,9 @@ def extract_windows_sync(
         outputs.append(output)
         usages.append(usage)
         citations.extend(cites)
-    return _finish_windows(outputs, usages, citations, parsed, cite)
+    return _finish_windows(
+        outputs, usages, citations, parsed, cite, cite_min_confidence=cite_min_confidence
+    )
 
 
 async def extract_windows_async(
@@ -84,6 +92,7 @@ async def extract_windows_async(
     schema: type[T],
     cite: bool,
     *,
+    cite_min_confidence: float | None = None,
     max_retries: int,
     retry_backoff: float,
     retry_max_backoff: float,
@@ -104,7 +113,12 @@ async def extract_windows_async(
         ) -> tuple[T, Usage, tuple[Citation, ...]]:
             raw, usage = await run(window)
             output, cites = split_cited_output(
-                raw, schema, cite=cite, parsed=parsed, window=window_parse
+                raw,
+                schema,
+                cite=cite,
+                parsed=parsed,
+                window=window_parse,
+                cite_min_confidence=cite_min_confidence,
             )
             return output, usage, cites
 
@@ -117,7 +131,9 @@ async def extract_windows_async(
         outputs.append(output)
         usages.append(usage)
         citations.extend(cites)
-    return _finish_windows(outputs, usages, citations, parsed, cite)
+    return _finish_windows(
+        outputs, usages, citations, parsed, cite, cite_min_confidence=cite_min_confidence
+    )
 
 
 def _finish_windows(
@@ -126,12 +142,13 @@ def _finish_windows(
     citations: list[Citation],
     parsed: ParsedDocument | None,
     cite: bool,
+    cite_min_confidence: float | None = None,
 ) -> tuple[T, Usage, tuple[Citation, ...]]:
     """Reduce window values, then backfill cites the model omitted."""
     output, usage, merged = _fold_windows(outputs, usages, citations)
     if cite:
-        return output, usage, ground_citations(merged, parsed, output)
-    return output, usage, merged
+        merged = ground_citations(merged, parsed, output)
+    return output, usage, filter_citations(merged, cite_min_confidence)
 
 
 def _fold_windows(

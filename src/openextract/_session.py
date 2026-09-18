@@ -22,7 +22,12 @@ from ._agent import (
     _usage_from_result,
 )
 from ._citations import prepare_cited_run, split_cited_output
-from ._config import _resolve_max_input_bytes, _url_fetch_timeout, _validate_timeout
+from ._config import (
+    _resolve_max_input_bytes,
+    _url_fetch_timeout,
+    _validate_cite_min_confidence,
+    _validate_timeout,
+)
 from ._errors import _extraction_errors
 from ._media import _get_media, _get_media_async
 from ._parse import ParsedDocument, maybe_parsed_inputs, parsed_window_inputs
@@ -71,6 +76,7 @@ class _ExtractorSession[T: BaseModel]:
         max_input_bytes: int | None = None,
         url_timeout: float | None = None,
         cite: bool = False,
+        cite_min_confidence: float | None = None,
         on_progress: OnProgress | None = None,
     ) -> None:
         resolved_style = normalize_style(style)
@@ -116,6 +122,7 @@ class _ExtractorSession[T: BaseModel]:
 
         self._schema = schema
         self._cite = cite
+        self._cite_min_confidence = _validate_cite_min_confidence(cite_min_confidence)
         self._run_schema = run_schema
         self._run_instructions = run_instructions
         self._model = model
@@ -143,7 +150,11 @@ class _ExtractorSession[T: BaseModel]:
 
     def _output_from_run(self, result: Any, parsed: ParsedDocument | None = None) -> T:
         output, _citations = split_cited_output(
-            result.output, self._schema, cite=self._cite, parsed=parsed
+            result.output,
+            self._schema,
+            cite=self._cite,
+            parsed=parsed,
+            cite_min_confidence=self._cite_min_confidence,
         )
         return self._validate_output(result.output if not self._cite else output)
 
@@ -381,6 +392,7 @@ class Extractor(_ExtractorSession[T]):
                 parsed,
                 self._schema,
                 self._cite,
+                cite_min_confidence=self._cite_min_confidence,
                 max_retries=self._retry_policy.max_retries,
                 retry_backoff=self._retry_policy.backoff,
                 retry_max_backoff=self._retry_policy.max_backoff,
@@ -540,6 +552,7 @@ class AsyncExtractor(_ExtractorSession[T]):
                 parsed,
                 self._schema,
                 self._cite,
+                cite_min_confidence=self._cite_min_confidence,
                 max_retries=self._retry_policy.max_retries,
                 retry_backoff=self._retry_policy.backoff,
                 retry_max_backoff=self._retry_policy.max_backoff,

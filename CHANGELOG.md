@@ -43,6 +43,15 @@ timing when that is known.
   match}` (`null` when unstamped). CLI `--cite` adds `confidence` / `match`
   when present. ExtractBench `as_field_citation()` is unchanged (no extra
   keys). Default `cite=False` is unchanged. Boxes are still never invented.
+- Optional additive `cite_min_confidence` on extract APIs, sessions, batch,
+  and swarm (`float | None = None`). Default `None` keeps every citation.
+  When `cite=True` and a `[0, 1]` threshold is set, citations whose
+  heuristic `confidence` (the local grounding score, not a model payload) is
+  `None` or below the threshold are dropped after grounding. Extracted field
+  values and `match` labels on kept cites are unchanged. Invalid values
+  raise `ValueError` at call time. CLI `--cite-min-confidence FLOAT` (only
+  meaningful with `--cite`). ExtractBench `as_field_citation()` is unchanged.
+  Default `cite=False` is unchanged.
 
 ### Changed
 - CLI `--cite` JSON/JSONL citations serialize via `Citation.as_dict()`
