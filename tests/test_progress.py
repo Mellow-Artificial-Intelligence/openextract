@@ -5,8 +5,8 @@ from pydantic_ai.models.test import TestModel
 
 from openextract import (
     AsyncExtractor,
-    ExtractProgress,
     Extractor,
+    ExtractProgress,
     extract,
     extract_async,
     extract_many,
@@ -68,9 +68,8 @@ def test_extract_emits_per_window_events_for_cited_pdf(monkeypatch):
 
 def test_default_path_is_silent(monkeypatch):
     monkeypatch.setattr("openextract._parse.DEFAULT_PARSE_WINDOW_CHARS", 40)
-    assert extract(Person, _model(), _long_pdf(), media_type="application/pdf", cite=True) == Person(
-        name="Ada", age=36
-    )
+    result = extract(Person, _model(), _long_pdf(), media_type="application/pdf", cite=True)
+    assert result == Person(name="Ada", age=36)
 
 
 def test_extract_with_usage_and_batch_forward_progress(monkeypatch):

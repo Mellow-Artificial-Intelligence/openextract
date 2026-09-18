@@ -23,10 +23,10 @@ from ._styles import ExtractionStyle
 from ._swarm import extract_swarm, extract_swarm_with_results
 from ._types import (
     Citation,
-    ExtractProgress,
     ExtractionInput,
     ExtractionInputLike,
     ExtractionResult,
+    ExtractProgress,
 )
 from .exceptions import (
     ExtractionError,

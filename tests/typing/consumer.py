@@ -14,10 +14,10 @@ from pydantic import BaseModel
 
 from openextract import (
     Citation,
-    ExtractProgress,
     ExtractionInput,
     ExtractionResult,
     ExtractionStyle,
+    ExtractProgress,
     SwarmResult,
     Usage,
     extract,
@@ -33,6 +33,10 @@ from openextract import (
 
 class Invoice(BaseModel):
     total: float
+
+
+def _report(progress: ExtractProgress) -> None:
+    _ = progress.current, progress.total, progress.page, progress.pages
 
 
 # Path / os.PathLike works directly in every public API.
@@ -72,10 +76,6 @@ search: Invoice = extract(
 output, usage = extract_with_usage(Invoice, "openai:gpt-5", Path("/tmp/x.pdf"))
 _assert_invoice: Invoice = output
 _assert_usage: Usage = usage
-def _report(progress: ExtractProgress) -> None:
-    _ = progress.current, progress.total, progress.page, progress.pages
-
-
 cited: Invoice = extract(
     Invoice, "openai:gpt-5", Path("/tmp/x.pdf"), cite=True, on_progress=_report
 )

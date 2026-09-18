@@ -44,9 +44,9 @@ from ._swarm import (
 )
 from ._types import (
     Citation,
-    ExtractProgress,
     ExtractionInput,
     ExtractionResult,
+    ExtractProgress,
     RetryPolicy,
     Usage,
     total_usage,

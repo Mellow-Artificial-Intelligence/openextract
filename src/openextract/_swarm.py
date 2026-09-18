@@ -36,9 +36,9 @@ from ._remote import run_remote_extraction
 from ._styles import ExtractionStyle, normalize_style, prepared_style_run
 from ._types import (
     Citation,
-    ExtractProgress,
     ExtractionInputLike,
     ExtractionResult,
+    ExtractProgress,
     OnProgress,
     T,
     Usage,

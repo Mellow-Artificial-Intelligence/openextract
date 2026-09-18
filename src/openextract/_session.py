@@ -34,7 +34,7 @@ from ._styles import (
     style_capabilities,
     style_run_inputs,
 )
-from ._types import ExtractProgress, ExtractionInputLike, OnProgress, RetryPolicy, T, Usage
+from ._types import ExtractionInputLike, ExtractProgress, OnProgress, RetryPolicy, T, Usage
 from ._windows import emit_progress, extract_windows_async, extract_windows_sync
 
 if TYPE_CHECKING:
