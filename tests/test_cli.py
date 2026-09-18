@@ -1036,10 +1036,11 @@ _CITE_AGE = Citation(field="age", quote="36", page=1, bbox=(0.1, 0.2, 0.3, 0.05)
 
 class TestCite:
     def test_citations_payload_omits_missing_bbox(self):
-        assert _citations_payload((_CITE_NAME, _CITE_AGE)) == [
-            {"field": "name", "quote": "Ada", "page": 1},
-            {"field": "age", "quote": "36", "page": 1, "bbox": [0.1, 0.2, 0.3, 0.05]},
-        ]
+        name, age = _citations_payload((_CITE_NAME, _CITE_AGE))
+        assert age == _CITE_AGE.as_dict()
+        assert name == {"field": "name", "quote": "Ada", "page": 1}
+        assert "bbox" not in name
+        assert _CITE_NAME.as_dict()["bbox"] is None
         assert _result_citations(_FixtureSchema(name="Ada", age=36)) == []
 
     def test_cite_flag_is_forwarded_to_results_api(self, mocker, capsys):
