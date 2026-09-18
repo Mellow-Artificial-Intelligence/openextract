@@ -11,7 +11,7 @@ from openextract import (
     extract_with_usage,
     extract_with_usage_async,
 )
-from openextract._extract import _plan_agent, _resolve_agent_call
+from openextract._extract import _plan_agent, _resolve_agent_call, _resolve_oneshot
 
 
 class Person(BaseModel):
@@ -119,6 +119,28 @@ class TestPlanAgent:
     def test_a_remote_agent_defers_to_the_swarm(self):
         remote = define_remote_agent("https://agents.example.com", "Remote")
         assert _plan_agent(remote, None, "direct") == (remote, None, "direct", True)
+
+
+class TestResolveOneshot:
+    def test_a_solo_agent_becomes_a_local_oneshot(self):
+        assert _resolve_oneshot(SOLO, b"doc", None, None, "direct") == (
+            Person,
+            "test:a",
+            b"doc",
+            "focus",
+            "direct",
+            False,
+        )
+
+    def test_a_group_agent_is_deferred_to_the_swarm(self):
+        assert _resolve_oneshot(GROUP, b"doc", None, None, "direct") == (
+            Person,
+            GROUP,
+            b"doc",
+            None,
+            "direct",
+            True,
+        )
 
 
 class TestExtractWithAgents:

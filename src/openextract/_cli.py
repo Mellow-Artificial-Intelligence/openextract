@@ -215,13 +215,9 @@ def _citations_payload(citations: Sequence[Citation]) -> list[dict[str, Any]]:
     """Serialize citations as ``{field, quote, page}`` plus optional ``bbox``."""
     payload: list[dict[str, Any]] = []
     for citation in citations:
-        item: dict[str, Any] = {
-            "field": citation.field,
-            "quote": citation.quote,
-            "page": citation.page,
-        }
-        if citation.bbox is not None:
-            item["bbox"] = list(citation.bbox)
+        item = citation.as_dict()
+        if item["bbox"] is None:
+            del item["bbox"]
         payload.append(item)
     return payload
 

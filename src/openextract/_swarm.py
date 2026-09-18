@@ -40,6 +40,7 @@ from ._types import (
     ExtractionResult,
     T,
     Usage,
+    _extraction_result,
     _resolve_item,
     total_usage,
 )
@@ -175,15 +176,14 @@ async def _run_member(
             retry_max_backoff=retry_max_backoff,
         )
         output, citations = split_cited_output(output, schema, cite=cite, parsed=parsed)
-        return ExtractionResult(
-            output=output,
-            usage=usage,
+        return _extraction_result(
+            output,
+            usage,
             attempts=attempts,
-            duration=time.perf_counter() - started,
+            started=started,
             model=_remote_label(member.model),
             media_type=media_type,
             source=source_label,
-            warnings=(),
             citations=citations,
         )
     with prepared_style_run(member_style, file_bytes, file_type) as (capabilities, style_inputs):
@@ -216,15 +216,14 @@ async def _run_member(
             retry_backoff=retry_backoff,
             retry_max_backoff=retry_max_backoff,
         )
-    return ExtractionResult(
-        output=output,
-        usage=usage,
+    return _extraction_result(
+        output,
+        usage,
         attempts=attempts,
-        duration=time.perf_counter() - started,
+        started=started,
         model=_model_identifier(member.model, agent),
         media_type=media_type,
         source=source_label,
-        warnings=(),
         citations=citations,
     )
 

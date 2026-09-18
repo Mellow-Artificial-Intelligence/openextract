@@ -29,7 +29,14 @@ from ._errors import _extraction_errors
 from ._media import _get_media_async, _item_source_label
 from ._parse import maybe_parsed_inputs
 from ._styles import ExtractionStyle, normalize_style, prepared_style_run
-from ._types import ExtractionInputLike, ExtractionResult, T, Usage, _resolve_item
+from ._types import (
+    ExtractionInputLike,
+    ExtractionResult,
+    T,
+    Usage,
+    _extraction_result,
+    _resolve_item,
+)
 from ._windows import extract_windows_async
 
 if TYPE_CHECKING:
@@ -234,15 +241,14 @@ async def _iter_extractions(
                         retry_max_backoff=options.retry_max_backoff,
                     )
                 if options.rich:
-                    return ExtractionResult(
-                        output=output,
-                        usage=usage,
+                    return _extraction_result(
+                        output,
+                        usage,
                         attempts=attempts,
-                        duration=time.perf_counter() - started,
+                        started=started,
                         model=_model_identifier(model, run_agent),
                         media_type=item_media_type,
                         source=_item_source_label(source, name),
-                        warnings=(),
                         citations=citations,
                     )
                 return output
