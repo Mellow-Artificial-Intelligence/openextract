@@ -15,6 +15,15 @@ timing when that is known.
   sent to the model. Default `None` is unchanged (silent). CLI `--progress`
   now writes `progress: window N/M (page P)` on stderr for a single input;
   batch per-item completion lines are unchanged.
+- Heuristic field **confidence** on `Citation` when `cite=True`. Grounding
+  stamps `confidence` (`[0, 1]`) and `match` (`exact`, `numeric`, `fuzzy`,
+  `value`, `page`, or `quote`) from quote/value match strength against the
+  local parse (or quote↔value agreement when there is no parse). This is
+  **not** a model-provided probability; model `confidence` payloads are
+  ignored. `Citation.as_dict()` is `{field, quote, page, bbox, confidence,
+  match}` (`null` when unstamped). CLI `--cite` adds `confidence` / `match`
+  when present. ExtractBench `as_field_citation()` is unchanged (no extra
+  keys). Default `cite=False` is unchanged. Boxes are still never invented.
 
 ### Changed
 - CLI `--cite` JSON/JSONL citations serialize via `Citation.as_dict()`

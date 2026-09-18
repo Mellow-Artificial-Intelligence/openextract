@@ -7,12 +7,13 @@ import struct
 import threading
 import zlib
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from difflib import SequenceMatcher
 from typing import Any
 
 from pydantic import BaseModel
 
+from ._confidence import score_citation_match
 from ._types import Citation
 
 _PDF_TYPES = frozenset({"application/pdf", "application/x-pdf"})
@@ -252,11 +253,9 @@ def align_citations_to_window(
         return citations
     only = next(iter(window_pages))
     return tuple(
-        Citation(
-            field=item.field,
-            quote=item.quote,
+        replace(
+            item,
             page=only if item.page is None or item.page not in window_pages else item.page,
-            bbox=item.bbox,
         )
         for item in citations
     )
@@ -292,24 +291,22 @@ def ground_citations(
     parsed: ParsedDocument | None,
     output: object | None = None,
 ) -> tuple[Citation, ...]:
-    """Stamp page from the parse index and attach parser boxes only.
+    """Stamp page from the parse index, attach parser boxes, and score match.
 
     Model-supplied boxes are ignored. A citation with a valid page is kept even
     when the quote is short. Unmatched spans omit ``bbox`` rather than guessing.
     When the model quotes a paraphrase or the wrong page, the extracted field
-    value is used to locate evidence already in the parse.
+    value is used to locate evidence already in the parse. ``confidence`` /
+    ``match`` are local heuristics (not model-provided).
     """
-    if parsed is None:
-        return tuple(
-            Citation(field=item.field, quote=item.quote, page=item.page, bbox=None)
-            for item in citations
-        )
     values = dict(_iter_field_values(output))
+    if parsed is None:
+        return tuple(_score_unparsed(item, values.get(item.field)) for item in citations)
     grounded: list[Citation] = []
     for item in citations:
         field = _rebind_field(item.field, item.quote, values)
         if field != item.field:
-            item = Citation(field=field, quote=item.quote, page=item.page, bbox=item.bbox)
+            item = replace(item, field=field)
         grounded.append(_ground_one(item, parsed, values.get(field)))
     grounded = _dedupe_citations(grounded)
     seen = {item.field for item in grounded}
@@ -612,12 +609,59 @@ def _ground_one(
     parsed: ParsedDocument,
     field_value: str | None = None,
 ) -> Citation:
-    page, bbox = find_span(
-        parsed, citation.quote, field_value=field_value, hinted_page=citation.page
-    )
+    hit = _locate_span(parsed, citation.quote, field_value=field_value, hinted_page=citation.page)
+    page = hit.page
     if page is None:
         page = citation.page if citation.page is not None and citation.page >= 1 else None
-    return Citation(field=citation.field, quote=citation.quote, page=page, bbox=bbox)
+    match = hit.match
+    if match is None:
+        if page is not None:
+            match = "page"
+        elif citation.quote:
+            match = "quote"
+    return replace(
+        citation,
+        page=page,
+        bbox=hit.bbox,
+        confidence=score_citation_match(match, parsed=True),
+        match=match,
+    )
+
+
+def _score_unparsed(citation: Citation, field_value: str | None) -> Citation:
+    """Stamp quote/page confidence when there is no local parse to verify against."""
+    agrees: bool | None = None
+    if citation.quote:
+        match: str | None = "quote"
+        agrees = _quote_agrees(citation.quote, field_value)
+    elif citation.page is not None:
+        match = "page"
+    else:
+        match = None
+    return replace(
+        citation,
+        bbox=None,
+        confidence=score_citation_match(match, parsed=False, agrees=agrees),
+        match=match,
+    )
+
+
+def _quote_agrees(quote: str, field_value: str | None) -> bool | None:
+    if field_value is None:
+        return None
+    quote_n, value_n = _normalize(quote), _normalize(field_value)
+    if not quote_n or not value_n:
+        return None
+    if quote_n == value_n or quote_n in value_n or value_n in quote_n:
+        return True
+    return bool(_numbers_match(quote, field_value))
+
+
+@dataclass(frozen=True)
+class _SpanHit:
+    page: int | None
+    bbox: tuple[float, float, float, float] | None
+    match: str | None
 
 
 def find_span(
@@ -628,24 +672,71 @@ def find_span(
     hinted_page: int | None = None,
 ) -> tuple[int | None, tuple[float, float, float, float] | None]:
     """Locate ``quote`` (then ``field_value``) on the parse: exact, then fuzzy."""
+    hit = _locate_span(parsed, quote, field_value=field_value, hinted_page=hinted_page)
+    return hit.page, hit.bbox
+
+
+def _locate_span(
+    parsed: ParsedDocument,
+    quote: str | None,
+    *,
+    field_value: str | None = None,
+    hinted_page: int | None = None,
+) -> _SpanHit:
     quote_needles = _needles_of(quote)
     value_needles = _value_needles(field_value) if field_value else ()
-    if not quote_needles and not value_needles:
-        return _valid_page(hinted_page), None
     hint = _valid_page(hinted_page)
+    if not quote_needles and not value_needles:
+        return _SpanHit(hint, None, "page" if hint else None)
     quote_hit = _first_hit(parsed, quote_needles, hinted_page, fuzzy=False)
     value_hit = _first_hit(parsed, value_needles, hinted_page, fuzzy=False)
     chosen = _choose_page(quote_hit, value_hit, hint)
+    fuzzy = False
     if chosen is None:
         quote_hit = _first_hit(parsed, quote_needles, hinted_page, fuzzy=True)
         value_hit = _first_hit(parsed, value_needles, hinted_page, fuzzy=True)
         chosen = _choose_page(quote_hit, value_hit, hint)
+        fuzzy = True
     if chosen is None:
-        return hint, None
+        return _SpanHit(hint, None, "page" if hint else None)
     bbox = _bbox_on_page(parsed, chosen, value_needles) or _bbox_on_page(
         parsed, chosen, quote_needles
     )
-    return chosen, bbox
+    return _SpanHit(
+        chosen,
+        bbox,
+        _hit_match(parsed, chosen, quote_hit, quote_needles, fuzzy),
+    )
+
+
+def _hit_match(
+    parsed: ParsedDocument,
+    chosen: int,
+    quote_hit: tuple[int, tuple[float, float, float, float] | None] | None,
+    quote_needles: tuple[str, ...],
+    fuzzy: bool,
+) -> str:
+    quote_on_page = quote_hit is not None and quote_hit[0] == chosen
+    if fuzzy:
+        return "fuzzy"
+    if quote_on_page:
+        return _needle_kind_on_page(parsed, chosen, quote_needles)
+    return "value"
+
+
+def _needle_kind_on_page(parsed: ParsedDocument, page_no: int, needles: tuple[str, ...]) -> str:
+    page = next((item for item in parsed.pages if item.page == page_no), None)
+    if page is None:
+        return "exact"
+    for needle in needles:
+        norm = _normalize(needle)
+        if not norm:
+            continue
+        if _normalize(page.text).find(norm) >= 0:
+            return "exact"
+        if _numeric_in_text(page.text, needle):
+            return "numeric"
+    return "exact"
 
 
 def _needles_of(text: str | None) -> tuple[str, ...]:
@@ -905,12 +996,14 @@ def _dedupe_citations(citations: list[Citation]) -> list[Citation]:
     return [best[key] for key in order]
 
 
-def _citation_rank(citation: Citation) -> tuple[int, int, int]:
+def _citation_rank(citation: Citation) -> tuple[int, int, int, int]:
     area = 0
     if citation.bbox is not None:
         area = -int(citation.bbox[2] * citation.bbox[3] * 1_000_000)
+    conf = int(round((citation.confidence or 0.0) * 1000))
     return (
         1 if citation.bbox is not None else 0,
+        conf,
         1 if citation.quote else 0,
         area,
     )
@@ -924,9 +1017,17 @@ def _citation_from_value(field: str, value: str, parsed: ParsedDocument) -> Cita
     and whole-integer forms that appear in the PDF.
     """
     for needle in _value_needles(value):
-        page, bbox = find_span(parsed, needle)
-        if page is not None:
-            return Citation(field=field, quote=needle, page=page, bbox=bbox)
+        hit = _locate_span(parsed, needle)
+        if hit.page is not None:
+            match = hit.match or "value"
+            return Citation(
+                field=field,
+                quote=needle,
+                page=hit.page,
+                bbox=hit.bbox,
+                confidence=score_citation_match(match, parsed=True),
+                match=match,
+            )
     return None
 
 

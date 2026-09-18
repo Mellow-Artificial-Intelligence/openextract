@@ -26,9 +26,12 @@ from openextract._parse import (
     _flush_word,
     _fold_alnum,
     _ground_one,
+    _hit_match,
     _iter_field_values,
+    _locate_span,
     _luma_pixels,
     _needle_covers,
+    _needle_kind_on_page,
     _normalized_coco,
     _numeric_in_text,
     _page_size,
@@ -36,9 +39,12 @@ from openextract._parse import (
     _pages_prompt_len,
     _parse_pdf_page,
     _pdf_box_to_coco,
+    _quote_agrees,
     _rebind_field,
     _render_page_png,
     _render_scale,
+    _score_unparsed,
+    _SpanHit,
     _split_page,
     _strip_indexes,
     _try_number,
@@ -90,8 +96,12 @@ def test_synthetic_pdf_attaches_parser_box_and_omits_unmatched():
     )
     assert cited[0].page == 1
     assert cited[0].bbox == bbox
+    assert cited[0].match == "exact"
+    assert cited[0].confidence == 0.95
     assert cited[1].page == 1
     assert cited[1].bbox is None
+    assert cited[1].match == "page"
+    assert cited[1].confidence == 0.40
 
 
 def test_grounding_stamps_page_and_backfills_field_value():
@@ -142,6 +152,8 @@ def test_grounding_uses_field_value_when_quote_and_page_are_wrong():
     assert grounded[0].field == "vendor"
     assert grounded[0].page == 2
     assert grounded[0].bbox == pytest.approx((0.2, 0.2, 0.4, 0.05))
+    assert grounded[0].match == "value"
+    assert grounded[0].confidence == 0.80
 
 
 def test_grounding_prefers_value_page_over_common_quote_on_hint():
@@ -180,6 +192,8 @@ def test_numeric_span_attaches_box_for_plain_extracted_number():
     )
     assert grounded[0].page == 1
     assert grounded[0].bbox == pytest.approx((0.2, 0.1, 0.3, 0.05))
+    assert grounded[0].match == "numeric"
+    assert grounded[0].confidence == 0.85
 
 
 def test_rebind_drops_missing_array_index_and_dedupes_boxes():
@@ -367,7 +381,63 @@ def test_find_span_exact_fuzzy_and_hint():
 
 def test_ground_citations_without_parse_drops_model_bbox():
     cited = ground_citations((Citation("vendor", "Acme", 1, (0.1, 0.2, 0.3, 0.04)),), None)
-    assert cited == (Citation("vendor", "Acme", 1, None),)
+    assert cited == (Citation("vendor", "Acme", 1, None, 0.45, "quote"),)
+    mismatched = ground_citations((Citation("vendor", "Acme", 1),), None, {"vendor": "Globex"})
+    assert mismatched == (Citation("vendor", "Acme", 1, confidence=0.25, match="quote"),)
+    page_only = ground_citations((Citation(field="vendor", page=2),), None)
+    assert page_only == (Citation(field="vendor", page=2, confidence=0.30, match="page"),)
+    agrees = ground_citations((Citation("total", "12.50", 1),), None, {"total": "12.5"})
+    assert agrees[0].match == "quote"
+    assert agrees[0].confidence == 0.55
+    empty = _score_unparsed(Citation(field="x"), None)
+    assert empty.confidence is None and empty.match is None
+    assert _quote_agrees("Acme", None) is None
+    assert _quote_agrees("   ", "Acme") is None
+    assert _quote_agrees("Acme", "   ") is None
+    assert _quote_agrees("1,234", "1234.0") is True
+    assert _quote_agrees("Acme", "Globex") is False
+
+
+def test_span_match_kinds_and_helpers():
+    parsed = ParsedDocument(
+        pages=(
+            _page("Acme Corp paid $1,234.00", page=1),
+            _page("quarterly revenue beat", page=2),
+        )
+    )
+    exact = _locate_span(parsed, "Acme Corp")
+    assert exact.match == "exact" and exact.page == 1
+    numeric = _locate_span(parsed, "1234")
+    assert numeric.match == "numeric"
+    value_only = _locate_span(parsed, "the supplier", field_value="Acme Corp")
+    assert value_only.match == "value"
+    fuzzy = _locate_span(parsed, "qarterly revene")
+    assert fuzzy.match == "fuzzy" and fuzzy.page == 2
+    page_hint = _locate_span(parsed, None, hinted_page=2)
+    assert page_hint.page == 2 and page_hint.match == "page"
+    none_hit = _locate_span(parsed, None)
+    assert none_hit.page is None and none_hit.match is None
+    missing = _locate_span(parsed, "zzz")
+    assert missing.page is None and missing.match is None
+    assert _needle_kind_on_page(parsed, 99, ("Acme",)) == "exact"
+    assert _needle_kind_on_page(parsed, 1, ("   ",)) == "exact"
+    assert _needle_kind_on_page(parsed, 1, ("nope",)) == "exact"
+    assert _hit_match(parsed, 1, None, ("Acme Corp",), False) == "value"
+    assert _hit_match(parsed, 2, (2, None), ("qarterly revene",), True) == "fuzzy"
+    quoted = _ground_one(Citation("x", "zzz", page=0), parsed)
+    assert quoted.page is None and quoted.match == "quote"
+
+
+def test_ground_one_fallback_when_locate_returns_nothing(monkeypatch):
+    parsed = ParsedDocument(pages=(_page("x"),))
+    monkeypatch.setattr(
+        "openextract._parse._locate_span",
+        lambda *_a, **_k: _SpanHit(None, None, None),
+    )
+    with_page = _ground_one(Citation("f", page=1), parsed)
+    assert with_page.match == "page" and with_page.confidence == 0.40
+    empty = _ground_one(Citation(field="f"), parsed)
+    assert empty.match is None and empty.confidence is None
 
 
 def test_parse_pdf_page_error_is_none(monkeypatch):
@@ -461,6 +531,8 @@ def test_walk_nested_fields_and_short_quote():
     assert "12.50" in _value_needles("12.5")
     none_page = _ground_one(Citation("x", "zzz"), parsed)
     assert none_page.page is None and none_page.bbox is None
+    assert none_page.match == "quote"
+    assert none_page.confidence == 0.50
     assert _find_in_text("abc", "   ") is None
     assert _bbox_for_quote(_page("Ada"), "   ") is None
     spaced = _page(

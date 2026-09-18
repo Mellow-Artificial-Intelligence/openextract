@@ -117,7 +117,7 @@ def test_extract_document_with_citations_maps_extractbench_fields():
     )
     assert data == {"vendor": "Acme", "total": 12.5}
     assert usage.input_tokens >= 0
-    assert citations[0] == Citation("vendor", "Acme Co", 1, None)
+    assert citations[0] == Citation("vendor", "Acme Co", 1, None, 0.55, "quote")
     mapped = extractbench.field_citations_for_extractbench(citations)
     data_only, _usage = extractbench.extract_document(
         b"%PDF-fixture",

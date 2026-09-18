@@ -1037,11 +1037,29 @@ _CITE_AGE = Citation(field="age", quote="36", page=1, bbox=(0.1, 0.2, 0.3, 0.05)
 class TestCite:
     def test_citations_payload_omits_missing_bbox(self):
         name, age = _citations_payload((_CITE_NAME, _CITE_AGE))
-        assert age == _CITE_AGE.as_dict()
+        assert age["bbox"] == _CITE_AGE.as_dict()["bbox"]
+        assert age["field"] == _CITE_AGE.as_dict()["field"]
         assert name == {"field": "name", "quote": "Ada", "page": 1}
         assert "bbox" not in name
+        assert "confidence" not in name and "match" not in name
+        assert "confidence" not in age and "match" not in age
         assert _CITE_NAME.as_dict()["bbox"] is None
         assert _result_citations(_FixtureSchema(name="Ada", age=36)) == []
+
+    def test_citations_payload_omits_null_confidence(self):
+        scored = Citation(field="name", quote="Ada", page=1, confidence=0.55, match="quote")
+        assert _citations_payload((scored,)) == [
+            {
+                "field": "name",
+                "quote": "Ada",
+                "page": 1,
+                "confidence": 0.55,
+                "match": "quote",
+            },
+        ]
+        assert _citations_payload((_CITE_NAME,)) == [
+            {"field": "name", "quote": "Ada", "page": 1},
+        ]
 
     def test_cite_flag_is_forwarded_to_results_api(self, mocker, capsys):
         mock_fn = _patch_extract_many_with_results(
@@ -1121,7 +1139,13 @@ class TestCite:
         payload = json.loads(capsys.readouterr().out)
         assert payload["result"] == {"name": "Ada", "age": 36}
         assert payload["citations"] == [
-            {"field": "name", "quote": "Ada Lovelace", "page": 1},
+            {
+                "field": "name",
+                "quote": "Ada Lovelace",
+                "page": 1,
+                "confidence": 0.55,
+                "match": "quote",
+            },
         ]
 
     def test_cite_without_flag_does_not_change_output(self, mocker, capsys):

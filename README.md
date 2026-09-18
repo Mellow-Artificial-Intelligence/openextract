@@ -533,7 +533,8 @@ cat ./reports/q4.pdf | openextract - \
 - `--usage` prints `result` and `usage` for a single input; batches report
   per-item usage plus an aggregate.
 - `--cite` requests per-field citations (`{field, quote, page}`, optional
-  `bbox`) in JSON/jsonl via the same `cite=True` library path.
+  `bbox` / heuristic `confidence` / `match`) in JSON/jsonl via the same
+  `cite=True` library path.
 - `--output` is `json` (default), `jsonl` (one record per completed input,
   written incrementally in completion order with an `index` field), or `repr`.
 - `--max-concurrency` bounds in-flight extractions for batches (default 5).
@@ -646,7 +647,7 @@ below even though it is not exported from `__all__`.
 | `total_usage` | Provisional | Sum `Usage` across batch `ExtractionResult` objects. |
 | `ExtractionInput` | Provisional | Frozen input contract wrapping a media source with optional per-item `media_type` and safe `name`. |
 | `ExtractionResult` | Provisional | Frozen generic result contract; never retains raw media, credentials, or provider internals. Additive `citations` when `cite=True`. |
-| `Citation` | Provisional | Per-field source span (`field`, `quote`, `page`, optional normalized `bbox`). `as_dict()` is the JSON shape (`bbox` as four floats or `null`). `as_field_citation()` maps to ExtractBench `FieldCitation`. |
+| `Citation` | Provisional | Per-field source span (`field`, `quote`, `page`, optional normalized `bbox`). Additive heuristic `confidence` / `match` when `cite=True` (not model-provided). `as_dict()` is the JSON shape (`bbox` as four floats or `null`; `confidence` / `match` a float / string or `null`). `as_field_citation()` maps to ExtractBench `FieldCitation`. |
 | `ExtractProgress` | Provisional | Per-window progress event (`current`, `total`, `page`, `pages`) delivered to `on_progress` before each model call. |
 | `Usage` | Stable | Frozen dataclass with `input_tokens`, `output_tokens`, and `total_tokens`. New fields, if ever needed, should be additive. |
 | `ExtractionError` | Stable | Base class for all public `openextract` exceptions. Catch this for a broad fallback. |

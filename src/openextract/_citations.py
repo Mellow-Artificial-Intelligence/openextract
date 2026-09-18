@@ -148,7 +148,12 @@ def sanitize_citation(draft: object) -> Citation | None:
     only when a real span matches. A valid page is enough to keep a citation,
     including when the quote is short.
     """
-    if isinstance(draft, Citation | CitationDraft):
+    confidence: float | None = None
+    match: str | None = None
+    if isinstance(draft, Citation):
+        field, quote, page = draft.field, draft.quote, draft.page
+        confidence, match = draft.confidence, draft.match
+    elif isinstance(draft, CitationDraft):
         field, quote, page = draft.field, draft.quote, draft.page
     elif isinstance(draft, dict):
         payload = cast(dict[str, Any], draft)
@@ -167,7 +172,9 @@ def sanitize_citation(draft: object) -> Citation | None:
         page = None
     if quote is None and page is None:
         return None
-    return Citation(field=field, quote=quote, page=page, bbox=None)
+    return Citation(
+        field=field, quote=quote, page=page, bbox=None, confidence=confidence, match=match
+    )
 
 
 def _sanitize_quote(quote: str) -> str:

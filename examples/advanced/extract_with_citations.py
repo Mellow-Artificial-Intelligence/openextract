@@ -5,7 +5,8 @@ Read citations from ``extract_many_with_results`` → ``ExtractionResult.citatio
 
 ``bbox`` is attached only when a local PDF parser matches the quote
 (``openextract[pdf]`` / ``openextract[all]``). Boxes are never invented
-or taken from the model.
+or taken from the model. ``confidence`` / ``match`` are a local heuristic
+(quote/value match strength), not a model-provided probability.
 
 Live provider: swap ``MODEL`` for a provider id (or ``OPENEXTRACT_MODEL``)
 and pass a real PDF.

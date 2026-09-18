@@ -82,9 +82,13 @@ cited: Invoice = extract(
 _cite: Citation = Citation("total", "12.50", 1, (0.1, 0.2, 0.3, 0.05))
 _dumped: dict[str, object] = _cite.as_dict()
 _field: dict[str, object] | None = _cite.as_field_citation()
+_confidence: float | None = _cite.confidence
+_match: str | None = _cite.match
 _ = cited
 _ = _dumped
 _ = _field
+_ = _confidence
+_ = _match
 
 # extract_swarm_with_results returns SwarmResult with reduced citations.
 swarm: SwarmResult[Invoice] = extract_swarm_with_results(

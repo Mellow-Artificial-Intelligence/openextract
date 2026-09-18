@@ -222,14 +222,17 @@ openextract ./reports/q4.pdf \
 {
   "result": { "...": "schema fields" },
   "citations": [
-    { "field": "vendor", "quote": "Acme", "page": 1 },
-    { "field": "total", "quote": "12.50", "page": 1, "bbox": [0.1, 0.2, 0.3, 0.05] }
+    { "field": "vendor", "quote": "Acme", "page": 1, "confidence": 0.55, "match": "quote" },
+    { "field": "total", "quote": "12.50", "page": 1, "bbox": [0.1, 0.2, 0.3, 0.05], "confidence": 0.95, "match": "exact" }
   ]
 }
 ```
 
-Each citation is `{field, quote, page}` with optional `bbox` (normalized COCO,
-parser-backed only). `quote` / `page` may be `null`. Combine with `--usage` to
+Each citation is `Citation.as_dict()` (`{field, quote, page}` plus optional
+`bbox`, heuristic `confidence`, and `match`). Null `bbox` / `confidence` /
+`match` are omitted. `bbox` is normalized COCO, parser-backed only.
+`confidence` / `match` are quote/value match strength, not a model-provided
+probability. `quote` / `page` may be `null`. Combine with `--usage` to
 keep `{result, usage, citations}`.
 
 - Batch JSON array: `[{ "result", "citations" }, ...]` in input order.

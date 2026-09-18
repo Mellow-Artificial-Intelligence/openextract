@@ -372,12 +372,16 @@ A frozen dataclass for one field's source evidence. Mapped onto ExtractBench
 | `quote` | `str \| None` | Verbatim source span, when present. |
 | `page` | `int \| None` | 1-indexed page. Required to emit an ExtractBench citation. |
 | `bbox` | `tuple[float, float, float, float] \| None` | Normalized COCO `(x, y, width, height)` in `[0, 1]`. Kept only when a local parser matched the span; never invented. |
+| `confidence` | `float \| None` | Heuristic match strength in `[0, 1]`, stamped during grounding. **Not** a model-provided probability. `None` on manually built citations until grounded. |
+| `match` | `str \| None` | How `confidence` was derived: `exact`, `numeric`, `fuzzy`, `value`, `page`, or `quote`. |
 
 `as_dict()` is the JSON shape for CLI and other consumers:
-`{field, quote, page, bbox}` with `bbox` as a list of four floats or `null`.
+`{field, quote, page, bbox, confidence, match}` with `bbox` as a list of four
+floats or `null`, and `confidence` / `match` a float / string or `null`.
 Quote-only citations are included. `as_field_citation()` returns `None` when
 `page` is missing (those citations stay on `ExtractionResult` but cannot be
-scored by ExtractBench).
+scored by ExtractBench) and omits `confidence` / `match` so ExtractBench
+payloads stay `{field_path, page, bbox, reference_text}`.
 
 ### `ExtractionResult`
 
