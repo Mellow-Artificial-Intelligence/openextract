@@ -386,7 +386,7 @@ All public exceptions subclass `ExtractionError`.
 | Exception | Typical cause | CLI exit |
 | --- | --- | --- |
 | `UrlFetchError` | Network, HTTP, or SSRF refusal | `2` |
-| `SchemaValidationError` | Model output did not match the schema | `3` |
+| `SchemaValidationError` | Output failed validation (field path + expected type) | `3` |
 | `ModelError` | Provider/model API failure (`provider`, `status_code`, `retryable`, `retry_after`) | `4` |
 | `InputTooLargeError` | Over the byte cap | `5` |
 | `ProviderNotInstalledError` | Missing extra or harness package | `6` |

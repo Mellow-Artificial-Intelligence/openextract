@@ -19,6 +19,10 @@ timing when that is known.
 ### Changed
 - CLI `--cite` JSON/JSONL citations serialize via `Citation.as_dict()`
   (`{field, quote, page}` plus optional `bbox`).
+- `SchemaValidationError` messages list each failing field path and expected
+  type (for example `lines[0].qty: expected int, got str`) instead of dumping
+  the raw Pydantic error. Additive `.errors` holds `{field, expected, received}`
+  mappings.
 
 ## [0.14.0] - 2026-09-12
 

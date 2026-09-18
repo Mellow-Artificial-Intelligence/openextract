@@ -1150,7 +1150,7 @@ class TestExtract:
             validation_error = exc
         _make_agent_mock(mocker, run_sync_side_effect=validation_error)
 
-        with pytest.raises(SchemaValidationError, match="Model output did not match schema"):
+        with pytest.raises(SchemaValidationError, match=r"age: expected int, got str"):
             extract(schema=_Person, model="openai:gpt-5", input_file=str(local))
 
     @pytest.mark.parametrize(
@@ -2503,7 +2503,7 @@ class TestExtractAsync:
             validation_error = exc
         _make_async_agent_mock(mocker, run_side_effect=validation_error)
 
-        with pytest.raises(SchemaValidationError, match="Model output did not match schema"):
+        with pytest.raises(SchemaValidationError, match=r"age: expected int, got str"):
             await extract_async(schema=_Person, model="openai:gpt-5", input_file=str(local))
 
     async def test_generic_exception_is_wrapped_as_extraction_error(self, tmp_path, mocker):

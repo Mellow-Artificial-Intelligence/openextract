@@ -252,6 +252,102 @@ def _is_output_retry_error(exc: BaseException) -> bool:
     return False
 
 
+_EXPECTED_TYPES: dict[str, str] = {
+    "bool_parsing": "bool",
+    "bool_type": "bool",
+    "bytes_type": "bytes",
+    "dataclass_type": "object",
+    "date_from_datetime_parsing": "date",
+    "date_type": "date",
+    "datetime_from_date_parsing": "datetime",
+    "datetime_parsing": "datetime",
+    "datetime_type": "datetime",
+    "decimal_parsing": "Decimal",
+    "decimal_type": "Decimal",
+    "dict_type": "dict",
+    "float_parsing": "float",
+    "float_type": "float",
+    "frozenset_type": "frozenset",
+    "int_from_float": "int",
+    "int_parsing": "int",
+    "int_type": "int",
+    "list_type": "list",
+    "model_type": "object",
+    "none_required": "None",
+    "set_type": "set",
+    "string_type": "str",
+    "time_parsing": "time",
+    "time_type": "time",
+    "timedelta_parsing": "timedelta",
+    "timedelta_type": "timedelta",
+    "tuple_type": "tuple",
+    "url_parsing": "URL",
+    "url_type": "URL",
+    "uuid_parsing": "UUID",
+    "uuid_type": "UUID",
+}
+
+
+def _validation_field_path(loc: tuple[object, ...]) -> str:
+    """Render a Pydantic error location as a dotted/indexed path (``lines[0].qty``)."""
+    parts: list[str] = []
+    for item in loc:
+        if isinstance(item, int):
+            if parts:
+                parts[-1] += f"[{item}]"
+            else:
+                parts.append(f"[{item}]")
+            continue
+        parts.append(str(item))
+    return ".".join(parts) or "<root>"
+
+
+def _received_type_name(error: Mapping[str, Any]) -> str:
+    """Return a short type name for the value that failed validation."""
+    if "input" not in error:
+        return "missing"
+    value = error["input"]
+    return "None" if value is None else type(value).__name__
+
+
+def _format_validation_issue(error: Mapping[str, Any]) -> tuple[dict[str, str], str]:
+    """Return structured detail and a ``field: expected T, got U`` line."""
+    path = _validation_field_path(tuple(error.get("loc", ())))
+    error_type = str(error.get("type", ""))
+    received = _received_type_name(error)
+    if error_type == "missing":
+        detail = {"field": path, "expected": "required field", "received": "missing"}
+        return detail, f"{path}: missing required field"
+    if error_type == "extra_forbidden":
+        detail = {"field": path, "expected": "absent", "received": "unexpected field"}
+        return detail, f"{path}: unexpected field"
+    expected = _EXPECTED_TYPES.get(error_type)
+    if expected is not None:
+        detail = {"field": path, "expected": expected, "received": received}
+        return detail, f"{path}: expected {expected}, got {received}"
+    message = str(error.get("msg", "invalid value"))
+    detail = {"field": path, "expected": message, "received": received}
+    return detail, f"{path}: {message}"
+
+
+def _schema_validation_error(exc: ValidationError) -> SchemaValidationError:
+    """Map a Pydantic ``ValidationError`` to a field-path ``SchemaValidationError``."""
+    details: list[dict[str, str]] = []
+    parts: list[str] = []
+    for error in exc.errors(include_url=False):
+        detail, part = _format_validation_issue(error)
+        details.append(detail)
+        parts.append(part)
+    prefix = "Model output did not match schema"
+    errors = tuple(details)
+    if not parts:
+        return SchemaValidationError(f"{prefix}: {str(exc).rstrip()}", errors=errors)
+    if len(parts) == 1:
+        return SchemaValidationError(f"{prefix}: {parts[0]}", errors=errors)
+    joined = "; ".join(parts)
+    return SchemaValidationError(f"{prefix} ({len(parts)} errors): {joined}", errors=errors)
+
+
 def _map_exception(exc: BaseException) -> ExtractionError:
     """Translate a low-level exception into the appropriate ExtractionError subclass."""
     if isinstance(exc, httpx.HTTPStatusError):
@@ -259,7 +355,7 @@ def _map_exception(exc: BaseException) -> ExtractionError:
     if isinstance(exc, httpx.RequestError):
         return UrlFetchError(f"Failed to fetch URL: {exc}")
     if isinstance(exc, ValidationError):
-        return SchemaValidationError(f"Model output did not match schema: {exc}")
+        return _schema_validation_error(exc)
     if _is_token_limit_error(exc):
         return ModelError(
             f"Model token limit exceeded: {exc}",

@@ -75,7 +75,22 @@ class InputTooLargeError(ExtractionError):
 
 
 class SchemaValidationError(ExtractionError):
-    """Model output did not match the expected schema."""
+    """Model output did not match the expected schema.
+
+    When raised from a Pydantic ``ValidationError``, the message lists each
+    failing field path and expected type (for example
+    ``lines[0].qty: expected int, got str``). ``errors`` holds the same
+    details as ``({"field", "expected", "received"}, ...)``.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        errors: tuple[dict[str, str], ...] = (),
+    ) -> None:
+        super().__init__(message)
+        self.errors = errors
 
 
 class UrlFetchError(ExtractionError):

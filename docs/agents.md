@@ -76,7 +76,7 @@ Catch `ExtractionError` as the fallback. Prefer the specific subclass:
 
 - `UrlFetchError` — fetch/SSRF
 - `InputTooLargeError` — cap
-- `SchemaValidationError` — output mismatch (tighten `instructions` / schema; this is not retried)
+- `SchemaValidationError` — output mismatch; the message lists field paths and expected types (tighten `instructions` / schema; this is not retried)
 - `ModelError` — inspect `.retryable` before retrying yourself; the library already retries when `max_retries > 0`
 - `ProviderNotInstalledError` — print the exception; it includes the install command
 - `RemoteAgentError` — a remote agent endpoint failed; inspect `.status_code` and `.retryable`

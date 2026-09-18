@@ -203,7 +203,7 @@ def test_sync_injected_agent_invalid_output_is_mapped():
 
     with (
         Extractor(Person, agent=agent) as extractor,
-        pytest.raises(SchemaValidationError, match="did not match schema"),
+        pytest.raises(SchemaValidationError, match=r"age: expected int, got str"),
     ):
         extractor.extract(b"x", media_type="text/plain")
 
@@ -361,7 +361,7 @@ async def test_async_invalid_output_and_lifecycle_guards():
         await extractor.extract(b"x", media_type="text/plain")
 
     async with extractor:
-        with pytest.raises(SchemaValidationError, match="did not match schema"):
+        with pytest.raises(SchemaValidationError, match=r"age: expected int, got str"):
             await extractor.extract(b"x", media_type="text/plain")
         with pytest.raises(RuntimeError, match="already entered"):
             await extractor.__aenter__()
