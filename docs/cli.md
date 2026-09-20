@@ -25,7 +25,7 @@ empty when exit code `7` is returned — the batch output is still written.
 | Code | Meaning | Typical cause |
 | ---- | ------- | ------------- |
 | `0` | Success | Single-file or full-batch success |
-| `1` | Usage / setup error | Missing or bad `--schema` / `--model`, stdin without `--media-type`, invalid manifest, empty or unreadable directory, `--recursive` with `--manifest` or stdin, invalid `--pages`, invalid concurrency/retry/size/swarm options, unloadable `--agent`, `--out` with a missing parent directory or unwritable path, argparse failures |
+| `1` | Usage / setup error | Missing or bad `--schema` / `--model`, stdin without `--media-type`, invalid manifest, empty or unreadable directory, `--recursive` with `--manifest` or stdin, invalid `--pages`, invalid `--timeout`, invalid concurrency/retry/size/swarm options, unloadable `--agent`, `--out` with a missing parent directory or unwritable path, argparse failures |
 | `2` | URL fetch error | `UrlFetchError` (network failure, HTTP error, SSRF refusal) |
 | `3` | Schema validation error | `SchemaValidationError` |
 | `4` | Model API error | `ModelError` |
@@ -42,7 +42,8 @@ These mappings live in `src/openextract/_cli.py` and are covered by
 CLI option values are validated **before any model call**: invalid
 `--max-concurrency`, `--max-retries`, `--retry-backoff`, `--retry-max-backoff`,
 `--max-input-bytes`, `--pages`, `--out` (missing parent directory or unwritable
-path), `--language` (empty), or manifest contents exit `1` without contacting a
+path), `--language` (empty), `--timeout` (not a finite number greater than 0),
+or manifest contents exit `1` without contacting a
 provider.
 
 ## Successful single-file output
@@ -412,6 +413,13 @@ page. Empty or invalid tokens exit `1`.
 primary language and to preserve that language/script in field values. It uses
 the same `language=` path as the library. Omit it to leave instructions
 unchanged. An empty tag exits `1`.
+
+## Model timeout
+
+`--timeout SECONDS` (for example `--timeout 30`) sets the model request
+timeout. It uses the same `timeout=` path as the library (`float > 0`). Omit
+it to use the provider default. Zero, negative, or non-finite values exit `1`
+before any model call.
 
 ## Related docs
 
