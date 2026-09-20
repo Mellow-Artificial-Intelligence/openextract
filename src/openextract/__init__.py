@@ -24,6 +24,8 @@ from ._batch import (
 from ._extract import (
     extract,
     extract_async,
+    extract_with_result,
+    extract_with_result_async,
     extract_with_usage,
     extract_with_usage_async,
 )
@@ -86,11 +88,13 @@ __all__ = [
     "extract_many_with_results",
     "extract_many_with_results_async",
     "extract_with_usage",
+    "extract_with_result",
     "extract_swarm",
     "extract_swarm_async",
     "extract_swarm_with_results",
     "extract_swarm_with_results_async",
     "extract_with_usage_async",
+    "extract_with_result_async",
     "flatten_agent",
     "load_agent",
     "load_agent_directory",

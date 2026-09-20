@@ -19,6 +19,7 @@ import httpx
 import pytest
 from pydantic import BaseModel, ValidationError
 from pydantic_ai import BinaryContent
+from pydantic_ai.models.test import TestModel
 
 import openextract._agent as agent_module
 from openextract import (
@@ -38,6 +39,8 @@ from openextract import (
     extract_many_async,
     extract_many_with_results,
     extract_many_with_results_async,
+    extract_with_result,
+    extract_with_result_async,
     extract_with_usage,
     extract_with_usage_async,
     iter_extract_many_async,
@@ -153,11 +156,13 @@ def test_star_import_exposes_only_existing_names():
         "extract_many_with_results",
         "extract_many_with_results_async",
         "extract_with_usage",
+        "extract_with_result",
         "extract_swarm",
         "extract_swarm_async",
         "extract_swarm_with_results",
         "extract_swarm_with_results_async",
         "extract_with_usage_async",
+        "extract_with_result_async",
         "flatten_agent",
         "load_agent",
         "load_agent_directory",
@@ -2608,6 +2613,71 @@ class TestExtractAsync:
         with pytest.raises(SchemaValidationError) as exc_info:
             await extract_async(schema=_Person, model="openai:gpt-5", input_file=str(local))
         assert exc_info.value is original
+
+
+# ---------------------------------------------------------------------------
+# extract_with_result
+# ---------------------------------------------------------------------------
+
+
+class TestExtractWithResult:
+    def test_success_shape(self):
+        model = TestModel(custom_output_args={"name": "Ada", "age": 36})
+        result = extract_with_result(
+            _Person,
+            model,
+            ExtractionInput(b"Ada Lovelace", media_type="text/plain", name="bio.txt"),
+        )
+        assert isinstance(result, ExtractionResult)
+        assert result.output == _Person(name="Ada", age=36)
+        assert result.usage.total_tokens >= 0
+        assert result.attempts == 1
+        assert result.duration >= 0
+        assert result.media_type == "text/plain"
+        assert result.source == "bio.txt"
+        assert result.warnings == ()
+        assert result.citations == ()
+
+    def test_cite_attaches_citations(self):
+        model = TestModel(
+            custom_output_args={
+                "output": {"name": "Ada", "age": 36},
+                "citations": [{"field": "name", "quote": "Ada", "page": 1}],
+            }
+        )
+        result = extract_with_result(
+            _Person,
+            model,
+            b"Ada Lovelace, 36",
+            media_type="text/plain",
+            cite=True,
+        )
+        assert result.output == _Person(name="Ada", age=36)
+        assert result.citations[0].field == "name"
+        assert result.citations[0].quote == "Ada"
+        assert result.citations[0].page == 1
+
+    async def test_async_twin(self):
+        model = TestModel(
+            custom_output_args={
+                "output": {"name": "Grace", "age": 85},
+                "citations": [{"field": "name", "quote": "Grace", "page": 1}],
+            }
+        )
+        result = await extract_with_result_async(
+            _Person,
+            model,
+            ExtractionInput(b"Grace Hopper", media_type="text/plain", name="note.txt"),
+            cite=True,
+        )
+        assert isinstance(result, ExtractionResult)
+        assert result.output == _Person(name="Grace", age=85)
+        assert result.attempts == 1
+        assert result.duration >= 0
+        assert result.media_type == "text/plain"
+        assert result.source == "note.txt"
+        assert result.citations[0].field == "name"
+        assert result.citations[0].quote == "Grace"
 
 
 # ---------------------------------------------------------------------------

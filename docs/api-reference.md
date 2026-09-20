@@ -75,14 +75,14 @@ resolves to one local model runs as a normal one-shot call using the agent's
 model, instructions, and style; an agent with subagents or a remote endpoint
 runs as a [swarm](#swarm) and its outputs are reduced. Omitting `input_file`
 raises `ValueError`; the parameter is optional only so the agent form can shift
-it left. The same applies to the three siblings below.
+it left. The same applies to the siblings below.
 
 Extract one input synchronously and return an instance of `schema`.
 `cite=True` asks the model for per-field source spans (page and quote). PDFs
 are parsed locally; long documents are extracted in page windows and merged.
 Boxes come from parser spans, not the model. The return type stays the schema
-instance; citations land on [`ExtractionResult`](#extractionresult) from the
-`*_with_results` APIs. `cite_min_confidence` (a float in `[0, 1]`) keeps only
+instance; citations land on [`ExtractionResult`](#extractionresult) from
+`extract_with_result*` and the `*_with_results` APIs. `cite_min_confidence` (a float in `[0, 1]`) keeps only
 citations whose heuristic `confidence` is not `None` and is at least that
 threshold; omit it to keep every citation. Invalid values raise `ValueError`.
 `language` is an optional BCP-47-ish tag or plain name (`en`, `es`, `fr`).
@@ -109,6 +109,20 @@ retry behavior as `extract`; `Usage` describes the successful model call.
 ### `extract_with_usage_async(schema, model, input_file=None, instructions=None, *, style='direct', media_type=None, max_input_bytes=None, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, cite=False, cite_min_confidence=None, pages=None, language=None, on_progress=None)`
 
 Async counterpart to `extract_with_usage`; returns `(output, Usage)`.
+
+### `extract_with_result(schema, model, input_file=None, instructions=None, *, style='direct', media_type=None, max_input_bytes=None, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, cite=False, cite_min_confidence=None, pages=None, language=None, on_progress=None)`
+
+Extract one input synchronously and return an [`ExtractionResult`](#extractionresult).
+It has the same arguments and retry behavior as `extract`. The result carries
+output, usage, attempts, duration, model/media metadata, a sanitized source
+label, and citations when `cite=True` — the same fields
+`extract_many_with_results*` fill. An agent that fans into a swarm summarizes
+usage and citations the same way `extract_with_usage` does; use
+`extract_swarm_with_results*` for per-agent results.
+
+### `extract_with_result_async(schema, model, input_file=None, instructions=None, *, style='direct', media_type=None, max_input_bytes=None, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, cite=False, cite_min_confidence=None, pages=None, language=None, on_progress=None)`
+
+Async counterpart to `extract_with_result`; returns `ExtractionResult`.
 
 ### `extract_many(schema, model, input_files, instructions=None, *, style='direct', media_type=None, max_input_bytes=None, max_concurrency=5, return_exceptions=False, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, cite=False, cite_min_confidence=None, pages=None, language=None, on_progress=None)`
 
@@ -405,7 +419,8 @@ payloads stay `{field_path, page, bbox, reference_text}`.
 
 ### `ExtractionResult`
 
-A frozen, generic dataclass returned by `extract_many_with_results*`. It never
+A frozen, generic dataclass returned by `extract_with_result*` and
+`extract_many_with_results*`. It never
 retains raw media, credentials, query strings, fragments, or provider
 internals; `source` is sanitized.
 

@@ -14,12 +14,14 @@ from openextract import (
     ExtractionInput,
     ExtractionResult,
     Extractor,
+    define_agent,
     extract,
     extract_async,
     extract_many,
     extract_many_with_results,
     extract_swarm,
     extract_swarm_with_results,
+    extract_with_result,
     extract_with_usage,
     extract_with_usage_async,
 )
@@ -512,6 +514,21 @@ class TestExtractCite:
         assert swarm.output == Person(name="Ada", age=36)
         assert swarm.agents[0].citations[0].page == 1
         assert swarm.citations[0].page == 1
+        cited = {
+            "output": {"name": "Ada", "age": 36},
+            "citations": [{"field": "name", "quote": "Ada", "page": 1}],
+        }
+        group = define_agent(
+            "Group",
+            output_schema=Person,
+            subagents=[
+                define_agent("A", model=_cited_model(**cited)),
+                define_agent("B", model=_cited_model(**cited)),
+            ],
+        )
+        oneshot = extract_with_result(group, b"x", media_type="text/plain", cite=True)
+        assert oneshot.output == Person(name="Ada", age=36)
+        assert oneshot.citations[0].page == 1
 
     async def test_async_usage_cite(self):
         model = _cited_model(output={"name": "Ada", "age": 36}, citations=[])
