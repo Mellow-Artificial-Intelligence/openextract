@@ -14,6 +14,7 @@ from openextract import (
     ExtractionInput,
     ExtractionResult,
     ExtractionStyle,
+    InputFileError,
     InputTooLargeError,
     ModelError,
     ProviderNotInstalledError,
@@ -612,6 +613,26 @@ class TestMainErrorCodes:
 
         assert exit_code == 5
         assert "too large" in capsys.readouterr().err
+
+    def test_input_file_error_returns_5(self, mocker, capsys):
+        _patch_extract(mocker, side_effect=InputFileError("Cannot read path 'gone.txt': missing"))
+
+        exit_code = main(["input.txt", *_BASE_ARGS])
+
+        assert exit_code == 5
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert "Cannot read path 'gone.txt'" in captured.err
+
+    def test_missing_local_file_returns_5(self, capsys, tmp_path):
+        missing = tmp_path / "gone.pdf"
+
+        exit_code = main([str(missing), *_BASE_ARGS])
+
+        assert exit_code == 5
+        err = capsys.readouterr().err
+        assert "gone.pdf" in err
+        assert str(tmp_path) not in err
 
     def _invoke(self, mocker, exc):
         _patch_extract(mocker, side_effect=exc)

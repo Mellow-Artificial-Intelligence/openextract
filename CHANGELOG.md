@@ -8,6 +8,15 @@ timing when that is known.
 
 ## [Unreleased]
 
+### Added
+- `InputFileError(ExtractionError)` for local path and file-like open/read
+  failures (missing file, permission denied, is-a-directory, and other OS
+  errors). Messages use a sanitized source (`path 'basename'` or
+  `file-like input`) and do not include credentials or full paths.
+  `TypeError` still covers bad call shapes; `UrlFetchError` and
+  `InputTooLargeError` are unchanged. The CLI maps `InputFileError` to
+  exit code `5`, the existing `ExtractionError` slot.
+
 ## [0.15.0] - 2026-09-18
 
 ### Added

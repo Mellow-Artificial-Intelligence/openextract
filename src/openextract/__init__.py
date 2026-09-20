@@ -53,6 +53,7 @@ from ._types import (
 )
 from .exceptions import (
     ExtractionError,
+    InputFileError,
     InputTooLargeError,
     ModelError,
     ProviderNotInstalledError,
@@ -101,6 +102,7 @@ __all__ = [
     "total_usage",
     "Usage",
     "ExtractionError",
+    "InputFileError",
     "InputTooLargeError",
     "ModelError",
     "ProviderNotInstalledError",

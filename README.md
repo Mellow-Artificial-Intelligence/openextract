@@ -630,6 +630,7 @@ uv run python -m examples.basic.local_file --fixture
 ```python
 from openextract import (
     extract,
+    InputFileError,
     InputTooLargeError,
     UrlFetchError,
     SchemaValidationError,
@@ -642,6 +643,8 @@ try:
     result = extract(schema=PdfInfo, model="xai:grok-4.3", input_file=url)
 except UrlFetchError:
     ...  # The URL could not be fetched
+except InputFileError:
+    ...  # A local path or file-like input could not be opened or read
 except InputTooLargeError:
     ...  # The input exceeded the configured byte limit
 except SchemaValidationError as exc:
@@ -693,6 +696,7 @@ below even though it is not exported from `__all__`.
 | `Usage` | Stable | Frozen dataclass with `input_tokens`, `output_tokens`, and `total_tokens`. New fields, if ever needed, should be additive. |
 | `ExtractionError` | Stable | Base class for all public `openextract` exceptions. Catch this for a broad fallback. |
 | `UrlFetchError` | Stable | Raised for URL fetch and URL safety failures. Message wording may improve, but the exception type is stable. |
+| `InputFileError` | Stable | Raised before a model call when a local path or file-like input cannot be opened or read. |
 | `InputTooLargeError` | Stable | Raised before a model call when resolved media exceeds the configured per-input byte limit. |
 | `SchemaValidationError` | Stable | Raised when model output cannot be validated against the requested schema. Messages list field paths and expected types; additive `.errors` details. |
 | `ModelError` | Stable | Raised for provider/model API failures, with `provider`, `status_code`, `retryable`, and `retry_after` metadata where available. |

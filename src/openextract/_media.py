@@ -23,7 +23,7 @@ from ._config import (
     _url_fetch_timeout,
 )
 from ._types import ExtractionInput, ExtractionInputLike, MediaSource, ResolvedSource
-from .exceptions import InputTooLargeError, UrlFetchError
+from .exceptions import InputFileError, InputTooLargeError, UrlFetchError
 
 _DEFAULT_MEDIA_TYPE = "application/octet-stream"
 _URL_PREFIXES = ("http://", "https://")
@@ -72,6 +72,20 @@ def _item_source_label(source: MediaSource, name: str | None) -> str | None:
 # ---------------------------------------------------------------------------
 # Byte-limit enforcement
 # ---------------------------------------------------------------------------
+
+
+def _input_file_error(exc: OSError, *, source: str) -> InputFileError:
+    """Map an open/read OS failure to ``InputFileError`` with safe source context."""
+    return InputFileError(f"Cannot read {source}: {exc.strerror or type(exc).__name__}")
+
+
+@contextmanager
+def _input_file_errors(*, source: str) -> Iterator[None]:
+    """Convert open/read ``OSError`` values into ``InputFileError``."""
+    try:
+        yield
+    except OSError as exc:
+        raise _input_file_error(exc, source=source) from exc
 
 
 def _input_too_large(*, limit: int, observed: int, source: str) -> InputTooLargeError:
@@ -356,9 +370,10 @@ def _read_local_file(file_path: str, *, max_input_bytes: int) -> tuple[bytes, st
     """Read a local path through the byte cap, checking the stat size first."""
     path = Path(file_path)
     source = _safe_source_context(file_path)
-    _reject_declared_size(path.stat().st_size, limit=max_input_bytes, source=source)
-    with path.open("rb") as stream:
-        content = _read_file_like_limited(stream, limit=max_input_bytes, source=source)
+    with _input_file_errors(source=source):
+        _reject_declared_size(path.stat().st_size, limit=max_input_bytes, source=source)
+        with path.open("rb") as stream:
+            content = _read_file_like_limited(stream, limit=max_input_bytes, source=source)
     return content, _get_media_type(file_path)
 
 
@@ -464,7 +479,8 @@ def _get_media(
     if hasattr(input_file, "read"):
         # Validate before touching the stream so an invalid call cannot consume it.
         resolved_type = _require_media_type(media_type)
-        content = _read_file_like_limited(input_file, limit=limit, source="file-like input")
+        with _input_file_errors(source="file-like input"):
+            content = _read_file_like_limited(input_file, limit=limit, source="file-like input")
         return content, resolved_type
 
     raise _unsupported_input()

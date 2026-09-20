@@ -25,6 +25,7 @@ from openextract import (
     ExtractionError,
     ExtractionInput,
     ExtractionResult,
+    InputFileError,
     InputTooLargeError,
     ModelError,
     ProviderNotInstalledError,
@@ -168,6 +169,7 @@ def test_star_import_exposes_only_existing_names():
         "total_usage",
         "Usage",
         "ExtractionError",
+        "InputFileError",
         "InputTooLargeError",
         "ModelError",
         "ProviderNotInstalledError",
@@ -234,8 +236,56 @@ class TestGetMedia:
 
     def test_missing_local_file_raises(self, tmp_path):
         missing = tmp_path / "does_not_exist.txt"
-        with pytest.raises(FileNotFoundError):
+        with pytest.raises(InputFileError, match="does_not_exist.txt") as exc_info:
             _get_media(str(missing))
+        assert str(tmp_path) not in str(exc_info.value)
+
+    def test_directory_raises_input_file_error(self, tmp_path):
+        with pytest.raises(InputFileError, match="is a directory|Is a directory") as exc_info:
+            _get_media(str(tmp_path))
+        assert tmp_path.name in str(exc_info.value)
+        assert str(tmp_path.parent) not in str(exc_info.value)
+
+    def test_permission_denied_raises_input_file_error(self, tmp_path, mocker):
+        locked = tmp_path / "locked.txt"
+        locked.write_bytes(b"secret")
+        mocker.patch.object(Path, "open", side_effect=PermissionError(13, "Permission denied"))
+        with pytest.raises(InputFileError, match="Permission denied") as exc_info:
+            _get_media(str(locked))
+        assert "locked.txt" in str(exc_info.value)
+        assert str(tmp_path) not in str(exc_info.value)
+
+    def test_other_open_oserror_raises_input_file_error(self, tmp_path, mocker):
+        local = tmp_path / "data.bin"
+        local.write_bytes(b"ok")
+        mocker.patch.object(Path, "stat", side_effect=OSError(5, "Input/output error"))
+        with pytest.raises(InputFileError, match="Input/output error") as exc_info:
+            _get_media(str(local))
+        assert "data.bin" in str(exc_info.value)
+
+    def test_oserror_without_strerror_uses_type_name(self, tmp_path, mocker):
+        local = tmp_path / "data.bin"
+        local.write_bytes(b"ok")
+        mocker.patch.object(Path, "stat", side_effect=OSError("boom"))
+        with pytest.raises(InputFileError, match="OSError"):
+            _get_media(str(local))
+
+    def test_filelike_read_oserror_raises_input_file_error(self):
+        class _Broken:
+            def read(self, _size=-1):
+                raise OSError(5, "Input/output error")
+
+        with pytest.raises(InputFileError, match="file-like input") as exc_info:
+            _get_media(_Broken(), media_type="text/plain")
+        assert "Input/output error" in str(exc_info.value)
+
+    def test_filelike_missing_media_type_stays_type_error(self):
+        class _Broken:
+            def read(self, _size=-1):
+                raise OSError(5, "Input/output error")
+
+        with pytest.raises(TypeError, match="media_type is required"):
+            _get_media(_Broken())
 
     def test_fetches_https_url(self, mocker):
         fake_response = _build_response(content=b"<html>remote</html>")
@@ -686,6 +736,12 @@ class TestGetMediaAsync:
         result = await _get_media_async(str(local), MagicMock(), media_type="application/custom")
 
         assert result == (b"hello", "application/custom")
+
+    async def test_missing_local_file_raises_input_file_error(self, tmp_path):
+        missing = tmp_path / "gone.txt"
+        with pytest.raises(InputFileError, match="gone.txt") as exc_info:
+            await _get_media_async(str(missing), MagicMock())
+        assert str(tmp_path) not in str(exc_info.value)
 
     async def test_bytes_input_uses_existing_validation(self):
         result = await _get_media_async(b"hello", MagicMock(), media_type="text/plain")
@@ -1542,6 +1598,9 @@ class TestProviderNotInstalled:
     def test_input_too_large_is_extraction_error(self):
         assert issubclass(InputTooLargeError, ExtractionError)
 
+    def test_input_file_error_is_extraction_error(self):
+        assert issubclass(InputFileError, ExtractionError)
+
 
 # ---------------------------------------------------------------------------
 # extract: input_file polymorphism
@@ -1644,6 +1703,15 @@ class TestExtractInputs:
 
         with pytest.raises(TypeError, match="input_file must be"):
             extract(schema=_Person, model="openai:gpt-5", input_file=12345)  # type: ignore[arg-type]
+
+    def test_missing_local_file_raises_input_file_error(self, tmp_path, mocker):
+        _make_agent_mock(mocker, output=_Person(name="x", age=1))
+        missing = tmp_path / "gone.txt"
+
+        with pytest.raises(InputFileError, match="gone.txt") as exc_info:
+            extract(schema=_Person, model="openai:gpt-5", input_file=str(missing))
+
+        assert str(tmp_path) not in str(exc_info.value)
 
 
 # ---------------------------------------------------------------------------

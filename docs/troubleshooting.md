@@ -57,6 +57,15 @@ Set the provider environment variable. The CLI and bundled examples load
 example: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `XAI_API_KEY`. See the [provider
 matrix](providers.md) for the credential column.
 
+## Local file read failures
+
+`InputFileError` means a local path or file-like input could not be opened or
+read (missing file, permission denied, directory, or another OS open/read
+failure). The CLI reports it with exit code `5`. Messages include a sanitized
+source (`path 'basename'` or `file-like input`), not a full path. Missing
+`media_type` on bytes/file-like inputs is still `TypeError`. URL failures stay
+`UrlFetchError` (exit `2`).
+
 ## URL fetch failures
 
 **Symptoms**

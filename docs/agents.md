@@ -76,6 +76,7 @@ Default `style='direct'`. `table` is for invoices, statements, and other line-it
 Catch `ExtractionError` as the fallback. Prefer the specific subclass:
 
 - `UrlFetchError` — fetch/SSRF
+- `InputFileError` — local path / file-like open-read failure
 - `InputTooLargeError` — cap
 - `SchemaValidationError` — output mismatch; the message lists field paths and expected types (tighten `instructions` / schema; this is not retried)
 - `ModelError` — inspect `.retryable` before retrying yourself; the library already retries when `max_retries > 0`

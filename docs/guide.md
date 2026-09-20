@@ -444,6 +444,7 @@ All public exceptions subclass `ExtractionError`.
 | `UrlFetchError` | Network, HTTP, or SSRF refusal | `2` |
 | `SchemaValidationError` | Output failed validation (field path + expected type) | `3` |
 | `ModelError` | Provider/model API failure (`provider`, `status_code`, `retryable`, `retry_after`) | `4` |
+| `InputFileError` | Local path / file-like open or read failure | `5` |
 | `InputTooLargeError` | Over the byte cap | `5` |
 | `ProviderNotInstalledError` | Missing extra or harness package | `6` |
 | `ValueError` | Bad options (`max_retries`, `max_concurrency`, missing `media_type` for bytes) | `1` |

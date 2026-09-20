@@ -564,6 +564,8 @@ def extract(
             is not provided.
         ValueError: If ``input_file`` is omitted, or an agent is passed as
             ``schema`` together with a separate model.
+        InputFileError: If a local path or file-like input cannot be opened
+            or read.
         InputTooLargeError: If the resolved input exceeds ``max_input_bytes``.
         UrlFetchError: If the URL cannot be fetched or returns a non-2xx status.
         SchemaValidationError: If the model output doesn't match the schema.

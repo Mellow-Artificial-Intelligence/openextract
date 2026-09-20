@@ -29,7 +29,7 @@ empty when exit code `7` is returned — the batch output is still written.
 | `2` | URL fetch error | `UrlFetchError` (network failure, HTTP error, SSRF refusal) |
 | `3` | Schema validation error | `SchemaValidationError` |
 | `4` | Model API error | `ModelError` |
-| `5` | Other extraction error | `InputTooLargeError` and other `ExtractionError` subclasses |
+| `5` | Other extraction error | `InputFileError`, `InputTooLargeError`, and other `ExtractionError` subclasses |
 | `6` | Missing provider SDK | `ProviderNotInstalledError` |
 | `7` | Partial batch failure | `--continue-on-error` with one or more per-item failures |
 | `8` | Remote agent failure | `RemoteAgentError` from a `--agent` / `--agents` HTTP endpoint |
