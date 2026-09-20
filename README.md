@@ -461,6 +461,12 @@ Python library leaves environment configuration to the host application.
 
 OpenRouter and Cerebras are openai-compatible (they go through the `openai` client under the hood), so their errors are already classified via the existing openai path &mdash; no separate exception handling is needed.
 
+OpenRouter also hosts TypeSafe Jev Latest as a **Decisions** model
+(`~typesafe/jev-latest`). That ID is not a chat/completions model and
+cannot be passed to `extract()`. See
+[`examples/advanced/openrouter_jev.py`](examples/advanced/openrouter_jev.py)
+(`POST https://openrouter.ai/api/alpha/decisions`).
+
 Outlines runs models locally (via HuggingFace transformers, llama-cpp, MLX, vLLM, or SGLang) and enforces JSON-schema-conforming output at the token level. Install it separately alongside the backend you want, for example `pip install pydantic-ai-slim[outlines-transformers]`.
 
 ### Command line

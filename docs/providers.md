@@ -30,7 +30,7 @@ vision/audio-capable model identifier when extracting non-text media.
 | Groq | `groq` | `GROQ_API_KEY` | `groq:llama-3.3-70b-versatile` | expected | unknown | unknown | unknown | unknown | expected | Model-dependent media support |
 | Hugging Face | `huggingface` | `HF_TOKEN` | `huggingface:meta-llama/Llama-3.3-70B-Instruct` | expected | unknown | unknown | unknown | unknown | expected | Endpoint/model capabilities vary |
 | Mistral | `mistral` | `MISTRAL_API_KEY` | `mistral:mistral-large-latest` | expected | expected | expected | unknown | unknown | expected | |
-| OpenRouter | `openrouter` | `OPENROUTER_API_KEY` | `openrouter:~typesafe/jev-latest` | expected | expected | expected | unknown | unknown | expected | OpenAI-compatible; Jev cookbook: `examples/advanced/openrouter_jev.py` |
+| OpenRouter | `openrouter` | `OPENROUTER_API_KEY` | `openrouter:anthropic/claude-sonnet-4` | expected | expected | expected | unknown | unknown | expected | OpenAI-compatible chat. Jev Latest (`~typesafe/jev-latest`) is a Decisions model — `POST /api/alpha/decisions`, not `extract()`. Cookbook: `examples/advanced/openrouter_jev.py` |
 | Cerebras | `openai` | `CEREBRAS_API_KEY` | `cerebras:llama3.1-70b` | expected | unknown | unknown | unknown | unknown | expected | OpenAI-compatible path |
 | Ollama | `openai` | optional `OLLAMA_API_KEY` | `ollama:llama3` | expected | unknown | unknown | unknown | unknown | expected | Local server; uses `NativeOutput` path |
 | Outlines | install `pydantic-ai-slim[outlines-*]` | backend-specific | `outlines:transformers/...` | expected | unknown | unknown | unknown | unknown | unknown | Local constrained decoding; not an openextract extra |

@@ -17,7 +17,6 @@ ACME_SNIPPET = FIXTURES_DIR / "acme_snippet.pdf"
 OPENAI_MODEL = "openai:gpt-5.5"
 ANTHROPIC_MODEL = "anthropic:claude-opus-4-8"
 XAI_MODEL = "xai:grok-4.3"
-OPENROUTER_MODEL = "openrouter:~typesafe/jev-latest"
 
 
 def _resolve_model(default: str) -> str:
@@ -35,10 +34,6 @@ def anthropic_model() -> str:
 
 def xai_model() -> str:
     return _resolve_model(XAI_MODEL)
-
-
-def openrouter_model() -> str:
-    return _resolve_model(OPENROUTER_MODEL)
 
 
 def require_input(argv: list[str], usage: str) -> str:
