@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import AsyncIterator, Callable, Iterator, Sequence
 from contextlib import asynccontextmanager, contextmanager
 from typing import TYPE_CHECKING, Any, TypeVar, cast
@@ -77,6 +78,7 @@ from ._styles import (
     should_parse,
 )
 from ._swarm import (
+    SwarmResult,
     extract_swarm,
     extract_swarm_async,
     extract_swarm_with_results,
@@ -90,6 +92,7 @@ from ._types import (
     ExtractProgress,
     RetryPolicy,
     Usage,
+    _extraction_result,
     _resolve_item,
     total_usage,
 )
@@ -307,6 +310,36 @@ def _swarm_kwargs(
     }
 
 
+def _oneshot_provenance(
+    input_file: ExtractionInputLike,
+    media_type: str | None,
+) -> tuple[str | None, str | None]:
+    """Requested media type and sanitized source label for a oneshot result."""
+    source, item_media_type, name = _resolve_item(input_file, media_type)
+    return item_media_type, _item_source_label(source, name)
+
+
+def _result_from_swarm(
+    swarm: SwarmResult[T],
+    *,
+    started: float,
+    media_type: str | None,
+    source: str | None,
+) -> ExtractionResult[T]:
+    """Summarize a oneshot swarm the same way ``extract_with_usage`` does."""
+    successes = [agent for agent in swarm.agents if isinstance(agent, ExtractionResult)]
+    return _extraction_result(
+        swarm.output,
+        swarm.usage,
+        attempts=sum(agent.attempts for agent in successes),
+        started=started,
+        model=successes[0].model,
+        media_type=media_type,
+        source=source,
+        citations=swarm.citations,
+    )
+
+
 def _extract_sync(
     schema: type[T] | DefinedAgent | RemoteAgent,
     model: str | Model | DefinedAgent | RemoteAgent | ExtractionInputLike,
@@ -325,14 +358,18 @@ def _extract_sync(
     language: str | None,
     with_usage: bool,
     on_progress: Callable[[ExtractProgress], None] | None,
-) -> tuple[T, Usage, tuple[Citation, ...]]:
-    """Shared sync oneshot path used by ``extract`` and ``extract_with_usage``."""
+    rich: bool = False,
+) -> tuple[T, Usage, tuple[Citation, ...]] | ExtractionResult[T]:
+    """Shared sync oneshot path used by ``extract`` and the usage/result helpers."""
     cite_min_confidence = _validate_cite_min_confidence(cite_min_confidence)
     pages = _validate_pages(pages)
     language = normalize_language(language)
     schema, model, input_file, instructions, style, use_swarm = _resolve_oneshot(
         schema, model, input_file, instructions, style
     )
+    started = time.perf_counter()
+    item_media_type, source_label = _oneshot_provenance(input_file, media_type)
+    need_usage = with_usage or rich
     if use_swarm:
         swarm_kw = _swarm_kwargs(
             style=style,
@@ -347,8 +384,15 @@ def _extract_sync(
             language=language,
             on_progress=on_progress,
         )
-        if with_usage:
+        if need_usage:
             swarm = extract_swarm_with_results(schema, model, input_file, instructions, **swarm_kw)
+            if rich:
+                return _result_from_swarm(
+                    swarm,
+                    started=started,
+                    media_type=item_media_type,
+                    source=source_label,
+                )
             return swarm.output, swarm.usage, swarm.citations
         return (
             extract_swarm(schema, model, input_file, instructions, **swarm_kw),
@@ -358,6 +402,7 @@ def _extract_sync(
     style, limit, max_retries, retry_backoff, retry_max_backoff = _oneshot_options(
         style, max_retries, retry_backoff, retry_max_backoff, max_input_bytes
     )
+    attempts = 0
     with _prepare_extraction(
         schema,
         model,
@@ -372,12 +417,14 @@ def _extract_sync(
     ) as (agent, inputs, parsed):
 
         def _run(window: list) -> tuple[object, Usage]:
-            if with_usage:
+            nonlocal attempts
+            if need_usage:
+                attempts += 1
                 result = _run_extraction(agent, window)
                 return result.output, _usage_from_result(result)
             return _extract_once(agent, window), Usage(0, 0, 0)
 
-        return extract_windows_sync(
+        output, usage, citations = extract_windows_sync(
             _run,
             inputs,
             parsed,
@@ -389,6 +436,18 @@ def _extract_sync(
             retry_max_backoff=retry_max_backoff,
             on_progress=on_progress,
         )
+    if rich:
+        return _extraction_result(
+            output,
+            usage,
+            attempts=attempts,
+            started=started,
+            model=_model_identifier(model, agent),
+            media_type=item_media_type,
+            source=source_label,
+            citations=citations,
+        )
+    return output, usage, citations
 
 
 async def _extract_async(
@@ -409,7 +468,8 @@ async def _extract_async(
     language: str | None,
     with_usage: bool,
     on_progress: Callable[[ExtractProgress], None] | None,
-) -> tuple[T, Usage, tuple[Citation, ...]]:
+    rich: bool = False,
+) -> tuple[T, Usage, tuple[Citation, ...]] | ExtractionResult[T]:
     """Shared async oneshot path used by the async extract entry points."""
     cite_min_confidence = _validate_cite_min_confidence(cite_min_confidence)
     pages = _validate_pages(pages)
@@ -417,6 +477,9 @@ async def _extract_async(
     schema, model, input_file, instructions, style, use_swarm = _resolve_oneshot(
         schema, model, input_file, instructions, style
     )
+    started = time.perf_counter()
+    item_media_type, source_label = _oneshot_provenance(input_file, media_type)
+    need_usage = with_usage or rich
     if use_swarm:
         swarm_kw = _swarm_kwargs(
             style=style,
@@ -431,10 +494,17 @@ async def _extract_async(
             language=language,
             on_progress=on_progress,
         )
-        if with_usage:
+        if need_usage:
             swarm = await extract_swarm_with_results_async(
                 schema, model, input_file, instructions, **swarm_kw
             )
+            if rich:
+                return _result_from_swarm(
+                    swarm,
+                    started=started,
+                    media_type=item_media_type,
+                    source=source_label,
+                )
             return swarm.output, swarm.usage, swarm.citations
         return (
             await extract_swarm_async(schema, model, input_file, instructions, **swarm_kw),
@@ -444,6 +514,7 @@ async def _extract_async(
     style, limit, max_retries, retry_backoff, retry_max_backoff = _oneshot_options(
         style, max_retries, retry_backoff, retry_max_backoff, max_input_bytes
     )
+    attempts = 0
     async with _prepare_extraction_async(
         schema,
         model,
@@ -458,10 +529,13 @@ async def _extract_async(
     ) as (agent, inputs, parsed):
 
         async def _run(window: list) -> tuple[object, Usage]:
+            nonlocal attempts
+            if need_usage:
+                attempts += 1
             result = await _run_extraction_async(agent, window)
-            return result.output, _usage_from_result(result) if with_usage else Usage(0, 0, 0)
+            return result.output, _usage_from_result(result) if need_usage else Usage(0, 0, 0)
 
-        return await extract_windows_async(
+        output, usage, citations = await extract_windows_async(
             _run,
             inputs,
             parsed,
@@ -473,6 +547,18 @@ async def _extract_async(
             retry_max_backoff=retry_max_backoff,
             on_progress=on_progress,
         )
+    if rich:
+        return _extraction_result(
+            output,
+            usage,
+            attempts=attempts,
+            started=started,
+            model=_model_identifier(model, agent),
+            media_type=item_media_type,
+            source=source_label,
+            citations=citations,
+        )
+    return output, usage, citations
 
 
 def extract(
@@ -534,7 +620,8 @@ def extract(
         cite: When ``True``, the model is asked for per-field source spans.
             PDFs are parsed locally first; boxes come from parser spans, not
             the model. ``extract`` still returns the schema instance; citations
-            land on :class:`ExtractionResult` from the ``*_with_results`` APIs.
+            land on :class:`ExtractionResult` from :func:`extract_with_result`
+            and the ``*_with_results`` APIs.
         cite_min_confidence: When ``cite=True``, keep only citations whose
             heuristic ``confidence`` is not ``None`` and is at least this
             threshold in ``[0, 1]``. ``None`` (default) keeps every citation.
@@ -577,23 +664,26 @@ def extract(
             Also raised if ``pages`` is empty/invalid or matches no PDF page,
             or ``language`` is empty.
     """
-    output, _usage, _citations = _extract_sync(
-        schema,
-        model,
-        input_file,
-        instructions,
-        style=style,
-        media_type=media_type,
-        max_input_bytes=max_input_bytes,
-        max_retries=max_retries,
-        retry_backoff=retry_backoff,
-        retry_max_backoff=retry_max_backoff,
-        cite=cite,
-        cite_min_confidence=cite_min_confidence,
-        pages=pages,
-        language=language,
-        with_usage=False,
-        on_progress=on_progress,
+    output, _usage, _citations = cast(
+        "tuple[T, Usage, tuple[Citation, ...]]",
+        _extract_sync(
+            schema,
+            model,
+            input_file,
+            instructions,
+            style=style,
+            media_type=media_type,
+            max_input_bytes=max_input_bytes,
+            max_retries=max_retries,
+            retry_backoff=retry_backoff,
+            retry_max_backoff=retry_max_backoff,
+            cite=cite,
+            cite_min_confidence=cite_min_confidence,
+            pages=pages,
+            language=language,
+            with_usage=False,
+            on_progress=on_progress,
+        ),
     )
     return output
 
@@ -623,23 +713,26 @@ def extract_with_usage(
     Returns a :class:`Usage` describing the tokens consumed by the successful
     model call, or summed across the agents when an agent fans out into a swarm.
     """
-    output, usage, _citations = _extract_sync(
-        schema,
-        model,
-        input_file,
-        instructions,
-        style=style,
-        media_type=media_type,
-        max_input_bytes=max_input_bytes,
-        max_retries=max_retries,
-        retry_backoff=retry_backoff,
-        retry_max_backoff=retry_max_backoff,
-        cite=cite,
-        cite_min_confidence=cite_min_confidence,
-        pages=pages,
-        language=language,
-        with_usage=True,
-        on_progress=on_progress,
+    output, usage, _citations = cast(
+        "tuple[T, Usage, tuple[Citation, ...]]",
+        _extract_sync(
+            schema,
+            model,
+            input_file,
+            instructions,
+            style=style,
+            media_type=media_type,
+            max_input_bytes=max_input_bytes,
+            max_retries=max_retries,
+            retry_backoff=retry_backoff,
+            retry_max_backoff=retry_max_backoff,
+            cite=cite,
+            cite_min_confidence=cite_min_confidence,
+            pages=pages,
+            language=language,
+            with_usage=True,
+            on_progress=on_progress,
+        ),
     )
     return output, usage
 
@@ -663,25 +756,126 @@ async def extract_with_usage_async(
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> tuple[T, Usage]:
     """Async sibling of :func:`extract_with_usage`; returns ``(output, Usage)``."""
-    output, usage, _citations = await _extract_async(
-        schema,
-        model,
-        input_file,
-        instructions,
-        style=style,
-        media_type=media_type,
-        max_input_bytes=max_input_bytes,
-        max_retries=max_retries,
-        retry_backoff=retry_backoff,
-        retry_max_backoff=retry_max_backoff,
-        cite=cite,
-        cite_min_confidence=cite_min_confidence,
-        pages=pages,
-        language=language,
-        with_usage=True,
-        on_progress=on_progress,
+    output, usage, _citations = cast(
+        "tuple[T, Usage, tuple[Citation, ...]]",
+        await _extract_async(
+            schema,
+            model,
+            input_file,
+            instructions,
+            style=style,
+            media_type=media_type,
+            max_input_bytes=max_input_bytes,
+            max_retries=max_retries,
+            retry_backoff=retry_backoff,
+            retry_max_backoff=retry_max_backoff,
+            cite=cite,
+            cite_min_confidence=cite_min_confidence,
+            pages=pages,
+            language=language,
+            with_usage=True,
+            on_progress=on_progress,
+        ),
     )
     return output, usage
+
+
+def extract_with_result(
+    schema: type[T] | DefinedAgent | RemoteAgent,
+    model: str | Model | DefinedAgent | RemoteAgent | ExtractionInputLike,
+    input_file: ExtractionInputLike | None = None,
+    instructions: str | None = None,
+    *,
+    style: ExtractionStyle | str = "direct",
+    media_type: str | None = None,
+    max_input_bytes: int | None = None,
+    max_retries: int = 0,
+    retry_backoff: float = 1.0,
+    retry_max_backoff: float = _DEFAULT_RETRY_MAX_BACKOFF,
+    cite: bool = False,
+    cite_min_confidence: float | None = None,
+    pages: Sequence[int] | None = None,
+    language: str | None = None,
+    on_progress: Callable[[ExtractProgress], None] | None = None,
+) -> ExtractionResult[T]:
+    """Extract structured data and return an :class:`ExtractionResult`.
+
+    Same arguments and retry, agent, ``cite`` / ``cite_min_confidence``,
+    ``pages``, and ``on_progress`` semantics as :func:`extract`. The result
+    carries the schema instance plus token usage, attempt count, duration,
+    model/media metadata, a sanitized source label, and citations when
+    ``cite=True`` — the same fields :func:`extract_many_with_results` fills.
+
+    When an agent fans out into a swarm, usage is summed across successful
+    agents and citations are the reduced swarm set, matching
+    :func:`extract_with_usage`. Use :func:`extract_swarm_with_results` when
+    per-agent results are needed.
+    """
+    return cast(
+        ExtractionResult[T],
+        _extract_sync(
+            schema,
+            model,
+            input_file,
+            instructions,
+            style=style,
+            media_type=media_type,
+            max_input_bytes=max_input_bytes,
+            max_retries=max_retries,
+            retry_backoff=retry_backoff,
+            retry_max_backoff=retry_max_backoff,
+            cite=cite,
+            cite_min_confidence=cite_min_confidence,
+            pages=pages,
+            language=language,
+            with_usage=True,
+            on_progress=on_progress,
+            rich=True,
+        ),
+    )
+
+
+async def extract_with_result_async(
+    schema: type[T] | DefinedAgent | RemoteAgent,
+    model: str | Model | DefinedAgent | RemoteAgent | ExtractionInputLike,
+    input_file: ExtractionInputLike | None = None,
+    instructions: str | None = None,
+    *,
+    style: ExtractionStyle | str = "direct",
+    media_type: str | None = None,
+    max_input_bytes: int | None = None,
+    max_retries: int = 0,
+    retry_backoff: float = 1.0,
+    retry_max_backoff: float = _DEFAULT_RETRY_MAX_BACKOFF,
+    cite: bool = False,
+    cite_min_confidence: float | None = None,
+    pages: Sequence[int] | None = None,
+    language: str | None = None,
+    on_progress: Callable[[ExtractProgress], None] | None = None,
+) -> ExtractionResult[T]:
+    """Async sibling of :func:`extract_with_result`."""
+    return cast(
+        ExtractionResult[T],
+        await _extract_async(
+            schema,
+            model,
+            input_file,
+            instructions,
+            style=style,
+            media_type=media_type,
+            max_input_bytes=max_input_bytes,
+            max_retries=max_retries,
+            retry_backoff=retry_backoff,
+            retry_max_backoff=retry_max_backoff,
+            cite=cite,
+            cite_min_confidence=cite_min_confidence,
+            pages=pages,
+            language=language,
+            with_usage=True,
+            on_progress=on_progress,
+            rich=True,
+        ),
+    )
 
 
 async def extract_async(
@@ -706,23 +900,26 @@ async def extract_async(
 
     Accepts the same agent forms as :func:`extract`.
     """
-    output, _usage, _citations = await _extract_async(
-        schema,
-        model,
-        input_file,
-        instructions,
-        style=style,
-        media_type=media_type,
-        max_input_bytes=max_input_bytes,
-        max_retries=max_retries,
-        retry_backoff=retry_backoff,
-        retry_max_backoff=retry_max_backoff,
-        cite=cite,
-        cite_min_confidence=cite_min_confidence,
-        pages=pages,
-        language=language,
-        with_usage=False,
-        on_progress=on_progress,
+    output, _usage, _citations = cast(
+        "tuple[T, Usage, tuple[Citation, ...]]",
+        await _extract_async(
+            schema,
+            model,
+            input_file,
+            instructions,
+            style=style,
+            media_type=media_type,
+            max_input_bytes=max_input_bytes,
+            max_retries=max_retries,
+            retry_backoff=retry_backoff,
+            retry_max_backoff=retry_max_backoff,
+            cite=cite,
+            cite_min_confidence=cite_min_confidence,
+            pages=pages,
+            language=language,
+            with_usage=False,
+            on_progress=on_progress,
+        ),
     )
     return output
 
@@ -739,6 +936,8 @@ __all__ = [
     "extract_async",
     "extract_with_usage",
     "extract_with_usage_async",
+    "extract_with_result",
+    "extract_with_result_async",
     "extract_many",
     "extract_many_async",
     "iter_extract_many_async",

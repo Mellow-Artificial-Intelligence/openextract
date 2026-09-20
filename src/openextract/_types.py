@@ -162,9 +162,10 @@ class Citation:
 class ExtractionResult[T]:
     """Diagnostics-rich result of one extraction.
 
-    ``extract_many_with_results`` returns these so callers can account for
-    token usage, observe retries and timing, and record safe provenance without
-    retaining raw media, credentials, query strings, or provider internals.
+    ``extract_with_result`` and ``extract_many_with_results`` return these so
+    callers can account for token usage, observe retries and timing, and
+    record safe provenance without retaining raw media, credentials, query
+    strings, or provider internals.
 
     Attributes:
         output: The validated schema instance.

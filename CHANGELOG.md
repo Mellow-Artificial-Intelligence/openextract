@@ -16,6 +16,12 @@ timing when that is known.
   `TypeError` still covers bad call shapes; `UrlFetchError` and
   `InputTooLargeError` are unchanged. The CLI maps `InputFileError` to
   exit code `5`, the existing `ExtractionError` slot.
+- `extract_with_result` / `extract_with_result_async` return an
+  `ExtractionResult` (output, usage, attempts, duration, model/media
+  metadata, sanitized source, citations) for a single input. Same
+  arguments as `extract` / `extract_async`. An agent that fans into a
+  swarm summarizes usage and citations the same way `extract_with_usage`
+  already does; use `extract_swarm_with_results*` for per-agent results.
 
 ## [0.15.0] - 2026-09-18
 

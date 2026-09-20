@@ -15,6 +15,8 @@ PUBLIC_FUNCTIONS = (
     "extract_async",
     "extract_with_usage",
     "extract_with_usage_async",
+    "extract_with_result",
+    "extract_with_result_async",
     "extract_many",
     "extract_many_async",
     "iter_extract_many_async",

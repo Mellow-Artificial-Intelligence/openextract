@@ -4,10 +4,13 @@ import pytest
 from pydantic import BaseModel
 
 from openextract import (
+    ExtractionResult,
     define_agent,
     define_remote_agent,
     extract,
     extract_async,
+    extract_with_result,
+    extract_with_result_async,
     extract_with_usage,
     extract_with_usage_async,
 )
@@ -169,6 +172,17 @@ class TestExtractWithAgents:
         assert output == Person(name="Ada", age=36)
         assert usage.total_tokens == 10
 
+    def test_result_summarizes_a_group_like_usage(self, mocker):
+        install_agents(mocker, {"test:a": {"name": "Ada"}, "test:b": {"age": 36}})
+        result = extract_with_result(GROUP, b"doc", media_type="text/plain")
+        assert isinstance(result, ExtractionResult)
+        assert result.output == Person(name="Ada", age=36)
+        assert result.usage.total_tokens == 10
+        assert result.attempts >= 1
+        assert result.duration >= 0
+        assert result.media_type == "text/plain"
+        assert result.citations == ()
+
     async def test_async_single_agent(self, mocker):
         install_agents(mocker, {"test:a": {"name": "Ada"}})
         assert await extract_async(SOLO, b"doc", media_type="text/plain") == Person(name="Ada")
@@ -187,6 +201,13 @@ class TestExtractWithAgents:
         install_agents(mocker, {"test:a": {"name": "Ada"}, "test:b": {"age": 36}})
         output, usage = await extract_with_usage_async(GROUP, b"doc", media_type="text/plain")
         assert (output, usage.total_tokens) == (Person(name="Ada", age=36), 10)
+
+    async def test_async_result_summarizes_a_group(self, mocker):
+        install_agents(mocker, {"test:a": {"name": "Ada"}, "test:b": {"age": 36}})
+        result = await extract_with_result_async(GROUP, b"doc", media_type="text/plain")
+        assert result.output == Person(name="Ada", age=36)
+        assert result.usage.total_tokens == 10
+        assert result.citations == ()
 
     def test_a_missing_input_is_reported_by_every_entry_point(self):
         with pytest.raises(ValueError, match="input_file is required"):

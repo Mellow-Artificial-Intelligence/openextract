@@ -26,6 +26,8 @@ from openextract import (
     extract_many_with_results,
     extract_many_with_results_async,
     extract_swarm_with_results,
+    extract_with_result,
+    extract_with_result_async,
     extract_with_usage,
     total_usage,
 )
@@ -80,6 +82,11 @@ form: Invoice = extract(Invoice, "openai:gpt-5", Path("/tmp/w9.pdf"), style=Extr
 output, usage = extract_with_usage(Invoice, "openai:gpt-5", Path("/tmp/x.pdf"))
 _assert_invoice: Invoice = output
 _assert_usage: Usage = usage
+oneshot: ExtractionResult[Invoice] = extract_with_result(
+    Invoice, "openai:gpt-5", Path("/tmp/x.pdf"), cite=True
+)
+_assert_oneshot: Invoice = oneshot.output
+_ = oneshot.citations
 cited: Invoice = extract(
     Invoice,
     "openai:gpt-5",
@@ -128,6 +135,10 @@ async def async_consumer() -> None:
     async_results: list[ExtractionResult[Invoice]] = await extract_many_with_results_async(
         Invoice, "openai:gpt-5", ["a.pdf"]
     )
+    async_oneshot: ExtractionResult[Invoice] = await extract_with_result_async(
+        Invoice, "openai:gpt-5", Path("/tmp/x.pdf")
+    )
     _ = async_defaulted
     _ = async_exceptions
     _ = async_results
+    _ = async_oneshot
