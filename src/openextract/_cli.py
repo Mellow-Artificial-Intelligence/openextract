@@ -563,6 +563,7 @@ def _run_batch(
         cite_min_confidence=args.cite_min_confidence,
         pages=args.pages,
         language=args.language,
+        timeout=args.timeout,
     )
     return asyncio.run(_run_batch_async(schema_cls, items, labels, options, args, model))
 
@@ -611,6 +612,7 @@ def _run_single(
         "cite_min_confidence": args.cite_min_confidence,
         "pages": args.pages,
         "language": args.language,
+        "timeout": args.timeout,
     }
     if args.progress:
         shared["on_progress"] = _window_progress
@@ -668,6 +670,7 @@ def _run_swarm(
         "cite_min_confidence": args.cite_min_confidence,
         "pages": args.pages,
         "language": args.language,
+        "timeout": args.timeout,
     }
     if args.progress:
         options["on_progress"] = _window_progress
@@ -909,6 +912,16 @@ def _build_parser() -> argparse.ArgumentParser:
         default=60.0,
         metavar="SECONDS",
         help="Maximum retry delay in seconds, including Retry-After (default 60.0).",
+    )
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=None,
+        metavar="SECONDS",
+        help=(
+            "Model request timeout in seconds (float > 0). "
+            "Same timeout= as the library. Omit to use the provider default."
+        ),
     )
     return parser
 

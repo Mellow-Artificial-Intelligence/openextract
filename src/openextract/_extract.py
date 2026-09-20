@@ -19,6 +19,7 @@ from ._agent import (
     _route_model,
     _run_extraction,
     _run_extraction_async,
+    _session_model_settings,
     _usage_from_result,
 )
 from ._agents import (
@@ -101,6 +102,7 @@ from ._windows import extract_windows_async, extract_windows_sync
 if TYPE_CHECKING:
     from pydantic_ai import Agent as PydanticAgent
     from pydantic_ai.models import Model
+    from pydantic_ai.settings import ModelSettings
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -116,6 +118,7 @@ def _bind_agent_inputs(
     cite: bool,
     pages: Sequence[int] | None = None,
     language: str | None = None,
+    model_settings: ModelSettings | None = None,
 ) -> Iterator[tuple[PydanticAgent, list, ParsedDocument | None]]:
     """Build the agent and run inputs after media has already been loaded."""
     run_schema, run_instructions = prepare_cited_run(
@@ -130,6 +133,7 @@ def _bind_agent_inputs(
                 run_schema,
                 model,
                 run_instructions,
+                model_settings=model_settings,
                 extra_capabilities=capabilities,
             )
         inputs = (
@@ -152,6 +156,7 @@ def _prepare_extraction(
     cite: bool = False,
     pages: Sequence[int] | None = None,
     language: str | None = None,
+    model_settings: ModelSettings | None = None,
 ) -> Iterator[tuple[PydanticAgent, list, ParsedDocument | None]]:
     """Prepare one extraction while applying the public exception mapping."""
     with _extraction_errors():
@@ -161,7 +166,16 @@ def _prepare_extraction(
             max_input_bytes=max_input_bytes,
         )
     with _bind_agent_inputs(
-        schema, model, instructions, file_bytes, file_type, style, cite, pages, language
+        schema,
+        model,
+        instructions,
+        file_bytes,
+        file_type,
+        style,
+        cite,
+        pages,
+        language,
+        model_settings=model_settings,
     ) as prepared:
         yield prepared
 
@@ -179,6 +193,7 @@ async def _prepare_extraction_async(
     client: httpx.AsyncClient | None = None,
     pages: Sequence[int] | None = None,
     language: str | None = None,
+    model_settings: ModelSettings | None = None,
 ) -> AsyncIterator[tuple[PydanticAgent, list, ParsedDocument | None]]:
     """Prepare one async extraction while applying public exception mapping."""
     with _extraction_errors():
@@ -189,7 +204,16 @@ async def _prepare_extraction_async(
             max_input_bytes=max_input_bytes,
         )
     with _bind_agent_inputs(
-        schema, model, instructions, file_bytes, file_type, style, cite, pages, language
+        schema,
+        model,
+        instructions,
+        file_bytes,
+        file_type,
+        style,
+        cite,
+        pages,
+        language,
+        model_settings=model_settings,
     ) as prepared:
         yield prepared
 
@@ -292,6 +316,8 @@ def _swarm_kwargs(
     cite_min_confidence: float | None,
     pages: Sequence[int] | None,
     language: str | None,
+    model_settings: ModelSettings | None,
+    timeout: float | None,
     on_progress: Callable[[ExtractProgress], None] | None,
 ) -> dict[str, Any]:
     """Keyword arguments shared by every oneshot-to-swarm dispatch."""
@@ -306,6 +332,8 @@ def _swarm_kwargs(
         "cite_min_confidence": cite_min_confidence,
         "pages": pages,
         "language": language,
+        "model_settings": model_settings,
+        "timeout": timeout,
         "on_progress": on_progress,
     }
 
@@ -356,6 +384,8 @@ def _extract_sync(
     cite_min_confidence: float | None,
     pages: Sequence[int] | None,
     language: str | None,
+    model_settings: ModelSettings | None,
+    timeout: float | None,
     with_usage: bool,
     on_progress: Callable[[ExtractProgress], None] | None,
     rich: bool = False,
@@ -364,6 +394,7 @@ def _extract_sync(
     cite_min_confidence = _validate_cite_min_confidence(cite_min_confidence)
     pages = _validate_pages(pages)
     language = normalize_language(language)
+    run_settings = _session_model_settings(model_settings, timeout)
     schema, model, input_file, instructions, style, use_swarm = _resolve_oneshot(
         schema, model, input_file, instructions, style
     )
@@ -382,6 +413,8 @@ def _extract_sync(
             cite_min_confidence=cite_min_confidence,
             pages=pages,
             language=language,
+            model_settings=model_settings,
+            timeout=timeout,
             on_progress=on_progress,
         )
         if need_usage:
@@ -414,6 +447,7 @@ def _extract_sync(
         cite,
         pages,
         language,
+        model_settings=run_settings,
     ) as (agent, inputs, parsed):
 
         def _run(window: list) -> tuple[object, Usage]:
@@ -466,6 +500,8 @@ async def _extract_async(
     cite_min_confidence: float | None,
     pages: Sequence[int] | None,
     language: str | None,
+    model_settings: ModelSettings | None,
+    timeout: float | None,
     with_usage: bool,
     on_progress: Callable[[ExtractProgress], None] | None,
     rich: bool = False,
@@ -474,6 +510,7 @@ async def _extract_async(
     cite_min_confidence = _validate_cite_min_confidence(cite_min_confidence)
     pages = _validate_pages(pages)
     language = normalize_language(language)
+    run_settings = _session_model_settings(model_settings, timeout)
     schema, model, input_file, instructions, style, use_swarm = _resolve_oneshot(
         schema, model, input_file, instructions, style
     )
@@ -492,6 +529,8 @@ async def _extract_async(
             cite_min_confidence=cite_min_confidence,
             pages=pages,
             language=language,
+            model_settings=model_settings,
+            timeout=timeout,
             on_progress=on_progress,
         )
         if need_usage:
@@ -526,6 +565,7 @@ async def _extract_async(
         cite,
         pages=pages,
         language=language,
+        model_settings=run_settings,
     ) as (agent, inputs, parsed):
 
         async def _run(window: list) -> tuple[object, Usage]:
@@ -577,6 +617,8 @@ def extract(
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
     language: str | None = None,
+    model_settings: ModelSettings | None = None,
+    timeout: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> T:
     """
@@ -637,6 +679,12 @@ def extract(
             language and to preserve that language/script in field values.
             ``None`` (default) leaves instructions unchanged. Empty values
             raise ``ValueError``.
+        model_settings: Optional Pydantic AI ``ModelSettings`` passed to the
+            constructed agent. ``None`` (default) leaves provider defaults.
+        timeout: Optional model request timeout in seconds. Overrides a
+            ``timeout`` entry in ``model_settings``. ``None`` (default) leaves
+            the provider default. Invalid values raise ``ValueError`` before
+            any model call.
         on_progress: Optional callback invoked once per parse window immediately
             before that window is sent to the model. Receives
             :class:`ExtractProgress` (1-indexed ``current`` / ``total``, plus
@@ -662,7 +710,8 @@ def extract(
         ValueError: If ``style`` is invalid, ``search``/``code`` is used with
             a non-text document, or ``cite_min_confidence`` is outside ``[0, 1]``.
             Also raised if ``pages`` is empty/invalid or matches no PDF page,
-            or ``language`` is empty.
+            ``language`` is empty, or ``timeout`` is not a finite positive
+            number of seconds.
     """
     output, _usage, _citations = cast(
         "tuple[T, Usage, tuple[Citation, ...]]",
@@ -681,6 +730,8 @@ def extract(
             cite_min_confidence=cite_min_confidence,
             pages=pages,
             language=language,
+            model_settings=model_settings,
+            timeout=timeout,
             with_usage=False,
             on_progress=on_progress,
         ),
@@ -704,12 +755,15 @@ def extract_with_usage(
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
     language: str | None = None,
+    model_settings: ModelSettings | None = None,
+    timeout: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> tuple[T, Usage]:
     """Extract structured data and return ``(output, Usage)`` for token accounting.
 
-    Same retry, agent, ``cite`` / ``cite_min_confidence``, ``pages``, and
-    ``on_progress`` semantics as :func:`extract`.
+    Same retry, agent, ``cite`` / ``cite_min_confidence``, ``pages``,
+    ``model_settings``, ``timeout``, and ``on_progress`` semantics as
+    :func:`extract`.
     Returns a :class:`Usage` describing the tokens consumed by the successful
     model call, or summed across the agents when an agent fans out into a swarm.
     """
@@ -730,6 +784,8 @@ def extract_with_usage(
             cite_min_confidence=cite_min_confidence,
             pages=pages,
             language=language,
+            model_settings=model_settings,
+            timeout=timeout,
             with_usage=True,
             on_progress=on_progress,
         ),
@@ -753,6 +809,8 @@ async def extract_with_usage_async(
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
     language: str | None = None,
+    model_settings: ModelSettings | None = None,
+    timeout: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> tuple[T, Usage]:
     """Async sibling of :func:`extract_with_usage`; returns ``(output, Usage)``."""
@@ -773,6 +831,8 @@ async def extract_with_usage_async(
             cite_min_confidence=cite_min_confidence,
             pages=pages,
             language=language,
+            model_settings=model_settings,
+            timeout=timeout,
             with_usage=True,
             on_progress=on_progress,
         ),
@@ -796,15 +856,18 @@ def extract_with_result(
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
     language: str | None = None,
+    model_settings: ModelSettings | None = None,
+    timeout: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> ExtractionResult[T]:
     """Extract structured data and return an :class:`ExtractionResult`.
 
     Same arguments and retry, agent, ``cite`` / ``cite_min_confidence``,
-    ``pages``, and ``on_progress`` semantics as :func:`extract`. The result
-    carries the schema instance plus token usage, attempt count, duration,
-    model/media metadata, a sanitized source label, and citations when
-    ``cite=True`` — the same fields :func:`extract_many_with_results` fills.
+    ``pages``, ``model_settings``, ``timeout``, and ``on_progress`` semantics
+    as :func:`extract`. The result carries the schema instance plus token
+    usage, attempt count, duration, model/media metadata, a sanitized source
+    label, and citations when ``cite=True`` — the same fields
+    :func:`extract_many_with_results` fills.
 
     When an agent fans out into a swarm, usage is summed across successful
     agents and citations are the reduced swarm set, matching
@@ -828,6 +891,8 @@ def extract_with_result(
             cite_min_confidence=cite_min_confidence,
             pages=pages,
             language=language,
+            model_settings=model_settings,
+            timeout=timeout,
             with_usage=True,
             on_progress=on_progress,
             rich=True,
@@ -851,6 +916,8 @@ async def extract_with_result_async(
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
     language: str | None = None,
+    model_settings: ModelSettings | None = None,
+    timeout: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> ExtractionResult[T]:
     """Async sibling of :func:`extract_with_result`."""
@@ -871,6 +938,8 @@ async def extract_with_result_async(
             cite_min_confidence=cite_min_confidence,
             pages=pages,
             language=language,
+            model_settings=model_settings,
+            timeout=timeout,
             with_usage=True,
             on_progress=on_progress,
             rich=True,
@@ -894,6 +963,8 @@ async def extract_async(
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
     language: str | None = None,
+    model_settings: ModelSettings | None = None,
+    timeout: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> T:
     """Async sibling of :func:`extract`; uses ``Agent.run`` instead of ``run_sync``.
@@ -917,6 +988,8 @@ async def extract_async(
             cite_min_confidence=cite_min_confidence,
             pages=pages,
             language=language,
+            model_settings=model_settings,
+            timeout=timeout,
             with_usage=False,
             on_progress=on_progress,
         ),

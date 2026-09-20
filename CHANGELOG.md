@@ -9,6 +9,12 @@ timing when that is known.
 ## [Unreleased]
 
 ### Added
+- Optional `model_settings` and `timeout` on oneshot extract APIs, batch, and
+  swarm (`ModelSettings | None = None`, `float | None = None`). Same merge as
+  sessions via `_session_model_settings`: `timeout` overrides a `timeout`
+  entry in `model_settings`. `None` (default) is unchanged. Invalid
+  `timeout` raises `ValueError` before any model call. CLI `--timeout SECONDS`
+  (`float > 0`).
 - `schema_from_json(source)` builds a Pydantic `BaseModel` subclass from a
   JSON Schema file path (`str` or `Path`), a JSON object `dict`, or JSON
   text. Same practical subset as CLI `--schema` (object schemas with

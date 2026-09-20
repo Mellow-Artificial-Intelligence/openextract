@@ -66,7 +66,7 @@ text-only agentic styles powered by
 `"form"`). Non-text inputs on
 `search`/`code` and a missing harness extra fail before the model call.
 
-### `extract(schema, model, input_file=None, instructions=None, *, style='direct', media_type=None, max_input_bytes=None, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, cite=False, cite_min_confidence=None, pages=None, language=None, on_progress=None)`
+### `extract(schema, model, input_file=None, instructions=None, *, style='direct', media_type=None, max_input_bytes=None, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, cite=False, cite_min_confidence=None, pages=None, language=None, model_settings=None, timeout=None, on_progress=None)`
 
 `model` also accepts an [agent](#agents), and an agent that declares an
 `output_schema` can be passed as `schema` instead — `extract(invoices, "doc.pdf")`
@@ -88,6 +88,10 @@ threshold; omit it to keep every citation. Invalid values raise `ValueError`.
 `language` is an optional BCP-47-ish tag or plain name (`en`, `es`, `fr`).
 When set, field values should preserve that language/script (do not translate
 unless the schema or instructions ask). Empty values raise `ValueError`.
+`model_settings` and `timeout` match the session knobs: settings are passed
+to Pydantic AI, and `timeout` is the model request timeout (it overrides a
+`timeout` entry in `model_settings`). Invalid `timeout` values raise
+`ValueError` before any model call. Default `None` leaves provider defaults.
 `on_progress` is called once per parse window
 immediately before that window is sent to the model; see
 [`ExtractProgress`](#extractprogress). Default `None` is silent.
@@ -96,21 +100,21 @@ those pages are parsed, windowed, and used for citation grounding. Out-of-range
 numbers are ignored; if none remain, `ValueError` is raised. `None` keeps every
 page. Invalid values raise `ValueError` at call time.
 
-### `extract_async(schema, model, input_file=None, instructions=None, *, style='direct', media_type=None, max_input_bytes=None, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, cite=False, cite_min_confidence=None, pages=None, language=None, on_progress=None)`
+### `extract_async(schema, model, input_file=None, instructions=None, *, style='direct', media_type=None, max_input_bytes=None, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, cite=False, cite_min_confidence=None, pages=None, language=None, model_settings=None, timeout=None, on_progress=None)`
 
 Async counterpart to `extract`. It uses `Agent.run` and returns an instance of
 `schema`.
 
-### `extract_with_usage(schema, model, input_file=None, instructions=None, *, style='direct', media_type=None, max_input_bytes=None, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, cite=False, cite_min_confidence=None, pages=None, language=None, on_progress=None)`
+### `extract_with_usage(schema, model, input_file=None, instructions=None, *, style='direct', media_type=None, max_input_bytes=None, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, cite=False, cite_min_confidence=None, pages=None, language=None, model_settings=None, timeout=None, on_progress=None)`
 
 Extract one input synchronously and return `(output, Usage)`. It has the same
 retry behavior as `extract`; `Usage` describes the successful model call.
 
-### `extract_with_usage_async(schema, model, input_file=None, instructions=None, *, style='direct', media_type=None, max_input_bytes=None, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, cite=False, cite_min_confidence=None, pages=None, language=None, on_progress=None)`
+### `extract_with_usage_async(schema, model, input_file=None, instructions=None, *, style='direct', media_type=None, max_input_bytes=None, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, cite=False, cite_min_confidence=None, pages=None, language=None, model_settings=None, timeout=None, on_progress=None)`
 
 Async counterpart to `extract_with_usage`; returns `(output, Usage)`.
 
-### `extract_with_result(schema, model, input_file=None, instructions=None, *, style='direct', media_type=None, max_input_bytes=None, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, cite=False, cite_min_confidence=None, pages=None, language=None, on_progress=None)`
+### `extract_with_result(schema, model, input_file=None, instructions=None, *, style='direct', media_type=None, max_input_bytes=None, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, cite=False, cite_min_confidence=None, pages=None, language=None, model_settings=None, timeout=None, on_progress=None)`
 
 Extract one input synchronously and return an [`ExtractionResult`](#extractionresult).
 It has the same arguments and retry behavior as `extract`. The result carries
@@ -120,23 +124,23 @@ label, and citations when `cite=True` — the same fields
 usage and citations the same way `extract_with_usage` does; use
 `extract_swarm_with_results*` for per-agent results.
 
-### `extract_with_result_async(schema, model, input_file=None, instructions=None, *, style='direct', media_type=None, max_input_bytes=None, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, cite=False, cite_min_confidence=None, pages=None, language=None, on_progress=None)`
+### `extract_with_result_async(schema, model, input_file=None, instructions=None, *, style='direct', media_type=None, max_input_bytes=None, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, cite=False, cite_min_confidence=None, pages=None, language=None, model_settings=None, timeout=None, on_progress=None)`
 
 Async counterpart to `extract_with_result`; returns `ExtractionResult`.
 
-### `extract_many(schema, model, input_files, instructions=None, *, style='direct', media_type=None, max_input_bytes=None, max_concurrency=5, return_exceptions=False, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, cite=False, cite_min_confidence=None, pages=None, language=None, on_progress=None)`
+### `extract_many(schema, model, input_files, instructions=None, *, style='direct', media_type=None, max_input_bytes=None, max_concurrency=5, return_exceptions=False, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, cite=False, cite_min_confidence=None, pages=None, language=None, model_settings=None, timeout=None, on_progress=None)`
 
 Run concurrent extractions from synchronous code. Results preserve input order.
 When `return_exceptions=True`, per-item exceptions appear in the result list.
 Do not call this function from a running event loop; use
 `extract_many_async` instead.
 
-### `extract_many_async(schema, model, input_files, instructions=None, *, style='direct', media_type=None, max_input_bytes=None, max_concurrency=5, return_exceptions=False, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, cite=False, cite_min_confidence=None, pages=None, language=None, on_progress=None)`
+### `extract_many_async(schema, model, input_files, instructions=None, *, style='direct', media_type=None, max_input_bytes=None, max_concurrency=5, return_exceptions=False, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, cite=False, cite_min_confidence=None, pages=None, language=None, model_settings=None, timeout=None, on_progress=None)`
 
 Async counterpart to `extract_many`; it has the same arguments, result ordering,
 and per-item retry behavior.
 
-### `iter_extract_many_async(schema, model, input_files, instructions=None, *, style='direct', media_type=None, max_input_bytes=None, max_concurrency=5, return_exceptions=False, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, cite=False, cite_min_confidence=None, pages=None, language=None, on_progress=None)`
+### `iter_extract_many_async(schema, model, input_files, instructions=None, *, style='direct', media_type=None, max_input_bytes=None, max_concurrency=5, return_exceptions=False, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, cite=False, cite_min_confidence=None, pages=None, language=None, model_settings=None, timeout=None, on_progress=None)`
 
 Return an async iterator of `(input_index, result)` pairs in **completion
 order**. Inputs are consumed lazily, at most `max_concurrency` items are
@@ -166,7 +170,7 @@ async for index, result in iter_extract_many_async(
         print(index, result.summary)
 ```
 
-### `extract_many_with_results(schema, model, input_files, instructions=None, *, style='direct', media_type=None, max_input_bytes=None, max_concurrency=5, return_exceptions=False, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, cite=False, cite_min_confidence=None, pages=None, language=None, on_progress=None)`
+### `extract_many_with_results(schema, model, input_files, instructions=None, *, style='direct', media_type=None, max_input_bytes=None, max_concurrency=5, return_exceptions=False, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, cite=False, cite_min_confidence=None, pages=None, language=None, model_settings=None, timeout=None, on_progress=None)`
 
 Run a batch and return per-item [`ExtractionResult`](#extractionresult) objects
 instead of bare schema instances. It has the same arguments, input ordering,
@@ -176,7 +180,7 @@ source label. With `return_exceptions=True`, failed items appear as
 `Exception` values in place. Use [`total_usage`](#total_usageresults) to
 aggregate token usage across the returned results.
 
-### `extract_many_with_results_async(schema, model, input_files, instructions=None, *, style='direct', media_type=None, max_input_bytes=None, max_concurrency=5, return_exceptions=False, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, cite=False, cite_min_confidence=None, pages=None, language=None, on_progress=None)`
+### `extract_many_with_results_async(schema, model, input_files, instructions=None, *, style='direct', media_type=None, max_input_bytes=None, max_concurrency=5, return_exceptions=False, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, cite=False, cite_min_confidence=None, pages=None, language=None, model_settings=None, timeout=None, on_progress=None)`
 
 Async counterpart to `extract_many_with_results`.
 
@@ -243,7 +247,7 @@ plus `size` fans it out `size` times (1..16); a list is used as-is and `size`
 may not contradict its length. [Defined agents](#agents) are flattened first,
 so a parent with subagents contributes one member per leaf.
 
-### `extract_swarm(schema, agents, input_file, instructions=None, *, size=None, style='direct', reduce='merge', media_type=None, max_input_bytes=None, max_concurrency=None, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, cite=False, cite_min_confidence=None, pages=None, language=None, on_progress=None)`
+### `extract_swarm(schema, agents, input_file, instructions=None, *, size=None, style='direct', reduce='merge', media_type=None, max_input_bytes=None, max_concurrency=None, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, cite=False, cite_min_confidence=None, pages=None, language=None, model_settings=None, timeout=None, on_progress=None)`
 
 Run the agents concurrently over one input and return the reduced schema
 instance. `max_concurrency` defaults to `min(5, agents)`. Agent failures are
@@ -252,18 +256,18 @@ failure is raised. Raises `RuntimeError` from a running event loop.
 `cite=True` asks each agent for per-field source spans; citations land on
 [`SwarmResult`](#swarmresult) from `extract_swarm_with_results*`.
 
-### `extract_swarm_async(schema, agents, input_file, instructions=None, *, size=None, style='direct', reduce='merge', media_type=None, max_input_bytes=None, max_concurrency=None, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, cite=False, cite_min_confidence=None, pages=None, language=None, on_progress=None)`
+### `extract_swarm_async(schema, agents, input_file, instructions=None, *, size=None, style='direct', reduce='merge', media_type=None, max_input_bytes=None, max_concurrency=None, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, cite=False, cite_min_confidence=None, pages=None, language=None, model_settings=None, timeout=None, on_progress=None)`
 
 Async counterpart to `extract_swarm`.
 
-### `extract_swarm_with_results(schema, agents, input_file, instructions=None, *, size=None, style='direct', reduce='merge', media_type=None, max_input_bytes=None, max_concurrency=None, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, on_agent_start=None, on_agent=None, cite=False, cite_min_confidence=None, pages=None, language=None, on_progress=None)`
+### `extract_swarm_with_results(schema, agents, input_file, instructions=None, *, size=None, style='direct', reduce='merge', media_type=None, max_input_bytes=None, max_concurrency=None, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, on_agent_start=None, on_agent=None, cite=False, cite_min_confidence=None, pages=None, language=None, model_settings=None, timeout=None, on_progress=None)`
 
 Same run, returning a [`SwarmResult`](#swarmresult). `on_agent_start(index,
 total)` and `on_agent(index, total, result)` report progress as agents start
 and finish. `on_progress` is the same per-window callback as `extract`;
 concurrent agents may interleave events.
 
-### `extract_swarm_with_results_async(schema, agents, input_file, instructions=None, *, size=None, style='direct', reduce='merge', media_type=None, max_input_bytes=None, max_concurrency=None, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, on_agent_start=None, on_agent=None, cite=False, cite_min_confidence=None, pages=None, language=None, on_progress=None)`
+### `extract_swarm_with_results_async(schema, agents, input_file, instructions=None, *, size=None, style='direct', reduce='merge', media_type=None, max_input_bytes=None, max_concurrency=None, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, on_agent_start=None, on_agent=None, cite=False, cite_min_confidence=None, pages=None, language=None, model_settings=None, timeout=None, on_progress=None)`
 
 Async counterpart to `extract_swarm_with_results`.
 
@@ -486,6 +490,8 @@ single `current=1, total=1` event with empty pages.
 | `cite_min_confidence` | `float \| None` | When `cite=True`, keep only citations with heuristic `confidence >=` this `[0, 1]` threshold after grounding. `None` (default) keeps every citation. Citations that failed to stamp (`confidence is None`) are dropped when a threshold is set. Invalid values raise `ValueError` at call time. |
 | `pages` | `Sequence[int] \| None` | 1-based PDF pages to extract. When set, only those pages are considered for local parse-then-window and citation grounding (and a PDF is parsed even in `direct` style). Out-of-range numbers are ignored; if none remain, `ValueError`. `None` (default) keeps every page. Invalid values raise `ValueError` at call time. |
 | `language` | `str \| None` | Optional BCP-47-ish tag or plain name (`en`, `es`, `fr`). When set, appends a short instruction that the document's primary language is that value and field values should preserve that language/script. `None` (default) leaves instructions unchanged. Empty values raise `ValueError` at call time. |
+| `model_settings` | `ModelSettings \| None` | Optional Pydantic AI model settings for the constructed agent. `None` (default) leaves provider defaults. |
+| `timeout` | `float \| None` | Model request timeout in seconds. Overrides a `timeout` entry in `model_settings`. `None` (default) leaves the provider default. Must be a finite number greater than 0; invalid values raise `ValueError` before any model call. |
 | `on_progress` | `Callable[[ExtractProgress], None] \| None` | Optional window callback. Invoked immediately before each parse window is sent to the model. Default `None` is silent. |
 
 Batch functions also accept:
@@ -512,12 +518,12 @@ The Python library reads provider configuration from the existing process
 environment and does not load `.env` files. The `openextract` CLI and bundled
 examples load `.env` explicitly as an application-level convenience.
 
-Session `model_settings` are passed directly to Pydantic AI using its typed
-`ModelSettings` contract. `timeout` is an explicit shortcut for the model
-request timeout and overrides a `timeout` entry in `model_settings`.
-`url_timeout` separately controls URL input fetching. `instrument=True` enables
-Pydantic AI instrumentation; an `InstrumentationSettings` instance provides
-fine-grained control.
+Oneshot, batch, swarm, and session `model_settings` are passed directly to
+Pydantic AI using its typed `ModelSettings` contract. `timeout` is an explicit
+shortcut for the model request timeout and overrides a `timeout` entry in
+`model_settings`. Session `url_timeout` separately controls URL input fetching.
+`instrument=True` enables Pydantic AI instrumentation; an
+`InstrumentationSettings` instance provides fine-grained control.
 
 `Extractor` is bound to the thread that enters it and is not thread-safe.
 `AsyncExtractor` is bound to one event loop; concurrent calls within that loop

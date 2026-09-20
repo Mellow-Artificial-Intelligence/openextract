@@ -15,6 +15,7 @@ from ._agent import (
     _model_identifier,
     _resolve_run_inputs,
     _run_extraction_async,
+    _session_model_settings,
     _usage_from_result,
 )
 from ._citations import prepare_cited_run
@@ -54,6 +55,7 @@ from ._windows import extract_windows_async
 if TYPE_CHECKING:
     from pydantic_ai import Agent as PydanticAgent
     from pydantic_ai.models import Model
+    from pydantic_ai.settings import ModelSettings
 
 
 @dataclass(frozen=True)
@@ -79,6 +81,7 @@ class _BatchOptions:
     cite_min_confidence: float | None = None
     pages: tuple[int, ...] | None = None
     language: str | None = None
+    model_settings: ModelSettings | None = None
     on_progress: OnProgress | None = None
 
     @classmethod
@@ -99,6 +102,8 @@ class _BatchOptions:
         cite_min_confidence: float | None = None,
         pages: Sequence[int] | None = None,
         language: str | None = None,
+        model_settings: ModelSettings | None = None,
+        timeout: float | None = None,
         on_progress: OnProgress | None = None,
     ) -> _BatchOptions:
         """Validate and normalize the public batch arguments."""
@@ -119,6 +124,7 @@ class _BatchOptions:
             cite_min_confidence=_validate_cite_min_confidence(cite_min_confidence),
             pages=_validate_pages(pages),
             language=normalize_language(language),
+            model_settings=_session_model_settings(model_settings, timeout),
             on_progress=on_progress,
         )
 
@@ -196,7 +202,7 @@ async def _iter_extractions(
         options.cite,
     )
     shared_agent = (
-        _build_agent(run_schema, model, run_instructions)
+        _build_agent(run_schema, model, run_instructions, model_settings=options.model_settings)
         if not uses_workspace(options.style)
         else None
     )
@@ -243,6 +249,7 @@ async def _iter_extractions(
                                 run_schema,
                                 model,
                                 run_instructions,
+                                model_settings=options.model_settings,
                                 extra_capabilities=capabilities,
                             )
                     else:
@@ -396,6 +403,8 @@ def extract_many(
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
     language: str | None = None,
+    model_settings: ModelSettings | None = None,
+    timeout: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list[T]: ...
 
@@ -419,6 +428,8 @@ def extract_many(
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
     language: str | None = None,
+    model_settings: ModelSettings | None = None,
+    timeout: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list[T | Exception]: ...
 
@@ -442,6 +453,8 @@ def extract_many(
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
     language: str | None = None,
+    model_settings: ModelSettings | None = None,
+    timeout: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list[T | Exception]: ...
 
@@ -464,6 +477,8 @@ def extract_many(
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
     language: str | None = None,
+    model_settings: ModelSettings | None = None,
+    timeout: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list:
     """Run :func:`extract` over many inputs concurrently from sync code.
@@ -501,6 +516,11 @@ def extract_many(
             :func:`extract`.
         language: Optional document language hint, same contract as
             :func:`extract`.
+        model_settings: Optional Pydantic AI ``ModelSettings``, same contract
+            as :func:`extract`.
+        timeout: Optional model request timeout in seconds, same contract as
+            :func:`extract`. Invalid values raise ``ValueError`` before any
+            model call.
         on_progress: Optional per-window callback, same contract as
             :func:`extract`. Concurrent items may interleave events.
 
@@ -512,7 +532,8 @@ def extract_many(
         ValueError: If ``max_concurrency`` is less than 1, ``max_retries`` is
             negative, a backoff value is negative or non-finite,
             ``cite_min_confidence`` is outside ``[0, 1]``, ``pages`` is
-            empty/invalid, or ``language`` is empty.
+            empty/invalid, ``language`` is empty, or ``timeout`` is not a
+            finite positive number of seconds.
         RuntimeError: If called from a running event loop. Use
             :func:`extract_many_async` in async code instead.
     """
@@ -535,6 +556,8 @@ def extract_many(
             cite_min_confidence=cite_min_confidence,
             pages=pages,
             language=language,
+            model_settings=model_settings,
+            timeout=timeout,
             on_progress=on_progress,
         ),
         name="extract_many",
@@ -560,6 +583,8 @@ async def extract_many_async(
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
     language: str | None = None,
+    model_settings: ModelSettings | None = None,
+    timeout: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list[T]: ...
 
@@ -583,6 +608,8 @@ async def extract_many_async(
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
     language: str | None = None,
+    model_settings: ModelSettings | None = None,
+    timeout: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list[T | Exception]: ...
 
@@ -606,6 +633,8 @@ async def extract_many_async(
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
     language: str | None = None,
+    model_settings: ModelSettings | None = None,
+    timeout: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list[T | Exception]: ...
 
@@ -628,6 +657,8 @@ async def extract_many_async(
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
     language: str | None = None,
+    model_settings: ModelSettings | None = None,
+    timeout: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list:
     """Async sibling of :func:`extract_many`."""
@@ -650,6 +681,8 @@ async def extract_many_async(
             cite_min_confidence=cite_min_confidence,
             pages=pages,
             language=language,
+            model_settings=model_settings,
+            timeout=timeout,
             on_progress=on_progress,
         ),
     )
@@ -674,6 +707,8 @@ def iter_extract_many_async(
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
     language: str | None = None,
+    model_settings: ModelSettings | None = None,
+    timeout: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> AsyncIterator[tuple[int, T]]: ...
 
@@ -697,6 +732,8 @@ def iter_extract_many_async(
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
     language: str | None = None,
+    model_settings: ModelSettings | None = None,
+    timeout: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> AsyncIterator[tuple[int, T | Exception]]: ...
 
@@ -720,6 +757,8 @@ def iter_extract_many_async(
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
     language: str | None = None,
+    model_settings: ModelSettings | None = None,
+    timeout: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> AsyncIterator[tuple[int, T | Exception]]: ...
 
@@ -742,6 +781,8 @@ def iter_extract_many_async(
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
     language: str | None = None,
+    model_settings: ModelSettings | None = None,
+    timeout: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> AsyncIterator[tuple[int, T | Exception]]:
     """Stream ``(input_index, result)`` pairs in completion order.
@@ -806,6 +847,8 @@ def extract_many_with_results(
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
     language: str | None = None,
+    model_settings: ModelSettings | None = None,
+    timeout: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list[ExtractionResult[T]]: ...
 
@@ -829,6 +872,8 @@ def extract_many_with_results(
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
     language: str | None = None,
+    model_settings: ModelSettings | None = None,
+    timeout: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list[ExtractionResult[T] | Exception]: ...
 
@@ -852,6 +897,8 @@ def extract_many_with_results(
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
     language: str | None = None,
+    model_settings: ModelSettings | None = None,
+    timeout: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list[ExtractionResult[T] | Exception]: ...
 
@@ -874,6 +921,8 @@ def extract_many_with_results(
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
     language: str | None = None,
+    model_settings: ModelSettings | None = None,
+    timeout: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list:
     """Run a batch and return per-item :class:`ExtractionResult` diagnostics.
@@ -908,6 +957,8 @@ def extract_many_with_results(
             cite_min_confidence=cite_min_confidence,
             pages=pages,
             language=language,
+            model_settings=model_settings,
+            timeout=timeout,
             on_progress=on_progress,
         ),
         name="extract_many_with_results",
@@ -933,6 +984,8 @@ async def extract_many_with_results_async(
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
     language: str | None = None,
+    model_settings: ModelSettings | None = None,
+    timeout: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list[ExtractionResult[T]]: ...
 
@@ -956,6 +1009,8 @@ async def extract_many_with_results_async(
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
     language: str | None = None,
+    model_settings: ModelSettings | None = None,
+    timeout: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list[ExtractionResult[T] | Exception]: ...
 
@@ -979,6 +1034,8 @@ async def extract_many_with_results_async(
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
     language: str | None = None,
+    model_settings: ModelSettings | None = None,
+    timeout: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list[ExtractionResult[T] | Exception]: ...
 
@@ -1001,6 +1058,8 @@ async def extract_many_with_results_async(
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
     language: str | None = None,
+    model_settings: ModelSettings | None = None,
+    timeout: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list:
     """Async sibling of :func:`extract_many_with_results`."""
@@ -1023,6 +1082,8 @@ async def extract_many_with_results_async(
             cite_min_confidence=cite_min_confidence,
             pages=pages,
             language=language,
+            model_settings=model_settings,
+            timeout=timeout,
             on_progress=on_progress,
         ),
     )

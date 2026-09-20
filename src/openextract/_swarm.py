@@ -15,6 +15,7 @@ from ._agent import (
     _model_identifier,
     _resolve_run_inputs,
     _run_extraction_async,
+    _session_model_settings,
     _usage_from_result,
 )
 from ._agents import AgentInput, DefinedAgent, RemoteAgent, SwarmMember, flatten_agent
@@ -58,7 +59,7 @@ from ._types import (
 from ._windows import emit_progress, extract_windows_async
 
 if TYPE_CHECKING:
-    pass
+    from pydantic_ai.settings import ModelSettings
 
 _DEFAULT_SWARM_CONCURRENCY = 5
 
@@ -167,6 +168,7 @@ async def _run_member(
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
     language: str | None = None,
+    model_settings: ModelSettings | None = None,
     on_progress: OnProgress | None = None,
 ) -> ExtractionResult[T]:
     """Run one swarm agent over already-loaded media and build its result."""
@@ -223,6 +225,7 @@ async def _run_member(
                 run_schema,
                 member.model,
                 member_instructions,
+                model_settings=model_settings,
                 extra_capabilities=capabilities,
             )
         inputs = (
@@ -282,6 +285,8 @@ async def _run_swarm(
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
     language: str | None = None,
+    model_settings: ModelSettings | None = None,
+    timeout: float | None = None,
     on_progress: OnProgress | None = None,
 ) -> SwarmResult[T]:
     """Load the input once, fan it out across agents, and reduce the outputs."""
@@ -292,6 +297,7 @@ async def _run_swarm(
     cite_min_confidence = _validate_cite_min_confidence(cite_min_confidence)
     pages = _validate_pages(pages)
     language = normalize_language(language)
+    run_settings = _session_model_settings(model_settings, timeout)
     concurrency = (
         min(_DEFAULT_SWARM_CONCURRENCY, len(members))
         if max_concurrency is None
@@ -342,6 +348,7 @@ async def _run_swarm(
                     cite_min_confidence=cite_min_confidence,
                     pages=pages,
                     language=language,
+                    model_settings=run_settings,
                     on_progress=on_progress,
                 )
             except Exception as exc:
@@ -393,6 +400,8 @@ def extract_swarm(
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
     language: str | None = None,
+    model_settings: ModelSettings | None = None,
+    timeout: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> T:
     """Run several agents over one input and return the reduced result.
@@ -436,6 +445,11 @@ def extract_swarm(
             :func:`extract`.
         language: Optional document language hint, same contract as
             :func:`extract`. Applied to every agent.
+        model_settings: Optional Pydantic AI ``ModelSettings``, same contract
+            as :func:`extract`. Applied to every local agent.
+        timeout: Optional model request timeout in seconds, same contract as
+            :func:`extract`. Invalid values raise ``ValueError`` before any
+            model call.
         on_progress: Optional per-window callback, same contract as
             :func:`extract`. Concurrent agents may interleave events.
 
@@ -446,7 +460,8 @@ def extract_swarm(
         ValueError: If ``agents`` is empty, ``size`` is out of range or
             disagrees with the agent list, a retry/concurrency option is
             invalid, ``cite_min_confidence`` is outside ``[0, 1]``,
-            ``pages`` is empty/invalid, or ``language`` is empty. Raised
+            ``pages`` is empty/invalid, ``language`` is empty, or
+            ``timeout`` is not a finite positive number of seconds. Raised
             before any model call.
         ExtractionError: The first agent's failure, when every agent failed.
         RuntimeError: If called from a running event loop. Use
@@ -475,6 +490,8 @@ def extract_swarm(
             cite_min_confidence=cite_min_confidence,
             pages=pages,
             language=language,
+            model_settings=model_settings,
+            timeout=timeout,
             on_progress=on_progress,
         ),
     ).output
@@ -499,6 +516,8 @@ async def extract_swarm_async(
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
     language: str | None = None,
+    model_settings: ModelSettings | None = None,
+    timeout: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> T:
     """Async sibling of :func:`extract_swarm`."""
@@ -522,6 +541,8 @@ async def extract_swarm_async(
         cite_min_confidence=cite_min_confidence,
         pages=pages,
         language=language,
+        model_settings=model_settings,
+        timeout=timeout,
         on_progress=on_progress,
     )
     return result.output
@@ -548,6 +569,8 @@ def extract_swarm_with_results(
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
     language: str | None = None,
+    model_settings: ModelSettings | None = None,
+    timeout: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> SwarmResult[T]:
     """Run a swarm and return the reduced output plus per-agent diagnostics.
@@ -583,6 +606,8 @@ def extract_swarm_with_results(
             cite_min_confidence=cite_min_confidence,
             pages=pages,
             language=language,
+            model_settings=model_settings,
+            timeout=timeout,
             on_progress=on_progress,
         ),
     )
@@ -609,6 +634,8 @@ async def extract_swarm_with_results_async(
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
     language: str | None = None,
+    model_settings: ModelSettings | None = None,
+    timeout: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> SwarmResult[T]:
     """Async sibling of :func:`extract_swarm_with_results`."""
@@ -632,5 +659,7 @@ async def extract_swarm_with_results_async(
         cite_min_confidence=cite_min_confidence,
         pages=pages,
         language=language,
+        model_settings=model_settings,
+        timeout=timeout,
         on_progress=on_progress,
     )
