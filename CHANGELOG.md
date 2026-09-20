@@ -9,13 +9,13 @@ timing when that is known.
 ## [Unreleased]
 
 ### Added
-- Cookbook example for OpenRouter Jev Latest
-  (`openrouter:~typesafe/jev-latest`) at
-  `examples/advanced/openrouter_jev.py`: text in → structured decisions.
-  `--fixture` / default uses TestModel (no API key); `--live` uses
-  `OPENROUTER_API_KEY`. Optional live smoke:
-  `OPENEXTRACT_LIVE_SMOKE=1` + `OPENROUTER_API_KEY` in
-  `tests/test_live_smoke.py`.
+- Cookbook for openextract + OpenRouter Decisions (Jev Latest) at
+  `examples/advanced/openrouter_jev.py`. `extract()` + TestModel prepares
+  structured `state`; `--live` POSTs `{model, state, questions}` to
+  `https://openrouter.ai/api/alpha/decisions` with `~typesafe/jev-latest`.
+  Jev is not a chat/completions model and cannot be passed to `extract()`.
+  `--fixture` / default uses canned answers (no network). Optional live
+  smoke: `OPENEXTRACT_LIVE_SMOKE=1` + `OPENROUTER_API_KEY`.
 - Optional `model_settings` and `timeout` on oneshot extract APIs, batch, and
   swarm (`ModelSettings | None = None`, `float | None = None`). Same merge as
   sessions via `_session_model_settings`: `timeout` overrides a `timeout`

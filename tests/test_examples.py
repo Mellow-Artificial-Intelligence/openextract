@@ -6,14 +6,15 @@ import json
 import os
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
+import httpx
 import pytest
 from pydantic import ValidationError
 from pydantic_ai.models.test import TestModel
 
 import examples.advanced.openrouter_jev as jev
-from examples._shared import OPENROUTER_MODEL, openrouter_model
 
 ROOT = Path(__file__).resolve().parents[1]
 EXAMPLES = ROOT / "examples"
@@ -113,6 +114,10 @@ def test_extract_with_citations_example() -> None:
     assert "ExtractBench:" in result.stdout
 
 
+def _decisions_client(handler: Callable[[httpx.Request], httpx.Response]) -> httpx.Client:
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
 def test_openrouter_jev_example() -> None:
     result = _run("examples.advanced.openrouter_jev", ["--fixture"])
     assert result.returncode == 0, result.stderr
@@ -123,7 +128,7 @@ def test_openrouter_jev_example() -> None:
 def test_openrouter_jev_example_default() -> None:
     result = _run("examples.advanced.openrouter_jev")
     assert result.returncode == 0, result.stderr
-    assert json.loads(result.stdout)["decision"] == "approve"
+    assert json.loads(result.stdout)["decision"]["action"] == "approve"
 
 
 def test_openrouter_jev_usage_unknown_flag() -> None:
@@ -144,38 +149,31 @@ def test_openrouter_jev_missing_file() -> None:
     assert "Missing file:" in result.stdout
 
 
-def test_openrouter_model_default(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("OPENEXTRACT_MODEL", raising=False)
-    assert OPENROUTER_MODEL == "openrouter:~typesafe/jev-latest"
-    assert openrouter_model() == OPENROUTER_MODEL
-
-
-def test_openrouter_model_override(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("OPENEXTRACT_MODEL", "openrouter:anthropic/claude-sonnet-4")
-    assert openrouter_model() == "openrouter:anthropic/claude-sonnet-4"
+def test_openrouter_jev_live_requires_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    result = _run("examples.advanced.openrouter_jev", ["--live"])
+    assert result.returncode == 1
+    assert "OPENROUTER_API_KEY is required" in result.stdout
+    assert "sk-" not in result.stdout + result.stderr
 
 
 def test_jev_decision_schema() -> None:
-    parsed = jev.Decision.model_validate(jev.FIXTURE_OUTPUT)
-    assert parsed.decision == "approve"
-    assert parsed.confidence == 0.91
-    assert parsed.risk_flags == []
+    parsed = jev.Decision.model_validate(jev.FIXTURE_OUTPUT["decision"])
+    assert parsed.action == "approve"
+    assert parsed.auto_refund is True
     with pytest.raises(ValidationError):
-        jev.Decision.model_validate({**jev.FIXTURE_OUTPUT, "decision": "defer"})
+        jev.Decision.model_validate({**jev.FIXTURE_OUTPUT["decision"], "action": "defer"})
 
 
-def test_jev_resolve_model_fixture() -> None:
-    model = jev.resolve_model()
-    assert isinstance(model, TestModel)
-    assert model.custom_output_args == jev.FIXTURE_OUTPUT
-    assert jev.fixture_model().custom_output_args == jev.FIXTURE_OUTPUT
-
-
-def test_jev_resolve_model_live(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_jev_decisions_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("OPENROUTER_DECISIONS_MODEL", raising=False)
     monkeypatch.delenv("OPENEXTRACT_MODEL", raising=False)
-    assert jev.resolve_model(live=True) == OPENROUTER_MODEL
-    monkeypatch.setenv("OPENEXTRACT_MODEL", "openrouter:other/model")
-    assert jev.resolve_model(live=True) == "openrouter:other/model"
+    assert jev.JEV_MODEL == "~typesafe/jev-latest"
+    assert jev.DECISIONS_URL == "https://openrouter.ai/api/alpha/decisions"
+    assert jev.decisions_model() == jev.JEV_MODEL
+    monkeypatch.setenv("OPENROUTER_DECISIONS_MODEL", "typesafe/jev-1.13")
+    monkeypatch.setenv("OPENEXTRACT_MODEL", "openrouter:~typesafe/jev-latest")
+    assert jev.decisions_model() == "typesafe/jev-1.13"
 
 
 def test_jev_parse_argv_and_load_memo(tmp_path: Path) -> None:
@@ -202,40 +200,213 @@ def test_jev_parse_argv_extra_path() -> None:
     assert exc.value.code == 1
 
 
-def test_jev_extract_decision_fixture() -> None:
-    result = jev.extract_decision(jev.SAMPLE_MEMO)
+def test_jev_fixture_skips_http(monkeypatch: pytest.MonkeyPatch) -> None:
+    def boom(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("fixture path must not call the Decisions API")
+
+    monkeypatch.setattr(jev, "submit_decisions", boom)
+    monkeypatch.setattr(jev.httpx, "Client", boom)
+    result = jev.run_cookbook(jev.SAMPLE_MEMO)
     assert result.model_dump() == jev.FIXTURE_OUTPUT
 
 
-def test_jev_extract_call_shape(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_jev_extract_state_uses_testmodel(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, object] = {}
 
-    def fake_extract(**kwargs: object) -> jev.Decision:
+    def fake_extract(**kwargs: object) -> jev.TicketState:
         captured.update(kwargs)
-        return jev.Decision.model_validate(jev.FIXTURE_OUTPUT)
+        return jev.TicketState.model_validate(jev.FIXTURE_STATE)
 
-    monkeypatch.delenv("OPENEXTRACT_MODEL", raising=False)
     monkeypatch.setattr(jev, "extract", fake_extract)
-    result = jev.extract_decision(jev.SAMPLE_MEMO, live=True)
-    assert result.decision == "approve"
-    assert captured["schema"] is jev.Decision
-    assert captured["model"] == OPENROUTER_MODEL
+    state = jev.extract_state(jev.SAMPLE_MEMO)
+    assert state.ticket_id == "4412"
+    assert captured["schema"] is jev.TicketState
+    assert isinstance(captured["model"], TestModel)
     assert captured["input_file"] == jev.SAMPLE_MEMO.encode()
     assert captured["media_type"] == "text/plain"
-    assert captured["instructions"] == jev.INSTRUCTIONS
+    assert captured["instructions"] == jev.STATE_INSTRUCTIONS
+    assert captured["model"].custom_output_args == jev.FIXTURE_STATE  # type: ignore[union-attr]
+
+
+def test_jev_submit_decisions_request_shape() -> None:
+    captured: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["url"] = str(request.url)
+        captured["method"] = request.method
+        captured["authorization"] = request.headers["authorization"]
+        captured["content_type"] = request.headers["content-type"]
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json=jev.FIXTURE_RESPONSE)
+
+    result = jev.submit_decisions(
+        jev.TicketState.model_validate(jev.FIXTURE_STATE),
+        api_key="test-key-do-not-log",
+        client=_decisions_client(handler),
+    )
+    assert result == jev.FIXTURE_RESPONSE
+    assert captured["url"] == jev.DECISIONS_URL
+    assert captured["method"] == "POST"
+    assert captured["authorization"] == "Bearer test-key-do-not-log"
+    assert captured["content_type"] == "application/json"
+    body = captured["body"]
+    assert isinstance(body, dict)
+    assert body["model"] == jev.JEV_MODEL
+    assert body["state"] == jev.FIXTURE_STATE
+    assert body["questions"] == jev.QUESTIONS
+
+
+def test_jev_submit_decisions_owns_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    created: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=jev.FIXTURE_RESPONSE)
+
+    real = _decisions_client(handler)
+
+    def fake_client(*_args: object, **kwargs: object) -> httpx.Client:
+        created.update(kwargs)
+        return real
+
+    monkeypatch.setattr(jev.httpx, "Client", fake_client)
+    result = jev.submit_decisions(jev.FIXTURE_STATE, api_key="k")
+    assert result == jev.FIXTURE_RESPONSE
+    assert created["timeout"] == 30.0
+    # httpx.Client.close() is idempotent; owned-client path must have closed it.
+    real.close()
+
+
+def test_jev_submit_decisions_http_error() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            400,
+            text="~typesafe/jev-latest is a decisions model and cannot be used "
+            "with the chat/completions endpoint.",
+        )
+
+    with pytest.raises(jev.DecisionsError, match="Decisions API returned 400"):
+        jev.submit_decisions(jev.FIXTURE_STATE, api_key="k", client=_decisions_client(handler))
+
+
+def test_jev_submit_decisions_network_error() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("no route", request=request)
+
+    with pytest.raises(jev.DecisionsError, match="Decisions API request failed"):
+        jev.submit_decisions(jev.FIXTURE_STATE, api_key="k", client=_decisions_client(handler))
+
+
+def test_jev_submit_decisions_non_json() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text="<html>")
+
+    with pytest.raises(jev.DecisionsError, match="non-JSON"):
+        jev.submit_decisions(jev.FIXTURE_STATE, api_key="k", client=_decisions_client(handler))
+
+
+def test_jev_submit_decisions_non_object_json() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=["nope"])
+
+    with pytest.raises(jev.DecisionsError, match="non-object"):
+        jev.submit_decisions(jev.FIXTURE_STATE, api_key="k", client=_decisions_client(handler))
+
+
+def test_jev_decision_from_response_errors() -> None:
+    with pytest.raises(jev.DecisionsError, match="missing answers"):
+        jev.decision_from_response({})
+    with pytest.raises(jev.DecisionsError, match="missing answer 'action'"):
+        jev.decision_from_response({"answers": {}})
+    with pytest.raises(jev.DecisionsError, match="type 'noul' != 'choice'"):
+        jev.decision_from_response({"answers": {"action": {"type": "noul", "noul": 0.1}}})
+    with pytest.raises(jev.DecisionsError, match="unsupported answer type"):
+        jev.decision_from_response({"answers": {"action": {"type": "text", "text": "x"}}})
+    with pytest.raises(jev.DecisionsError, match="invalid action"):
+        jev.decision_from_response(
+            {
+                "answers": {
+                    "action": {"type": "choice"},
+                    "auto_refund": {"type": "noul", "noul": 0.9},
+                    "urgency": {"type": "score", "score": 1.0},
+                }
+            }
+        )
+    with pytest.raises(jev.DecisionsError, match="Could not map"):
+        jev.decision_from_response(
+            {
+                "answers": {
+                    "action": {"type": "choice", "choice": "approve", "confidence": 0.9},
+                    "auto_refund": {"type": "noul"},
+                    "urgency": {"type": "score", "score": 1.0},
+                }
+            }
+        )
+
+
+def test_jev_decision_from_response_noul_threshold() -> None:
+    payload = {
+        "model": "typesafe/jev-1.13",
+        "answers": {
+            "action": {"type": "choice", "choice": "reject", "confidence": 0.6},
+            "auto_refund": {"type": "noul", "noul": 0.49},
+            "urgency": {"type": "score", "score": 0.2},
+        },
+    }
+    decision = jev.decision_from_response(payload)
+    assert decision.action == "reject"
+    assert decision.auto_refund is False
+    assert decision.model == "typesafe/jev-1.13"
+
+
+def test_jev_run_cookbook_live(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key-do-not-log")
+    seen: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["authorization"] = request.headers["authorization"]
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(200, json=jev.FIXTURE_RESPONSE)
+
+    result = jev.run_cookbook(jev.SAMPLE_MEMO, live=True, client=_decisions_client(handler))
+    assert result.model_dump() == jev.FIXTURE_OUTPUT
+    assert seen["authorization"] == "Bearer test-key-do-not-log"
+    body = seen["body"]
+    assert isinstance(body, dict)
+    assert body["model"] == jev.JEV_MODEL
+    assert body["state"] == jev.FIXTURE_STATE
 
 
 def test_jev_main_live_mocked(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    def fake_extract(**kwargs: object) -> jev.Decision:
-        return jev.Decision.model_validate(jev.FIXTURE_OUTPUT)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key-do-not-log")
 
-    monkeypatch.setattr(jev, "extract", fake_extract)
+    def fake_submit(*_args: object, **_kwargs: object) -> dict[str, object]:
+        return jev.FIXTURE_RESPONSE
+
+    monkeypatch.setattr(jev, "submit_decisions", fake_submit)
     jev.main(["--live"])
-    payload = json.loads(capsys.readouterr().out)
-    assert payload["decision"] == "approve"
+    out = capsys.readouterr().out
+    assert json.loads(out) == jev.FIXTURE_OUTPUT
+    assert "test-key-do-not-log" not in out
     assert jev.USAGE.startswith("Usage:")
+
+
+def test_jev_main_live_http_error(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key-do-not-log")
+
+    def fake_run(*_args: object, **_kwargs: object) -> jev.CookbookResult:
+        raise jev.DecisionsError("Decisions API returned 400: decisions model")
+
+    monkeypatch.setattr(jev, "run_cookbook", fake_run)
+    with pytest.raises(SystemExit) as exc:
+        jev.main(["--live"])
+    assert exc.value.code == 1
+    out = capsys.readouterr().out
+    assert "Decisions API returned 400" in out
+    assert "test-key-do-not-log" not in out
 
 
 def test_jev_main_reads_sys_argv(

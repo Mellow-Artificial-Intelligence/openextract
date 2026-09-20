@@ -2,14 +2,15 @@
 
 Runnable scripts showing common ways to use openextract. Each example prints JSON from a validated Pydantic model.
 
-Examples use **OpenAI**, **Anthropic**, **xAI**, and **OpenRouter** so you can see how provider identifiers map to real calls. Set the matching API keys in `.env`; the shared example helper loads it before selecting a model.
+Examples use **OpenAI**, **Anthropic**, and **xAI** so you can see how provider identifiers map to real `extract()` calls. Set the matching API keys in `.env`; the shared example helper loads it before selecting a model.
+
+Jev Latest is **not** an openextract chat model. `advanced/openrouter_jev.py` uses OpenRouter's Decisions API (`POST /api/alpha/decisions`, model `~typesafe/jev-latest`).
 
 | Provider   | Model identifier                    | Environment variable   |
 | ---------- | ----------------------------------- | ---------------------- |
 | OpenAI     | `openai:gpt-5.5`                    | `OPENAI_API_KEY`       |
 | Anthropic  | `anthropic:claude-opus-4-8`        | `ANTHROPIC_API_KEY`    |
 | xAI        | `xai:grok-4.3`                      | `XAI_API_KEY`          |
-| OpenRouter | `openrouter:~typesafe/jev-latest`   | `OPENROUTER_API_KEY`   |
 
 Install provider extras as needed: `openextract[openai]`, `openextract[anthropic]`, `openextract[xai]`, `openextract[openrouter]`, or `openextract[all]`.
 
@@ -34,7 +35,7 @@ uv sync --dev
 uv run python -m examples.run_all
 ```
 
-TestModel examples (including `openrouter_jev.py --fixture`) and `advanced/error_handling.py` run without API keys. The rest need the API key for their assigned provider (see table below), or set `OPENEXTRACT_MODEL` to run all with one model.
+TestModel examples (including `openrouter_jev.py --fixture`) and `advanced/error_handling.py` run without API keys. The rest need the API key for their assigned provider (see table below), or set `OPENEXTRACT_MODEL` to run all extract() examples with one model. Jev `--live` ignores `OPENEXTRACT_MODEL` and needs `OPENROUTER_API_KEY`.
 
 ## Examples by use case
 
@@ -56,7 +57,7 @@ TestModel examples (including `openrouter_jev.py --fixture`) and `advanced/error
 | `advanced/` | `retry_extract.py` | OpenAI | `max_retries` / `retry_backoff` |
 | `advanced/` | `reusable_sessions.py` | TestModel | Sync/async sessions and dependency-injected agents |
 | `advanced/` | `extraction_styles.py` | TestModel | `style='direct'` vs `table` / `form` / `search` / `code` |
-| `advanced/` | `openrouter_jev.py` | OpenRouter / TestModel | Text → structured decisions via Jev Latest (`--fixture`; `--live` needs `OPENROUTER_API_KEY`) |
+| `advanced/` | `openrouter_jev.py` | OpenRouter Decisions / TestModel | Memo → `extract()` state → Jev Decisions (`--fixture`; `--live` POSTs `/api/alpha/decisions`) |
 | `advanced/` | `error_handling.py` | — | Catching `UrlFetchError` (no model call) |
 | `audio/` | `meeting_notes.py` | xAI | Audio → structured meeting notes (bring your own file) |
 | `cli/` | `schemas.py` | — | Pydantic models for CLI `--schema` |
@@ -79,10 +80,10 @@ uv run python -m examples.advanced.extract_with_usage --fixture
 # TestModel — cite=True (no API key; parser-backed bbox needs openextract[pdf])
 uv run python -m examples.advanced.extract_with_citations
 
-# TestModel — OpenRouter Jev structured decisions (no API key)
+# TestModel extract + canned Decisions answers (no API key)
 uv run python -m examples.advanced.openrouter_jev --fixture
 
-# Live Jev Latest via OpenRouter
+# Live Decisions API (Jev Latest; not chat/completions)
 OPENROUTER_API_KEY=... uv run python -m examples.advanced.openrouter_jev --live
 
 # OpenAI — batch
