@@ -551,7 +551,7 @@ cat ./reports/q4.pdf | openextract - \
 ```
 
 - `input_file` accepts one or more paths/URLs, directories of files, or `-` for stdin (`--media-type` required for stdin). Directories expand to supported files (see `--recursive`).
-- `--schema` is a Python import path of the form `module:ClassName` resolving to a Pydantic model.
+- `--schema` is `module:ClassName` resolving to a Pydantic model, or a JSON Schema file (same files as `schema_from_json`).
 - `--model` is a `pydantic-ai` model identifier.
 - `--instructions` is optional natural-language guidance.
 - `--language TAG` is an optional document language hint (`en`, `es`, `fr`).

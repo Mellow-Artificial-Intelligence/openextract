@@ -21,6 +21,7 @@ from openextract import (
     SwarmResult,
     Usage,
     extract,
+    schema_from_json,
     extract_many,
     extract_many_async,
     extract_many_with_results,
@@ -33,6 +34,10 @@ from openextract import (
 
 class Invoice(BaseModel):
     total: float
+
+
+JsonInvoice = schema_from_json("invoice.json")
+extract(JsonInvoice, "openai:gpt-5", Path("/tmp/invoice.pdf"))
 
 
 def _report(progress: ExtractProgress) -> None:

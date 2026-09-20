@@ -164,8 +164,27 @@ aggregate token usage across the returned results.
 
 ### `extract_many_with_results_async(schema, model, input_files, instructions=None, *, style='direct', media_type=None, max_input_bytes=None, max_concurrency=5, return_exceptions=False, max_retries=0, retry_backoff=1.0, retry_max_backoff=60.0, cite=False, cite_min_confidence=None, pages=None, language=None, on_progress=None)`
 
-Async counterpart to `extract_many_with_results`; it has the same arguments,
-result ordering, and per-item retry behavior.
+Async counterpart to `extract_many_with_results`.
+
+## Schema
+
+### `schema_from_json(source)`
+
+Build a Pydantic `BaseModel` subclass from a JSON Schema file path (`str` or
+`Path`), a JSON object `dict`, or JSON text. This is the same practical
+subset as CLI `--schema`: object schemas with `properties` / `items` /
+nested objects. It is not a full JSON Schema compiler.
+
+A `str` is a file path when it has a `.json` suffix or names an existing
+file; otherwise it is parsed as JSON text. Missing files, unreadable files,
+invalid JSON, and non-object schemas raise `ValueError`.
+
+```python
+from openextract import extract, schema_from_json
+
+schema = schema_from_json("invoice.json")
+extract(schema=schema, model="openai:gpt-5", input_file="bill.pdf")
+```
 
 ### `total_usage(results)`
 

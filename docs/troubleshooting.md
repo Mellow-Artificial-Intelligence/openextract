@@ -156,7 +156,8 @@ paths, URLs, streams, and batch jobs.
 **Cause**
 
 `--schema` must be `module:ClassName` pointing at a Pydantic `BaseModel`
-subclass importable from the current `PYTHONPATH`.
+subclass importable from the current `PYTHONPATH`, or a JSON Schema file
+(the same files Python loads with `schema_from_json`).
 
 **Next step**
 

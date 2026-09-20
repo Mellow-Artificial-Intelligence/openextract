@@ -57,6 +57,8 @@ openextract ./reports/q4.pdf \
 - Exit `0`.
 - stdout: JSON object from `model_dump_json` (default `--output json`).
 - With `--output repr`, stdout is `repr(payload)` instead of JSON.
+- `--schema` accepts `module:ClassName` or a JSON Schema file. Python can
+  load the same files with `schema_from_json`.
 
 ## Successful batch output
 

@@ -35,6 +35,7 @@ PUBLIC_FUNCTIONS = (
     "load_agent",
     "load_agents",
     "load_agent_directory",
+    "schema_from_json",
 )
 SIGNATURE_HEADING = re.compile(r"^### `([a-z_]+)(\(.*\))`$", re.MULTILINE)
 
