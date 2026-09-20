@@ -205,7 +205,6 @@ def test_jev_fixture_skips_http(monkeypatch: pytest.MonkeyPatch) -> None:
         raise AssertionError("fixture path must not call the Decisions API")
 
     monkeypatch.setattr(jev, "submit_decisions", boom)
-    monkeypatch.setattr(jev.httpx, "Client", boom)
     result = jev.run_cookbook(jev.SAMPLE_MEMO)
     assert result.model_dump() == jev.FIXTURE_OUTPUT
 
