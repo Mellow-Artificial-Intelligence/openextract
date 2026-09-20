@@ -70,6 +70,10 @@ class RemoteAgentError(ExtractionError):
         self.retryable = retryable
 
 
+class InputFileError(ExtractionError):
+    """Error opening or reading a local path or file-like input."""
+
+
 class InputTooLargeError(ExtractionError):
     """Input media exceeded the configured byte limit."""
 
