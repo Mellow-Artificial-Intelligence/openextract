@@ -9,6 +9,12 @@ timing when that is known.
 ## [Unreleased]
 
 ### Added
+- `schema_from_json(source)` builds a Pydantic `BaseModel` subclass from a
+  JSON Schema file path (`str` or `Path`), a JSON object `dict`, or JSON
+  text. Same practical subset as CLI `--schema` (object schemas with
+  `properties` / `items` / nested objects). Missing files, invalid JSON,
+  and non-object schemas raise `ValueError`. The CLI `--schema` file path
+  now uses this helper. Python: `extract(schema=schema_from_json(...), ...)`.
 - `InputFileError(ExtractionError)` for local path and file-like open/read
   failures (missing file, permission denied, is-a-directory, and other OS
   errors). Messages use a sanitized source (`path 'basename'` or

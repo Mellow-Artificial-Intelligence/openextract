@@ -34,6 +34,7 @@ from ._reduce import (
     normalize_reduce,
     reduce_outputs,
 )
+from ._schema_json import schema_from_json
 from ._session import AsyncExtractor, Extractor
 from ._styles import ExtractionStyle
 from ._swarm import (
@@ -103,6 +104,7 @@ __all__ = [
     "reduce_outputs",
     "resolve_output_schema",
     "resolve_swarm_members",
+    "schema_from_json",
     "total_usage",
     "Usage",
     "ExtractionError",

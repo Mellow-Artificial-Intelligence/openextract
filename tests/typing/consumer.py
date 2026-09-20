@@ -29,12 +29,17 @@ from openextract import (
     extract_with_result,
     extract_with_result_async,
     extract_with_usage,
+    schema_from_json,
     total_usage,
 )
 
 
 class Invoice(BaseModel):
     total: float
+
+
+JsonInvoice = schema_from_json("invoice.json")
+extract(JsonInvoice, "openai:gpt-5", Path("/tmp/invoice.pdf"))
 
 
 def _report(progress: ExtractProgress) -> None:

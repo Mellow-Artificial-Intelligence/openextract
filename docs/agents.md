@@ -16,7 +16,7 @@ Swarm surface (provisional): `extract_swarm*`, `SwarmMember`, `SwarmResult`, `Sw
 
 Agent surface (provisional): `define_agent`, `define_remote_agent`, `DefinedAgent`, `RemoteAgent`, `flatten_agent`, `resolve_output_schema`, `load_agent`, `load_agents`, `load_agent_directory`, `RemoteAgentError`, and the `openextract.auth` helpers.
 
-Stable enough to generate against: `extract`, `extract_async`, `extract_with_usage`, `extract_with_usage_async`, `Usage`, and the exception types. Provisional (still public, may evolve before 1.0): sessions, batch helpers, `ExtractionInput` / `ExtractionResult` / `ExtractProgress`, `ExtractionStyle`, CLI flags.
+Stable enough to generate against: `extract`, `extract_async`, `extract_with_usage`, `extract_with_usage_async`, `Usage`, and the exception types. Provisional (still public, may evolve before 1.0): sessions, batch helpers, `ExtractionInput` / `ExtractionResult` / `ExtractProgress`, `ExtractionStyle`, `schema_from_json`, CLI flags.
 
 Canonical signatures: [API reference](api-reference.md). CI fails if those headings drift from the installed callables.
 
@@ -34,12 +34,13 @@ class Info(BaseModel):
 result = extract(schema=Info, model="openai:gpt-5", input_file="doc.pdf")
 ```
 
-Always define a real `pydantic.BaseModel` subclass. Do not ask the library for free-form JSON.
+Always define a real `pydantic.BaseModel` subclass, or load one with `schema_from_json`. Do not ask the library for free-form JSON.
 
 ## Which API to generate
 
 | Situation | Use |
 | --- | --- |
+| JSON Schema file / object / text | `schema_from_json`, then `extract(schema=..., ...)` |
 | One input, sync code | `extract` |
 | One input, async code | `extract_async` |
 | Need token counts | `extract_with_usage` / `_async` |
@@ -111,7 +112,7 @@ openextract INPUT --schema package.mod:Class --model openai:gpt-5
 | `2`–`6` | `UrlFetchError` … `ProviderNotInstalledError` |
 | `7` | Partial batch failure (`--continue-on-error`) |
 
-`--schema` is `module:ClassName`. For stdin, pass `-` and `--media-type`. Full contract: [CLI](cli.md).
+`--schema` is `module:ClassName` or a JSON Schema file (same subset as `schema_from_json`). For stdin, pass `-` and `--media-type`. Full contract: [CLI](cli.md).
 
 ## Tests without live providers
 

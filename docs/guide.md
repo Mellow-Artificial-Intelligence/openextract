@@ -54,6 +54,15 @@ print(invoice.vendor, invoice.total)
 
 `invoice` is an `Invoice` instance — not a dict, not a JSON string.
 
+The same JSON Schema files the CLI accepts via `--schema` load in Python with `schema_from_json`:
+
+```python
+from openextract import extract, schema_from_json
+
+schema = schema_from_json("invoice.json")
+extract(schema=schema, model="openai:gpt-5", input_file="./invoices/acme.pdf")
+```
+
 Set provider credentials in the environment (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `XAI_API_KEY`, …). The **CLI and bundled examples** load `.env`; the **Python library does not**.
 
 ## Inputs
@@ -473,7 +482,7 @@ openextract ./bill.pdf \
 
 - Success goes to **stdout** (or `--out PATH`; parent directory must exist);
   errors to **stderr**.
-- `--schema` is `module:ClassName` on `PYTHONPATH`.
+- `--schema` is `module:ClassName` on `PYTHONPATH`, or a JSON Schema file. Python can load the same files with `schema_from_json`.
 - Batch: pass multiple paths. `--continue-on-error` emits per-item errors inline and exits `7` if any failed.
 - `--usage` is single-input only.
 - `--cite` adds a `citations` array to JSON/jsonl (`field`, `quote`, `page`,
