@@ -67,26 +67,37 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - id: filter
-        uses: ./.github/actions/detect-jobs
-      - uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a  # v4.2.0
-        if: steps.filter.outputs.test == 'true'
+      - uses: ./.github/actions/run-test-suite
         with:
           python-version: ${{ matrix.python-version }}
-          enable-cache: true
-          cache-dependency-glob: uv.lock
-      - if: steps.filter.outputs.test == 'true'
-        run: uv sync --dev
-      # -n auto fans the suite across every runner core; coverage is combined
-      # from the workers and enforced in the same process.
-      - name: Run tests with coverage
-        if: ${{ steps.filter.outputs.test == 'true' && matrix.coverage }}
-        run: >-
-          uv run --no-sync pytest -n auto
-          --cov=openextract --cov-report=term-missing --cov-fail-under=100
-      - name: Run tests
-        if: ${{ steps.filter.outputs.test == 'true' && !matrix.coverage }}
-        run: uv run --no-sync pytest -n 2
+          coverage: ${{ matrix.coverage }}
+
+  # Same suite and 100% coverage gate, only when `test` failed. In-step retry
+  # cannot run after the runner agent is SIGTERM'd mid-pytest (see e.g.
+  # actions/runs/35518161988). This job is that one-shot rematch.
+  test-retry:
+    name: Test retry (Python ${{ matrix.python-version }})
+    needs: test
+    if: ${{ !cancelled() && needs.test.result == 'failure' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - python-version: "3.12"
+            coverage: true
+          - python-version: "3.13"
+            coverage: false
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/run-test-suite
+        with:
+          python-version: ${{ matrix.python-version }}
+          coverage: ${{ matrix.coverage }}
 
   package:
     name: Build and install distributions
@@ -121,7 +132,7 @@ jobs:
 
   ci:
     name: CI
-    needs: [lint, test, package]
+    needs: [lint, test, test-retry, package]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 2
@@ -130,14 +141,19 @@ jobs:
         env:
           LINT: ${{ needs.lint.result }}
           TEST: ${{ needs.test.result }}
+          TEST_RETRY: ${{ needs.test-retry.result }}
           PACKAGE: ${{ needs.package.result }}
         run: |
-          echo "job results: lint=$LINT test=$TEST package=$PACKAGE"
+          echo "job results: lint=$LINT test=$TEST test-retry=$TEST_RETRY package=$PACKAGE"
           status=0
-          for entry in "lint:$LINT" "test:$TEST" "package:$PACKAGE"; do
+          for entry in "lint:$LINT" "package:$PACKAGE"; do
             if [ "${entry#*:}" != "success" ]; then
               echo "Job did not succeed: ${entry%%:*} (${entry#*:})"
               status=1
             fi
           done
+          if [ "$TEST" != "success" ] && [ "$TEST_RETRY" != "success" ]; then
+            echo "Job did not succeed: test ($TEST) test-retry ($TEST_RETRY)"
+            status=1
+          fi
           exit "$status"
