@@ -12,10 +12,10 @@ from openextract import (
     extract_async,
     extract_many,
     extract_many_async,
-    extract_many_with_results,
+    extract_many_with_results_async,
     extract_swarm,
     extract_swarm_async,
-    extract_swarm_with_results,
+    extract_swarm_with_results_async,
     extract_with_result,
     extract_with_usage,
     extract_with_usage_async,
@@ -227,7 +227,7 @@ async def test_batch_async_and_iter_accept_settings():
     ]
     assert streamed == [(0, Person(name="Ada", age=36))]
 
-    rich = extract_many_with_results(
+    rich = await extract_many_with_results_async(
         Person,
         model,
         [b"Ada is 36"],
@@ -287,7 +287,7 @@ async def test_swarm_async_and_results_accept_settings():
         timeout=12,
     ) == Person(name="Ada", age=36)
 
-    swarm = extract_swarm_with_results(
+    swarm = await extract_swarm_with_results_async(
         Person,
         model,
         b"Ada is 36",
