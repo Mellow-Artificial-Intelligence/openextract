@@ -166,6 +166,7 @@ def test_star_import_exposes_only_existing_names():
         "reduce_outputs",
         "resolve_output_schema",
         "resolve_swarm_members",
+        "schema_from_json",
         "total_usage",
         "Usage",
         "ExtractionError",

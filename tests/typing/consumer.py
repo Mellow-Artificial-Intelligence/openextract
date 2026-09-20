@@ -21,13 +21,13 @@ from openextract import (
     SwarmResult,
     Usage,
     extract,
-    schema_from_json,
     extract_many,
     extract_many_async,
     extract_many_with_results,
     extract_many_with_results_async,
     extract_swarm_with_results,
     extract_with_usage,
+    schema_from_json,
     total_usage,
 )
 
