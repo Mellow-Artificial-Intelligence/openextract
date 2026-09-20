@@ -1800,6 +1800,21 @@ class TestExtractWithUsage:
 
         assert usage == Usage(input_tokens=0, output_tokens=0, total_tokens=0)
 
+    def test_usage_from_mock_result_does_not_walk_auto_attrs(self):
+        from openextract._agent import _usage_from_raw, _usage_from_result
+
+        started = time.monotonic()
+        assert _usage_from_result(MagicMock()) == Usage(0, 0, 0)
+        assert time.monotonic() - started < 0.5
+
+        class _Slotted:
+            __slots__ = ("details",)
+
+            def __init__(self):
+                self.details = {"prompt_tokens": 4, "completion_tokens": 5}
+
+        assert _usage_from_raw(_Slotted()) == Usage(4, 5, 9)
+
     def test_provider_usage_aliases_and_nested_response(self):
         from openextract._agent import (
             _extract_usage_object,

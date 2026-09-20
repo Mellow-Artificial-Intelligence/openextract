@@ -26,7 +26,7 @@ env:
 jobs:
   lint:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
         with:
@@ -53,7 +53,10 @@ jobs:
   test:
     name: Test (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Healthy pytest is well under a minute; 5m is hang/eviction detection,
+    # not a budget for a slow suite. A job timeout marks the matrix cancelled
+    # (not failed); test-retry rematches that too.
+    timeout-minutes: 5
     strategy:
       fail-fast: false
       matrix:
@@ -72,15 +75,17 @@ jobs:
           python-version: ${{ matrix.python-version }}
           coverage: ${{ matrix.coverage }}
 
-  # Same suite and 100% coverage gate, only when `test` failed. In-step retry
-  # cannot run after the runner agent is SIGTERM'd mid-pytest (see e.g.
-  # actions/runs/35518161988). This job is that one-shot rematch.
+  # Same suite and 100% coverage gate, when `test` failed or was cancelled.
+  # In-step retry cannot run after the runner agent is SIGTERM'd mid-pytest
+  # (see e.g. actions/runs/35518161988). A 5m job timeout is also cancelled
+  # (actions/runs/35522477200), so rematch on cancelled as well as failure.
+  # Skip only when the whole workflow is cancelled (`cancelled()`).
   test-retry:
     name: Test retry (Python ${{ matrix.python-version }})
     needs: test
-    if: ${{ !cancelled() && needs.test.result == 'failure' }}
+    if: ${{ !cancelled() && (needs.test.result == 'failure' || needs.test.result == 'cancelled') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 5
     strategy:
       fail-fast: false
       matrix:
@@ -102,7 +107,7 @@ jobs:
   package:
     name: Build and install distributions
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
         with:

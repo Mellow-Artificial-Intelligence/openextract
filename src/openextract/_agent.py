@@ -278,11 +278,26 @@ def _token_count(raw: object, names: tuple[str, ...]) -> int:
     return 0
 
 
+def _defined_attr(raw: object, key: str) -> object:
+    """Return ``raw.key`` only when the attribute is actually defined.
+
+    ``getattr`` on ``unittest.mock.Mock`` auto-creates children. Walking those
+    as usage nests is exponential and hung CI under coverage (15m job timeout).
+    """
+    typ = type(raw)
+    if hasattr(typ, key):
+        return getattr(raw, key, None)
+    namespace = getattr(raw, "__dict__", None)
+    if isinstance(namespace, dict) and key in namespace:
+        return namespace[key]
+    return None
+
+
 def _nested_usage_container(raw: object, key: str) -> object:
     if isinstance(raw, dict):
         mapping = cast(dict[str, object], raw)
         return mapping.get(key)
-    return getattr(raw, key, None)
+    return _defined_attr(raw, key)
 
 
 def _usage_from_raw(raw: object) -> Usage:
@@ -321,9 +336,9 @@ def _usage_from_raw_depth(raw: object, depth: int) -> Usage:
 
 
 def _maybe_model_dump(raw: object) -> dict[str, object] | None:
-    dumper = getattr(raw, "model_dump", None)
-    if not callable(dumper):
+    if not callable(getattr(type(raw), "model_dump", None)):
         return None
+    dumper = raw.model_dump  # ty: ignore[unresolved-attribute]
     try:
         dumped = dumper(exclude_none=True)
     except TypeError:

@@ -66,10 +66,12 @@ when the change set cannot affect it (for example a docs-only PR does not
 install Python dependencies). Nothing waits on a gating job, and the test suite
 runs under `pytest -n auto` across every runner core. The single required check
 is the `CI` job, which fails unless lint, test, and package all succeeded.
-If a test matrix cell is killed mid-pytest by a hosted-runner eviction
-(`The runner has received a shutdown signal`), the same suite — including the
-100% coverage gate on 3.12 — is run once more on a fresh runner before `CI`
-fails. Outdated pull-request runs are cancelled when a new commit is pushed. After CI
+If a test matrix cell fails, times out, or is killed mid-pytest by a
+hosted-runner eviction (`The runner has received a shutdown signal`), the same
+suite — including the 100% coverage gate on 3.12 — is run once more on a fresh
+runner before `CI` fails. Test jobs time out at 5 minutes so a hang rematches
+instead of sitting until a long budget expires. Outdated pull-request runs are
+cancelled when a new commit is pushed. After CI
 succeeds on `main`,
 [`.github/workflows/release.yml`](.github/workflows/release.yml) publishes to
 PyPI only when the version in `pyproject.toml` is new.
