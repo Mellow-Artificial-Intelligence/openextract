@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 from pydantic import BaseModel
 
+from examples.advanced.openrouter_jev import INSTRUCTIONS, SAMPLE_MEMO, Decision
 from openextract import extract
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -24,6 +25,7 @@ FIXTURE = ROOT / "examples" / "fixtures" / "document_page.png"
 _DEFAULT_LIVE_MODEL = "openai:gpt-5"
 _LIVE_MODELS = {
     "openai": _DEFAULT_LIVE_MODEL,
+    "openrouter": "openrouter:~typesafe/jev-latest",
 }
 
 
@@ -55,3 +57,23 @@ def test_live_openai_image_smoke() -> None:
     )
     assert isinstance(result.summary, str) and result.summary.strip()
     assert isinstance(result.language, str) and result.language.strip()
+
+
+@pytest.mark.integration
+def test_live_openrouter_jev_text_smoke() -> None:
+    """OpenRouter Jev text→decision path; skipped unless explicitly enabled."""
+    if not _live_enabled():
+        pytest.skip("Set OPENEXTRACT_LIVE_SMOKE=1 to run live provider smoke tests")
+    if not os.environ.get("OPENROUTER_API_KEY"):
+        pytest.skip("OPENROUTER_API_KEY is required for the OpenRouter Jev live smoke test")
+
+    model = os.environ.get("OPENEXTRACT_LIVE_MODEL", _LIVE_MODELS["openrouter"])
+    result = extract(
+        schema=Decision,
+        model=model,
+        input_file=SAMPLE_MEMO.encode(),
+        media_type="text/plain",
+        instructions=INSTRUCTIONS,
+    )
+    assert result.decision in {"approve", "reject", "escalate"}
+    assert isinstance(result.rationale, str) and result.rationale.strip()

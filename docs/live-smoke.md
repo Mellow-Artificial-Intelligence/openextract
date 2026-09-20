@@ -25,8 +25,13 @@ Without these env vars, integration tests skip.
 | Test | Model (default) | Media | Credential |
 | ---- | --------------- | ----- | ---------- |
 | `test_live_openai_image_smoke` | `openai:gpt-5` | bundled PNG fixture | `OPENAI_API_KEY` |
+| `test_live_openrouter_jev_text_smoke` | `openrouter:~typesafe/jev-latest` | sample memo text | `OPENROUTER_API_KEY` |
 
 Override the model with `OPENEXTRACT_LIVE_MODEL` when needed.
+
+Cookbook live run (same model, no pytest)::
+
+    OPENROUTER_API_KEY=... uv run python -m examples.advanced.openrouter_jev --live
 
 ## Design rules
 
