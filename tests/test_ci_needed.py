@@ -110,6 +110,14 @@ def test_ci_workflow_change_runs_all_jobs():
     }
 
 
+def test_run_test_suite_action_change_runs_all_jobs():
+    assert jobs_for_paths([".github/actions/run-test-suite/action.yml"]) == {
+        "lint": True,
+        "test": True,
+        "package": True,
+    }
+
+
 def test_readme_runs_package_job():
     assert jobs_for_paths(["README.md"]) == {
         "lint": False,

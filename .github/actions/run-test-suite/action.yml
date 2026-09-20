@@ -1,0 +1,56 @@
+name: Run test suite
+description: >-
+  Install the locked dev environment and run pytest for one Python version.
+  Coverage is collected and enforced only when coverage is true (Python 3.12).
+
+inputs:
+  python-version:
+    description: Python version for setup-uv
+    required: true
+  coverage:
+    description: "'true' to enforce --cov-fail-under=100 with -n auto"
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - id: filter
+      uses: ./.github/actions/detect-jobs
+    - uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a  # v4.2.0
+      if: steps.filter.outputs.test == 'true'
+      with:
+        python-version: ${{ inputs.python-version }}
+        enable-cache: true
+        cache-dependency-glob: uv.lock
+    - if: steps.filter.outputs.test == 'true'
+      shell: bash
+      run: uv sync --dev
+    # -n auto fans the suite across every runner core; coverage is combined
+    # from the workers and enforced in the same process.
+    - name: Run tests with coverage
+      if: ${{ steps.filter.outputs.test == 'true' && inputs.coverage == 'true' }}
+      shell: bash
+      run: >-
+        uv run --no-sync pytest -n auto
+        --cov=openextract --cov-report=term-missing --cov-fail-under=100
+    # One in-step retry on SIGTERM/SIGKILL only: xdist workers on 3.13 are
+    # sometimes killed (exit 143/137) while the VM stays up. Assertion
+    # failures are not retried here. A full hosted-runner eviction
+    # ("The runner has received a shutdown signal") still fails the job;
+    # ci.yml's test-retry then rematches the same matrix on a fresh runner.
+    - name: Run tests
+      if: ${{ steps.filter.outputs.test == 'true' && inputs.coverage != 'true' }}
+      shell: bash
+      run: |
+        set +e
+        uv run --no-sync pytest -n 2
+        status=$?
+        if [ "$status" -eq 0 ]; then
+          exit 0
+        fi
+        if [ "$status" -eq 143 ] || [ "$status" -eq 137 ]; then
+          echo "::warning::pytest exited $status; retrying once for hosted-runner flake"
+          uv run --no-sync pytest -n 2
+          exit $?
+        fi
+        exit "$status"

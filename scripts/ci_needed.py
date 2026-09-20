@@ -12,6 +12,7 @@ ALWAYS_ALL = frozenset(
     {
         ".github/workflows/ci.yml",
         ".github/actions/detect-jobs/action.yml",
+        ".github/actions/run-test-suite/action.yml",
         "pyproject.toml",
         "uv.lock",
         ".python-version",
