@@ -106,6 +106,11 @@ timing when that is known.
   Default `cite=False` is unchanged.
 
 ### Changed
+- Usage parsing only follows attributes that are actually defined, so
+  auto-vivifying test doubles no longer explode `_usage_from_result` into a
+  multi-minute (or hung) walk. CI test jobs time out at 5 minutes and rematch
+  once on failure or cancellation (timeout / runner eviction), not failure
+  only.
 - CLI `--cite` JSON/JSONL citations serialize via `Citation.as_dict()`
   (`{field, quote, page}` plus optional `bbox`).
 - `SchemaValidationError` messages list each failing field path and expected
