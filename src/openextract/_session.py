@@ -24,10 +24,9 @@ from ._agent import (
 from ._citations import prepare_cited_run, split_cited_output
 from ._config import (
     _resolve_max_input_bytes,
-    _url_fetch_timeout,
+    _resolve_url_timeout,
     _validate_cite_min_confidence,
     _validate_pages,
-    _validate_timeout,
 )
 from ._errors import _extraction_errors
 from ._media import _get_media, _get_media_async
@@ -144,11 +143,7 @@ class _ExtractorSession[T: BaseModel]:
         self._agent = configured_agent
         self._retry_policy = retry_policy
         self._max_input_bytes = _resolve_max_input_bytes(max_input_bytes)
-        self._url_timeout = (
-            _url_fetch_timeout()
-            if url_timeout is None
-            else _validate_timeout(url_timeout, name="url_timeout")
-        )
+        self._url_timeout = _resolve_url_timeout(url_timeout)
         self._on_progress = on_progress
         self._entered = False
         self._closed = False

@@ -378,6 +378,7 @@ class TestMainSuccess:
             pages=None,
             language=None,
             timeout=None,
+            url_timeout=None,
         )
 
     def test_repr_output(self, mocker, capsys):
@@ -1860,6 +1861,36 @@ class TestCite:
         assert main(["input.txt", *_BASE_ARGS, "--swarm", "2", "--timeout", "45"]) == 0
 
         assert plain.call_args.kwargs["timeout"] == 45.0
+        capsys.readouterr()
+
+    def test_url_timeout_flag_is_forwarded(self, mocker, capsys):
+        mock_extract = _patch_extract(mocker, return_value=_FixtureSchema(name="Ada", age=36))
+
+        assert main(["input.txt", *_BASE_ARGS, "--url-timeout", "7.5"]) == 0
+
+        assert mock_extract.call_args.kwargs["url_timeout"] == 7.5
+        capsys.readouterr()
+
+    def test_invalid_url_timeout_returns_1(self, capsys):
+        assert main(["input.txt", *_BASE_ARGS, "--url-timeout", "0"]) == 1
+        assert "url_timeout must be a finite positive number of seconds" in capsys.readouterr().err
+
+    def test_batch_url_timeout_is_forwarded(self, mocker, capsys):
+        ada = _rich_result(_FixtureSchema(name="Ada", age=36))
+        mock_stream = _patch_iter_extractions(mocker, events=[(0, ada), (1, ada)])
+
+        assert main(["a.pdf", "b.pdf", *_BASE_ARGS, "--url-timeout", "4"]) == 0
+
+        options = mock_stream.call_args.args[3]
+        assert options.url_timeout == 4.0
+        capsys.readouterr()
+
+    def test_swarm_url_timeout_is_forwarded(self, mocker, capsys):
+        plain, _ = _patch_swarm(mocker)
+
+        assert main(["input.txt", *_BASE_ARGS, "--swarm", "2", "--url-timeout", "9"]) == 0
+
+        assert plain.call_args.kwargs["url_timeout"] == 9.0
         capsys.readouterr()
 
     def test_fanning_agent_with_cite_uses_swarm(self, mocker, tmp_path, capsys):

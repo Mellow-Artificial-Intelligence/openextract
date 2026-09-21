@@ -125,6 +125,15 @@ def _validate_timeout(value: object, *, name: str) -> float:
     return seconds
 
 
+def _resolve_url_timeout(url_timeout: object) -> float:
+    """Resolve a URL-fetch timeout; ``None`` uses env/default, else validate."""
+    return (
+        _url_fetch_timeout()
+        if url_timeout is None
+        else _validate_timeout(url_timeout, name="url_timeout")
+    )
+
+
 def _validate_cite_min_confidence(value: object) -> float | None:
     """Return ``value`` when it is a finite number in ``[0, 1]``, or ``None``."""
     if value is None:

@@ -22,7 +22,7 @@ from ._citations import prepare_cited_run
 from ._config import (
     _DEFAULT_RETRY_MAX_BACKOFF,
     _resolve_max_input_bytes,
-    _url_fetch_timeout,
+    _resolve_url_timeout,
     _validate_cite_min_confidence,
     _validate_max_concurrency,
     _validate_pages,
@@ -78,6 +78,7 @@ class _BatchOptions:
     retry_max_backoff: float
     rich: bool
     cite: bool
+    url_timeout: float
     cite_min_confidence: float | None = None
     pages: tuple[int, ...] | None = None
     language: str | None = None
@@ -104,6 +105,7 @@ class _BatchOptions:
         language: str | None = None,
         model_settings: ModelSettings | None = None,
         timeout: float | None = None,
+        url_timeout: float | None = None,
         on_progress: OnProgress | None = None,
     ) -> _BatchOptions:
         """Validate and normalize the public batch arguments."""
@@ -121,6 +123,7 @@ class _BatchOptions:
             retry_max_backoff=retry_max_backoff,
             rich=rich,
             cite=cite,
+            url_timeout=_resolve_url_timeout(url_timeout),
             cite_min_confidence=_validate_cite_min_confidence(cite_min_confidence),
             pages=_validate_pages(pages),
             language=normalize_language(language),
@@ -213,7 +216,7 @@ async def _iter_extractions(
 
     async with httpx.AsyncClient(
         follow_redirects=False,
-        timeout=_url_fetch_timeout(),
+        timeout=options.url_timeout,
     ) as client:
 
         async def _run_item(item: ExtractionInputLike) -> object:
@@ -405,6 +408,7 @@ def extract_many(
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
+    url_timeout: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list[T]: ...
 
@@ -430,6 +434,7 @@ def extract_many(
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
+    url_timeout: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list[T | Exception]: ...
 
@@ -455,6 +460,7 @@ def extract_many(
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
+    url_timeout: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list[T | Exception]: ...
 
@@ -479,6 +485,7 @@ def extract_many(
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
+    url_timeout: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list:
     """Run :func:`extract` over many inputs concurrently from sync code.
@@ -521,6 +528,9 @@ def extract_many(
         timeout: Optional model request timeout in seconds, same contract as
             :func:`extract`. Invalid values raise ``ValueError`` before any
             model call.
+        url_timeout: Optional HTTP timeout in seconds for fetching ``http(s)``
+            URL inputs, same contract as :func:`extract`. Invalid values raise
+            ``ValueError`` before any fetch or model call.
         on_progress: Optional per-window callback, same contract as
             :func:`extract`. Concurrent items may interleave events.
 
@@ -532,7 +542,8 @@ def extract_many(
         ValueError: If ``max_concurrency`` is less than 1, ``max_retries`` is
             negative, a backoff value is negative or non-finite,
             ``cite_min_confidence`` is outside ``[0, 1]``, ``pages`` is
-            empty/invalid, ``language`` is empty, or ``timeout`` is not a
+            empty/invalid, ``language`` is empty, ``timeout`` is not a
+            finite positive number of seconds, or ``url_timeout`` is not a
             finite positive number of seconds.
         RuntimeError: If called from a running event loop. Use
             :func:`extract_many_async` in async code instead.
@@ -558,6 +569,7 @@ def extract_many(
             language=language,
             model_settings=model_settings,
             timeout=timeout,
+            url_timeout=url_timeout,
             on_progress=on_progress,
         ),
         name="extract_many",
@@ -585,6 +597,7 @@ async def extract_many_async(
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
+    url_timeout: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list[T]: ...
 
@@ -610,6 +623,7 @@ async def extract_many_async(
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
+    url_timeout: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list[T | Exception]: ...
 
@@ -635,6 +649,7 @@ async def extract_many_async(
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
+    url_timeout: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list[T | Exception]: ...
 
@@ -659,6 +674,7 @@ async def extract_many_async(
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
+    url_timeout: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list:
     """Async sibling of :func:`extract_many`."""
@@ -683,6 +699,7 @@ async def extract_many_async(
             language=language,
             model_settings=model_settings,
             timeout=timeout,
+            url_timeout=url_timeout,
             on_progress=on_progress,
         ),
     )
@@ -709,6 +726,7 @@ def iter_extract_many_async(
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
+    url_timeout: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> AsyncIterator[tuple[int, T]]: ...
 
@@ -734,6 +752,7 @@ def iter_extract_many_async(
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
+    url_timeout: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> AsyncIterator[tuple[int, T | Exception]]: ...
 
@@ -759,6 +778,7 @@ def iter_extract_many_async(
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
+    url_timeout: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> AsyncIterator[tuple[int, T | Exception]]: ...
 
@@ -783,6 +803,7 @@ def iter_extract_many_async(
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
+    url_timeout: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> AsyncIterator[tuple[int, T | Exception]]:
     """Stream ``(input_index, result)`` pairs in completion order.
@@ -822,6 +843,9 @@ def iter_extract_many_async(
                 cite_min_confidence=cite_min_confidence,
                 pages=pages,
                 language=language,
+                model_settings=model_settings,
+                timeout=timeout,
+                url_timeout=url_timeout,
                 on_progress=on_progress,
             ),
         ),
@@ -849,6 +873,7 @@ def extract_many_with_results(
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
+    url_timeout: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list[ExtractionResult[T]]: ...
 
@@ -874,6 +899,7 @@ def extract_many_with_results(
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
+    url_timeout: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list[ExtractionResult[T] | Exception]: ...
 
@@ -899,6 +925,7 @@ def extract_many_with_results(
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
+    url_timeout: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list[ExtractionResult[T] | Exception]: ...
 
@@ -923,6 +950,7 @@ def extract_many_with_results(
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
+    url_timeout: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list:
     """Run a batch and return per-item :class:`ExtractionResult` diagnostics.
@@ -959,6 +987,7 @@ def extract_many_with_results(
             language=language,
             model_settings=model_settings,
             timeout=timeout,
+            url_timeout=url_timeout,
             on_progress=on_progress,
         ),
         name="extract_many_with_results",
@@ -986,6 +1015,7 @@ async def extract_many_with_results_async(
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
+    url_timeout: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list[ExtractionResult[T]]: ...
 
@@ -1011,6 +1041,7 @@ async def extract_many_with_results_async(
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
+    url_timeout: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list[ExtractionResult[T] | Exception]: ...
 
@@ -1036,6 +1067,7 @@ async def extract_many_with_results_async(
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
+    url_timeout: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list[ExtractionResult[T] | Exception]: ...
 
@@ -1060,6 +1092,7 @@ async def extract_many_with_results_async(
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
+    url_timeout: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> list:
     """Async sibling of :func:`extract_many_with_results`."""
@@ -1084,6 +1117,7 @@ async def extract_many_with_results_async(
             language=language,
             model_settings=model_settings,
             timeout=timeout,
+            url_timeout=url_timeout,
             on_progress=on_progress,
         ),
     )
