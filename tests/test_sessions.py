@@ -14,7 +14,10 @@ from pydantic_ai.models.test import TestModel
 
 from openextract import (
     AsyncExtractor,
+    ExtractionInput,
+    ExtractionResult,
     Extractor,
+    ExtractProgress,
     ModelError,
     RetryPolicy,
     SchemaValidationError,
@@ -417,3 +420,88 @@ def test_async_session_rejects_a_different_event_loop():
     finally:
         first_loop.close()
         second_loop.close()
+
+
+def test_sync_extract_with_result_shape_and_usage_match():
+    model = TestModel(custom_output_args={"name": "Ada", "age": 36})
+    named = ExtractionInput(b"Ada Lovelace", media_type="text/plain", name="bio.txt")
+    with Extractor(Person, model) as extractor:
+        result = extractor.extract_with_result(named)
+        output, usage = extractor.extract_with_usage(named)
+
+    assert isinstance(result, ExtractionResult)
+    assert result.output == output == Person(name="Ada", age=36)
+    assert result.usage == usage
+    assert result.attempts == 1
+    assert result.duration >= 0
+    assert result.media_type == "text/plain"
+    assert result.source == "bio.txt"
+    assert result.warnings == ()
+    assert result.citations == ()
+
+
+def test_sync_extract_with_result_cite_and_pages(monkeypatch):
+    from tests.pdf_fixture import synthetic_pdf
+
+    monkeypatch.setattr("openextract._parse.DEFAULT_PARSE_WINDOW_CHARS", 40)
+    pdf = synthetic_pdf(pages=["AAAA " * 30, "Ada Lovelace " + "BBBB " * 30, "CCCC " * 30])
+    model = TestModel(
+        custom_output_args={
+            "output": {"name": "Ada", "age": 36},
+            "citations": [{"field": "name", "quote": "Ada Lovelace", "page": 1}],
+        }
+    )
+    events: list[ExtractProgress] = []
+    with Extractor(Person, model, cite=True, pages=(1,)) as extractor:
+        cited = extractor.extract_with_result(pdf, media_type="application/pdf")
+        override = extractor.extract_with_result(
+            pdf, media_type="application/pdf", pages=(2,), on_progress=events.append
+        )
+        _, usage = extractor.extract_with_usage(pdf, media_type="application/pdf", pages=(2,))
+
+    assert cited.output == Person(name="Ada", age=36)
+    assert cited.citations[0].field == "name"
+    assert cited.citations[0].quote == "Ada Lovelace"
+    assert [event.page for event in events] == [2]
+    assert override.usage == usage
+    assert override.citations[0].field == "name"
+
+
+async def test_async_extract_with_result_shape_cite_and_usage():
+    model = TestModel(
+        custom_output_args={
+            "output": {"name": "Grace", "age": 85},
+            "citations": [{"field": "name", "quote": "Grace", "page": 1}],
+        }
+    )
+    named = ExtractionInput(b"Grace Hopper", media_type="text/plain", name="note.txt")
+    async with AsyncExtractor(Person, model, cite=True) as extractor:
+        result = await extractor.extract_with_result(named)
+        output, usage = await extractor.extract_with_usage(named)
+
+    assert isinstance(result, ExtractionResult)
+    assert result.output == output == Person(name="Grace", age=85)
+    assert result.usage == usage
+    assert result.attempts == 1
+    assert result.duration >= 0
+    assert result.media_type == "text/plain"
+    assert result.source == "note.txt"
+    assert result.citations[0].field == "name"
+    assert result.citations[0].quote == "Grace"
+
+
+def test_sync_extract_with_result_counts_retries(mocker):
+    retryable = ModelError("temporary", retryable=True)
+    agent = FakeAgent([retryable, {"name": "Ada", "age": 36}])
+    mocker.patch("openextract._retry.time.sleep")
+
+    with Extractor(
+        Person,
+        agent=agent,
+        retry_policy=RetryPolicy(max_retries=1, backoff=0, max_backoff=0),
+    ) as extractor:
+        result = extractor.extract_with_result(b"x", media_type="text/plain")
+
+    assert result.output == Person(name="Ada", age=36)
+    assert result.attempts == 2
+    assert result.usage == Usage(input_tokens=1, output_tokens=2, total_tokens=3)

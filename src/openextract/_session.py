@@ -6,6 +6,7 @@ import asyncio
 import shutil
 import tempfile
 import threading
+import time
 from collections.abc import AsyncIterator, Callable, Iterator, Sequence
 from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
@@ -17,6 +18,7 @@ from pydantic import BaseModel
 from ._agent import (
     _build_agent,
     _build_run_inputs,
+    _model_identifier,
     _run_extraction_async,
     _session_model_settings,
     _usage_from_result,
@@ -29,7 +31,7 @@ from ._config import (
     _validate_pages,
 )
 from ._errors import _extraction_errors
-from ._media import _get_media, _get_media_async
+from ._media import _get_media, _get_media_async, _item_source_label
 from ._parse import ParsedDocument, maybe_parsed_inputs, parsed_window_inputs
 from ._retry import _run_with_retries_async, _run_with_retries_sync
 from ._styles import (
@@ -43,7 +45,18 @@ from ._styles import (
     style_run_inputs,
     uses_workspace,
 )
-from ._types import ExtractionInputLike, ExtractProgress, OnProgress, RetryPolicy, T, Usage
+from ._types import (
+    Citation,
+    ExtractionInputLike,
+    ExtractionResult,
+    ExtractProgress,
+    OnProgress,
+    RetryPolicy,
+    T,
+    Usage,
+    _extraction_result,
+    _resolve_item,
+)
 from ._windows import emit_progress, extract_windows_async, extract_windows_sync
 
 if TYPE_CHECKING:
@@ -51,6 +64,14 @@ if TYPE_CHECKING:
     from pydantic_ai.models import Model
     from pydantic_ai.models.instrumented import InstrumentationSettings
     from pydantic_ai.settings import ModelSettings
+
+
+def _call_provenance(
+    input_file: ExtractionInputLike, media_type: str | None
+) -> tuple[str | None, str | None]:
+    """Requested media type and sanitized source label for a session result."""
+    source, item_media_type, name = _resolve_item(input_file, media_type)
+    return item_media_type, _item_source_label(source, name)
 
 
 class _ExtractorSession[T: BaseModel]:
@@ -154,20 +175,101 @@ class _ExtractorSession[T: BaseModel]:
         with _extraction_errors():
             return self._schema.model_validate(output)
 
-    def _output_from_run(self, result: Any, parsed: ParsedDocument | None = None) -> T:
-        output, _citations = split_cited_output(
+    def _split_run(
+        self, result: Any, parsed: ParsedDocument | None = None
+    ) -> tuple[T, tuple[Citation, ...]]:
+        output, citations = split_cited_output(
             result.output,
             self._schema,
             cite=self._cite,
             parsed=parsed,
             cite_min_confidence=self._cite_min_confidence,
         )
-        return self._validate_output(result.output if not self._cite else output)
+        return self._validate_output(result.output if not self._cite else output), citations
+
+    def _output_from_run(self, result: Any, parsed: ParsedDocument | None = None) -> T:
+        output, _citations = self._split_run(result, parsed)
+        return output
 
     def _output_and_usage(
         self, result: Any, parsed: ParsedDocument | None = None
     ) -> tuple[T, Usage]:
         return self._output_from_run(result, parsed), _usage_from_result(result)
+
+    def _result_from_run(
+        self,
+        result: Any,
+        parsed: ParsedDocument | None = None,
+        *,
+        attempts: int,
+        started: float,
+        media_type: str | None,
+        source: str | None,
+        agent: object,
+    ) -> ExtractionResult[T]:
+        output, citations = self._split_run(result, parsed)
+        return self._session_result(
+            output,
+            _usage_from_result(result),
+            citations,
+            attempts=attempts,
+            started=started,
+            media_type=media_type,
+            source=source,
+            agent=agent,
+        )
+
+    def _session_result(
+        self,
+        output: T,
+        usage: Usage,
+        citations: tuple[Citation, ...],
+        *,
+        attempts: int,
+        started: float,
+        media_type: str | None,
+        source: str | None,
+        agent: object,
+    ) -> ExtractionResult[T]:
+        return _extraction_result(
+            output,
+            usage,
+            attempts=attempts,
+            started=started,
+            model=_model_identifier(self._model, agent),
+            media_type=media_type,
+            source=source,
+            citations=citations,
+        )
+
+    def _finish_projected(
+        self,
+        output: T,
+        usage: Usage,
+        citations: tuple[Citation, ...],
+        *,
+        with_usage: bool,
+        with_result: bool,
+        attempts: int,
+        started: float,
+        media_type: str | None,
+        source: str | None,
+        agent: object,
+    ) -> T | tuple[T, Usage] | ExtractionResult[T]:
+        if with_result:
+            return self._session_result(
+                output,
+                usage,
+                citations,
+                attempts=attempts,
+                started=started,
+                media_type=media_type,
+                source=source,
+                agent=agent,
+            )
+        if with_usage:
+            return output, usage
+        return output
 
     # -- lifecycle bookkeeping shared by the sync and async sessions ---------
 
@@ -377,12 +479,18 @@ class Extractor(_ExtractorSession[T]):
         project: Callable[..., R],
         *,
         with_usage: bool = False,
+        with_result: bool = False,
         on_progress: OnProgress | None = None,
         pages: Sequence[int] | None = None,
     ) -> R:
         """Run one retrying extraction and map the raw result through ``project``."""
         callback = self._on_progress if on_progress is None else on_progress
         selected = self._pages if pages is None else _validate_pages(pages)
+        started = time.perf_counter() if with_result else 0.0
+        attempts = 0
+        item_media_type, source_label = (
+            _call_provenance(input_file, media_type) if with_result else (media_type, None)
+        )
         with self._prepare_session_extraction(input_file, media_type, selected) as (
             agent,
             inputs,
@@ -391,18 +499,42 @@ class Extractor(_ExtractorSession[T]):
             windows = parsed_window_inputs(parsed, inputs)
             if len(windows) == 1:
                 emit_progress(callback, 1, 1, parsed)
+
+                def _once() -> R:
+                    nonlocal attempts
+                    if with_result:
+                        attempts += 1
+                    result = self._run_agent(agent, windows[0])
+                    if with_result:
+                        return cast(
+                            R,
+                            self._result_from_run(
+                                result,
+                                parsed,
+                                attempts=attempts,
+                                started=started,
+                                media_type=item_media_type,
+                                source=source_label,
+                                agent=agent,
+                            ),
+                        )
+                    return project(result, parsed)
+
                 return _run_with_retries_sync(
-                    lambda: project(self._run_agent(agent, windows[0]), parsed),
+                    _once,
                     max_retries=self._retry_policy.max_retries,
                     retry_backoff=self._retry_policy.backoff,
                     retry_max_backoff=self._retry_policy.max_backoff,
                 )
 
             def _run(window: list) -> tuple[object, Usage]:
+                nonlocal attempts
+                if with_result:
+                    attempts += 1
                 result = self._run_agent(agent, window)
                 return result.output, _usage_from_result(result)
 
-            output, usage, _citations = extract_windows_sync(
+            output, usage, citations = extract_windows_sync(
                 _run,
                 inputs,
                 parsed,
@@ -414,10 +546,21 @@ class Extractor(_ExtractorSession[T]):
                 retry_max_backoff=self._retry_policy.max_backoff,
                 on_progress=callback,
             )
-            validated = self._validate_output(output)
-            if with_usage:
-                return cast(R, (validated, usage))
-            return cast(R, validated)
+            return cast(
+                R,
+                self._finish_projected(
+                    self._validate_output(output),
+                    usage,
+                    citations,
+                    with_usage=with_usage,
+                    with_result=with_result,
+                    attempts=attempts,
+                    started=started,
+                    media_type=item_media_type,
+                    source=source_label,
+                    agent=agent,
+                ),
+            )
 
     def extract(
         self,
@@ -446,6 +589,27 @@ class Extractor(_ExtractorSession[T]):
             media_type,
             self._output_and_usage,
             with_usage=True,
+            on_progress=on_progress,
+            pages=pages,
+        )
+
+    def extract_with_result(
+        self,
+        input_file: ExtractionInputLike,
+        *,
+        media_type: str | None = None,
+        on_progress: Callable[[ExtractProgress], None] | None = None,
+        pages: Sequence[int] | None = None,
+    ) -> ExtractionResult[T]:
+        """Extract one input and return an :class:`ExtractionResult`.
+
+        Citations follow the session ``cite`` / ``cite_min_confidence`` settings.
+        """
+        return self._extract_projected(
+            input_file,
+            media_type,
+            self._output_from_run,
+            with_result=True,
             on_progress=on_progress,
             pages=pages,
         )
@@ -539,12 +703,18 @@ class AsyncExtractor(_ExtractorSession[T]):
         project: Callable[..., R],
         *,
         with_usage: bool = False,
+        with_result: bool = False,
         on_progress: OnProgress | None = None,
         pages: Sequence[int] | None = None,
     ) -> R:
         """Async counterpart to :meth:`Extractor._extract_projected`."""
         callback = self._on_progress if on_progress is None else on_progress
         selected = self._pages if pages is None else _validate_pages(pages)
+        started = time.perf_counter() if with_result else 0.0
+        attempts = 0
+        item_media_type, source_label = (
+            _call_provenance(input_file, media_type) if with_result else (media_type, None)
+        )
         async with self._prepare_session_extraction(input_file, media_type, selected) as (
             agent,
             inputs,
@@ -555,7 +725,24 @@ class AsyncExtractor(_ExtractorSession[T]):
                 emit_progress(callback, 1, 1, parsed)
 
                 async def _once() -> R:
-                    return project(await _run_extraction_async(agent, windows[0]), parsed)
+                    nonlocal attempts
+                    if with_result:
+                        attempts += 1
+                    result = await _run_extraction_async(agent, windows[0])
+                    if with_result:
+                        return cast(
+                            R,
+                            self._result_from_run(
+                                result,
+                                parsed,
+                                attempts=attempts,
+                                started=started,
+                                media_type=item_media_type,
+                                source=source_label,
+                                agent=agent,
+                            ),
+                        )
+                    return project(result, parsed)
 
                 return await _run_with_retries_async(
                     _once,
@@ -565,10 +752,13 @@ class AsyncExtractor(_ExtractorSession[T]):
                 )
 
             async def _run(window: list) -> tuple[object, Usage]:
+                nonlocal attempts
+                if with_result:
+                    attempts += 1
                 result = await _run_extraction_async(agent, window)
                 return result.output, _usage_from_result(result)
 
-            output, usage, _citations = await extract_windows_async(
+            output, usage, citations = await extract_windows_async(
                 _run,
                 inputs,
                 parsed,
@@ -580,10 +770,21 @@ class AsyncExtractor(_ExtractorSession[T]):
                 retry_max_backoff=self._retry_policy.max_backoff,
                 on_progress=callback,
             )
-            validated = self._validate_output(output)
-            if with_usage:
-                return cast(R, (validated, usage))
-            return cast(R, validated)
+            return cast(
+                R,
+                self._finish_projected(
+                    self._validate_output(output),
+                    usage,
+                    citations,
+                    with_usage=with_usage,
+                    with_result=with_result,
+                    attempts=attempts,
+                    started=started,
+                    media_type=item_media_type,
+                    source=source_label,
+                    agent=agent,
+                ),
+            )
 
     async def extract(
         self,
@@ -612,6 +813,27 @@ class AsyncExtractor(_ExtractorSession[T]):
             media_type,
             self._output_and_usage,
             with_usage=True,
+            on_progress=on_progress,
+            pages=pages,
+        )
+
+    async def extract_with_result(
+        self,
+        input_file: ExtractionInputLike,
+        *,
+        media_type: str | None = None,
+        on_progress: Callable[[ExtractProgress], None] | None = None,
+        pages: Sequence[int] | None = None,
+    ) -> ExtractionResult[T]:
+        """Extract one input and return an :class:`ExtractionResult`.
+
+        Citations follow the session ``cite`` / ``cite_min_confidence`` settings.
+        """
+        return await self._extract_projected(
+            input_file,
+            media_type,
+            self._output_from_run,
+            with_result=True,
             on_progress=on_progress,
             pages=pages,
         )

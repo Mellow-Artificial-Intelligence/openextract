@@ -153,7 +153,10 @@ with Extractor(
 ) as extractor:
     q3 = extractor.extract("./invoices/q3.pdf")
     q4, usage = extractor.extract_with_usage("./invoices/q4.pdf")
+    report = extractor.extract_with_result("./invoices/annual.pdf")
 ```
+
+`extract_with_result()` returns `ExtractionResult` (output, usage, attempts, duration, model/media metadata, sanitized source, and citations when the session was built with `cite=True`). `extract()` / `extract_with_usage()` still return the schema instance (and usage). Use `report.output` / `report.citations` like oneshot `extract_with_result`.
 
 `Extractor` is thread-bound and not thread-safe. `AsyncExtractor` is bound to one event loop; concurrent awaits on that loop are fine. Pass a configured `pydantic_ai.models.Model` as `model=`, or a fully configured `Agent` as `agent=` (mutually exclusive with `model=`; not combinable with `search`/`code`/`table`/`form`).
 
@@ -180,7 +183,8 @@ print(usage.input_tokens, usage.output_tokens, usage.total_tokens)
 `cite=True` asks the model for per-field source evidence (`field`, a verbatim
 `quote`, and a 1-indexed `page`). `extract()` / `extract_with_usage()` still
 return the schema instance (and usage). Read citations from
-`ExtractionResult.citations` on `extract_many_with_results*`, or from
+`ExtractionResult.citations` on oneshot or session `extract_with_result()`,
+`extract_many_with_results*`, or from
 `SwarmResult.citations` (and each agent's `ExtractionResult`) on
 `extract_swarm_with_results*`.
 
