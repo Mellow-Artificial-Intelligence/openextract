@@ -8,6 +8,8 @@ timing when that is known.
 
 ## [Unreleased]
 
+## [0.15.1] - 2026-09-21
+
 ### Added
 - Optional `max_pages` on extract APIs, sessions, batch, and swarm
   (`int | None = None`). Default `None` keeps every page (subject to
@@ -525,7 +527,8 @@ timing when that is known.
 ## [0.1.1] - 2025-09-10
 - Merge pull request #12 from Mellow-Artificial-Intelligence/new-release.
 
-[Unreleased]: https://github.com/Mellow-Artificial-Intelligence/openextract/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/Mellow-Artificial-Intelligence/openextract/compare/v0.15.1...HEAD
+[0.15.1]: https://github.com/Mellow-Artificial-Intelligence/openextract/compare/v0.15.0...v0.15.1
 [0.15.0]: https://github.com/Mellow-Artificial-Intelligence/openextract/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/Mellow-Artificial-Intelligence/openextract/compare/v0.13.1...v0.14.0
 [0.13.1]: https://github.com/Mellow-Artificial-Intelligence/openextract/compare/v0.13.0...v0.13.1
