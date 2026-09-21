@@ -19,7 +19,12 @@ from pydantic import BaseModel
 
 from ._agents import DefinedAgent, RemoteAgent, is_agent, load_agent, load_agents
 from ._batch import _BatchOptions, _iter_extractions, extract_many_with_results
-from ._config import _validate_max_concurrency, parse_page_range
+from ._config import (
+    _apply_max_pages,
+    _validate_max_concurrency,
+    _validate_max_pages,
+    parse_page_range,
+)
 from ._extract import _plan_agent, extract, extract_with_usage
 from ._reduce import SwarmReduce
 from ._schema_json import _probe_json_schema_file, schema_from_json
@@ -562,6 +567,7 @@ def _run_batch(
         cite=args.cite,
         cite_min_confidence=args.cite_min_confidence,
         pages=args.pages,
+        max_pages=args.max_pages,
         language=args.language,
         timeout=args.timeout,
         url_timeout=args.url_timeout,
@@ -612,6 +618,7 @@ def _run_single(
         "cite": args.cite,
         "cite_min_confidence": args.cite_min_confidence,
         "pages": args.pages,
+        "max_pages": args.max_pages,
         "language": args.language,
         "timeout": args.timeout,
         "url_timeout": args.url_timeout,
@@ -671,6 +678,7 @@ def _run_swarm(
         "cite": args.cite,
         "cite_min_confidence": args.cite_min_confidence,
         "pages": args.pages,
+        "max_pages": args.max_pages,
         "language": args.language,
         "timeout": args.timeout,
         "url_timeout": args.url_timeout,
@@ -845,6 +853,17 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--max-pages",
+        type=int,
+        default=None,
+        metavar="N",
+        help=(
+            "Only consider PDF pages with number <= N (positive int). Applied "
+            "after --pages when both are set. Same max_pages as the library. "
+            "No effect on non-paginated inputs."
+        ),
+    )
+    parser.add_argument(
         "--continue-on-error",
         action="store_true",
         help=(
@@ -956,6 +975,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         if not args.model and not args.models and not agents:
             raise ValueError("--model, --models, or --agent/--agents is required")
         args.pages = parse_page_range(args.pages) if args.pages is not None else None
+        args.max_pages = _validate_max_pages(args.max_pages)
+        _apply_max_pages(args.pages, args.max_pages)
     except (ImportError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

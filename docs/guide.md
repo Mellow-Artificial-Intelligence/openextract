@@ -138,6 +138,10 @@ PDFs, Office files, images, audio, and video stay on `direct`, `table`, or `form
 
 Pass `language="es"` (a BCP-47-ish tag or a plain name like `en` / `fr`) when the source is not in the model's default language. Extracted field values keep that language and script unless the schema or `instructions` ask to translate. Default `None` is unchanged. Empty values raise `ValueError`. CLI: `--language es`.
 
+## PDF pages
+
+`pages=(1, 3)` keeps only those 1-based PDF pages for local parse-then-window and citation grounding. `max_pages=N` is a cost-control cap: only page numbers `<= N` are considered (after `pages=` if set). Default `None` is unchanged. Invalid values raise `ValueError`. Non-paginated inputs accept `max_pages` with no effect. CLI: `--pages RANGE`, `--max-pages N`.
+
 ## Sessions
 
 For repeated calls with the same schema and model, use `Extractor` / `AsyncExtractor`. One agent and HTTP client are built on enter and closed on exit.

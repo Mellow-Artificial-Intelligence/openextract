@@ -23,9 +23,9 @@ from ._config import (
     _DEFAULT_RETRY_MAX_BACKOFF,
     _resolve_max_input_bytes,
     _resolve_url_timeout,
+    _select_pages,
     _validate_cite_min_confidence,
     _validate_max_concurrency,
-    _validate_pages,
     _validate_retry_options,
 )
 from ._errors import _extraction_errors
@@ -81,6 +81,7 @@ class _BatchOptions:
     url_timeout: float
     cite_min_confidence: float | None = None
     pages: tuple[int, ...] | None = None
+    max_pages: int | None = None
     language: str | None = None
     model_settings: ModelSettings | None = None
     on_progress: OnProgress | None = None
@@ -102,6 +103,7 @@ class _BatchOptions:
         cite: bool = False,
         cite_min_confidence: float | None = None,
         pages: Sequence[int] | None = None,
+        max_pages: int | None = None,
         language: str | None = None,
         model_settings: ModelSettings | None = None,
         timeout: float | None = None,
@@ -111,6 +113,7 @@ class _BatchOptions:
         """Validate and normalize the public batch arguments."""
         _validate_retry_options(max_retries, retry_backoff, retry_max_backoff)
         _validate_max_concurrency(max_concurrency)
+        selected, cap = _select_pages(pages, max_pages)
         return cls(
             instructions=instructions,
             style=normalize_style(style),
@@ -125,7 +128,8 @@ class _BatchOptions:
             cite=cite,
             url_timeout=_resolve_url_timeout(url_timeout),
             cite_min_confidence=_validate_cite_min_confidence(cite_min_confidence),
-            pages=_validate_pages(pages),
+            pages=selected,
+            max_pages=cap,
             language=normalize_language(language),
             model_settings=_session_model_settings(model_settings, timeout),
             on_progress=on_progress,
@@ -234,8 +238,11 @@ async def _iter_extractions(
                 parsed_inputs, parsed = maybe_parsed_inputs(
                     file_bytes,
                     file_type,
-                    parse=should_parse(options.cite, options.style, options.pages),
+                    parse=should_parse(
+                        options.cite, options.style, options.pages, options.max_pages
+                    ),
                     pages=options.pages,
+                    max_pages=options.max_pages,
                 )
                 with prepared_style_run(options.style, file_bytes, file_type) as (
                     capabilities,
@@ -405,6 +412,7 @@ def extract_many(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    max_pages: int | None = None,
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
@@ -431,6 +439,7 @@ def extract_many(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    max_pages: int | None = None,
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
@@ -457,6 +466,7 @@ def extract_many(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    max_pages: int | None = None,
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
@@ -482,6 +492,7 @@ def extract_many(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    max_pages: int | None = None,
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
@@ -521,6 +532,8 @@ def extract_many(
             every citation. Invalid values raise ``ValueError`` at call time.
         pages: Optional 1-based PDF page numbers, same contract as
             :func:`extract`.
+        max_pages: Optional positive page-number cap, same contract as
+            :func:`extract`.
         language: Optional document language hint, same contract as
             :func:`extract`.
         model_settings: Optional Pydantic AI ``ModelSettings``, same contract
@@ -542,7 +555,8 @@ def extract_many(
         ValueError: If ``max_concurrency`` is less than 1, ``max_retries`` is
             negative, a backoff value is negative or non-finite,
             ``cite_min_confidence`` is outside ``[0, 1]``, ``pages`` is
-            empty/invalid, ``language`` is empty, ``timeout`` is not a
+            empty/invalid, ``max_pages`` is invalid or filters out every
+            requested page, ``language`` is empty, ``timeout`` is not a
             finite positive number of seconds, or ``url_timeout`` is not a
             finite positive number of seconds.
         RuntimeError: If called from a running event loop. Use
@@ -566,6 +580,7 @@ def extract_many(
             cite=cite,
             cite_min_confidence=cite_min_confidence,
             pages=pages,
+            max_pages=max_pages,
             language=language,
             model_settings=model_settings,
             timeout=timeout,
@@ -594,6 +609,7 @@ async def extract_many_async(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    max_pages: int | None = None,
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
@@ -620,6 +636,7 @@ async def extract_many_async(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    max_pages: int | None = None,
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
@@ -646,6 +663,7 @@ async def extract_many_async(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    max_pages: int | None = None,
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
@@ -671,6 +689,7 @@ async def extract_many_async(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    max_pages: int | None = None,
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
@@ -696,6 +715,7 @@ async def extract_many_async(
             cite=cite,
             cite_min_confidence=cite_min_confidence,
             pages=pages,
+            max_pages=max_pages,
             language=language,
             model_settings=model_settings,
             timeout=timeout,
@@ -723,6 +743,7 @@ def iter_extract_many_async(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    max_pages: int | None = None,
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
@@ -749,6 +770,7 @@ def iter_extract_many_async(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    max_pages: int | None = None,
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
@@ -775,6 +797,7 @@ def iter_extract_many_async(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    max_pages: int | None = None,
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
@@ -800,6 +823,7 @@ def iter_extract_many_async(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    max_pages: int | None = None,
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
@@ -842,6 +866,7 @@ def iter_extract_many_async(
                 cite=cite,
                 cite_min_confidence=cite_min_confidence,
                 pages=pages,
+                max_pages=max_pages,
                 language=language,
                 model_settings=model_settings,
                 timeout=timeout,
@@ -870,6 +895,7 @@ def extract_many_with_results(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    max_pages: int | None = None,
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
@@ -896,6 +922,7 @@ def extract_many_with_results(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    max_pages: int | None = None,
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
@@ -922,6 +949,7 @@ def extract_many_with_results(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    max_pages: int | None = None,
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
@@ -947,6 +975,7 @@ def extract_many_with_results(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    max_pages: int | None = None,
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
@@ -984,6 +1013,7 @@ def extract_many_with_results(
             cite=cite,
             cite_min_confidence=cite_min_confidence,
             pages=pages,
+            max_pages=max_pages,
             language=language,
             model_settings=model_settings,
             timeout=timeout,
@@ -1012,6 +1042,7 @@ async def extract_many_with_results_async(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    max_pages: int | None = None,
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
@@ -1038,6 +1069,7 @@ async def extract_many_with_results_async(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    max_pages: int | None = None,
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
@@ -1064,6 +1096,7 @@ async def extract_many_with_results_async(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    max_pages: int | None = None,
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
@@ -1089,6 +1122,7 @@ async def extract_many_with_results_async(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    max_pages: int | None = None,
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
@@ -1114,6 +1148,7 @@ async def extract_many_with_results_async(
             cite=cite,
             cite_min_confidence=cite_min_confidence,
             pages=pages,
+            max_pages=max_pages,
             language=language,
             model_settings=model_settings,
             timeout=timeout,

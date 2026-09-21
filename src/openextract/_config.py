@@ -168,6 +168,43 @@ def _validate_pages(value: object) -> tuple[int, ...] | None:
     return tuple(pages)
 
 
+def _validate_max_pages(value: object) -> int | None:
+    """Return a positive page-number cap, or ``None`` for no cap.
+
+    Rejects ``bool``, non-ints, and values ``<= 0``.
+    """
+    if value is None:
+        return None
+    limit = _positive_int(value)
+    if limit is None:
+        raise ValueError("max_pages must be a positive integer.")
+    return limit
+
+
+def _apply_max_pages(
+    pages: tuple[int, ...] | None, max_pages: int | None
+) -> tuple[int, ...] | None:
+    """Keep page numbers ``<= max_pages`` after any ``pages`` allowlist.
+
+    ``None`` leaves ``pages`` unchanged. When ``pages`` is ``None``, the cap is
+    applied during parse as pages ``1..N`` and this returns ``None``. When
+    ``pages`` is set, first-seen order is preserved; an empty remainder raises
+    the same ``ValueError`` as an empty ``pages`` sequence.
+    """
+    if max_pages is None or pages is None:
+        return pages
+    capped = tuple(page for page in pages if page <= max_pages)
+    if not capped:
+        raise ValueError("pages must include at least one 1-based page number.")
+    return capped
+
+
+def _select_pages(pages: object, max_pages: object) -> tuple[tuple[int, ...] | None, int | None]:
+    """Validate ``pages`` / ``max_pages`` and apply the cap to the allowlist."""
+    cap = _validate_max_pages(max_pages)
+    return _apply_max_pages(_validate_pages(pages), cap), cap
+
+
 def parse_page_range(spec: str) -> tuple[int, ...]:
     """Parse compact 1-based page ranges such as ``1-3,5,8``.
 

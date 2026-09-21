@@ -100,6 +100,7 @@ class TestStyleHelpers:
         assert not should_parse(False, ExtractionStyle.DIRECT)
         assert should_parse(True, ExtractionStyle.DIRECT)
         assert should_parse(False, ExtractionStyle.DIRECT, pages=(1,))
+        assert should_parse(False, ExtractionStyle.DIRECT, max_pages=2)
         assert with_table_instructions(None) == TABLE_INSTRUCTIONS
         assert with_table_instructions("  ").strip() == TABLE_INSTRUCTIONS
         assert with_table_instructions("rows only").startswith(TABLE_INSTRUCTIONS)

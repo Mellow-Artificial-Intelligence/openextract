@@ -25,9 +25,9 @@ from ._config import (
     _DEFAULT_RETRY_MAX_BACKOFF,
     _resolve_max_input_bytes,
     _resolve_url_timeout,
+    _select_pages,
     _validate_cite_min_confidence,
     _validate_max_concurrency,
-    _validate_pages,
     _validate_retry_options,
     _validate_swarm_size,
 )
@@ -167,6 +167,7 @@ async def _run_member(
     cite: bool,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    max_pages: int | None = None,
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     on_progress: OnProgress | None = None,
@@ -186,8 +187,9 @@ async def _run_member(
     parsed_inputs, parsed = maybe_parsed_inputs(
         file_bytes,
         file_type,
-        parse=should_parse(cite, member_style, pages),
+        parse=should_parse(cite, member_style, pages, max_pages),
         pages=pages,
+        max_pages=max_pages,
     )
     if isinstance(member.model, RemoteAgent):
         emit_progress(on_progress, 1, 1, parsed)
@@ -284,6 +286,7 @@ async def _run_swarm(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    max_pages: int | None = None,
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
@@ -296,7 +299,7 @@ async def _run_swarm(
     resolved_style = normalize_style(style)
     _validate_retry_options(max_retries, retry_backoff, retry_max_backoff)
     cite_min_confidence = _validate_cite_min_confidence(cite_min_confidence)
-    pages = _validate_pages(pages)
+    pages, max_pages = _select_pages(pages, max_pages)
     language = normalize_language(language)
     run_settings = _session_model_settings(model_settings, timeout)
     resolved_url_timeout = _resolve_url_timeout(url_timeout)
@@ -349,6 +352,7 @@ async def _run_swarm(
                     cite=cite,
                     cite_min_confidence=cite_min_confidence,
                     pages=pages,
+                    max_pages=max_pages,
                     language=language,
                     model_settings=run_settings,
                     on_progress=on_progress,
@@ -401,6 +405,7 @@ def extract_swarm(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    max_pages: int | None = None,
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
@@ -446,6 +451,8 @@ def extract_swarm(
             every citation. Invalid values raise ``ValueError`` at call time.
         pages: Optional 1-based PDF page numbers, same contract as
             :func:`extract`.
+        max_pages: Optional positive page-number cap, same contract as
+            :func:`extract`.
         language: Optional document language hint, same contract as
             :func:`extract`. Applied to every agent.
         model_settings: Optional Pydantic AI ``ModelSettings``, same contract
@@ -466,7 +473,8 @@ def extract_swarm(
         ValueError: If ``agents`` is empty, ``size`` is out of range or
             disagrees with the agent list, a retry/concurrency option is
             invalid, ``cite_min_confidence`` is outside ``[0, 1]``,
-            ``pages`` is empty/invalid, ``language`` is empty, ``timeout``
+            ``pages`` is empty/invalid, ``max_pages`` is invalid or filters
+            out every requested page, ``language`` is empty, ``timeout``
             is not a finite positive number of seconds, or ``url_timeout``
             is not a finite positive number of seconds. Raised
             before any model call.
@@ -496,6 +504,7 @@ def extract_swarm(
             cite=cite,
             cite_min_confidence=cite_min_confidence,
             pages=pages,
+            max_pages=max_pages,
             language=language,
             model_settings=model_settings,
             timeout=timeout,
@@ -523,6 +532,7 @@ async def extract_swarm_async(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    max_pages: int | None = None,
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
@@ -549,6 +559,7 @@ async def extract_swarm_async(
         cite=cite,
         cite_min_confidence=cite_min_confidence,
         pages=pages,
+        max_pages=max_pages,
         language=language,
         model_settings=model_settings,
         timeout=timeout,
@@ -578,6 +589,7 @@ def extract_swarm_with_results(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    max_pages: int | None = None,
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
@@ -616,6 +628,7 @@ def extract_swarm_with_results(
             cite=cite,
             cite_min_confidence=cite_min_confidence,
             pages=pages,
+            max_pages=max_pages,
             language=language,
             model_settings=model_settings,
             timeout=timeout,
@@ -645,6 +658,7 @@ async def extract_swarm_with_results_async(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    max_pages: int | None = None,
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
@@ -671,6 +685,7 @@ async def extract_swarm_with_results_async(
         cite=cite,
         cite_min_confidence=cite_min_confidence,
         pages=pages,
+        max_pages=max_pages,
         language=language,
         model_settings=model_settings,
         timeout=timeout,

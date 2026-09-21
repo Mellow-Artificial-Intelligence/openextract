@@ -25,9 +25,11 @@ from ._agent import (
 )
 from ._citations import prepare_cited_run, split_cited_output
 from ._config import (
+    _apply_max_pages,
     _resolve_max_input_bytes,
     _resolve_url_timeout,
     _validate_cite_min_confidence,
+    _validate_max_pages,
     _validate_pages,
 )
 from ._errors import _extraction_errors
@@ -100,6 +102,7 @@ class _ExtractorSession[T: BaseModel]:
         cite: bool = False,
         cite_min_confidence: float | None = None,
         pages: Sequence[int] | None = None,
+        max_pages: int | None = None,
         language: str | None = None,
         on_progress: OnProgress | None = None,
     ) -> None:
@@ -154,6 +157,8 @@ class _ExtractorSession[T: BaseModel]:
         self._cite = cite
         self._cite_min_confidence = _validate_cite_min_confidence(cite_min_confidence)
         self._pages = _validate_pages(pages)
+        self._max_pages = _validate_max_pages(max_pages)
+        _apply_max_pages(self._pages, self._max_pages)
         self._run_schema = run_schema
         self._run_instructions = run_instructions
         self._model = model
@@ -170,6 +175,14 @@ class _ExtractorSession[T: BaseModel]:
         self._closed = False
         self._style_workspace: tempfile.TemporaryDirectory[str] | None = None
         self._style_run_index = 0
+
+    def _page_filter(
+        self, pages: Sequence[int] | None, max_pages: int | None
+    ) -> tuple[tuple[int, ...] | None, int | None]:
+        """Resolve constructor defaults vs per-call ``pages`` / ``max_pages``."""
+        selected = self._pages if pages is None else _validate_pages(pages)
+        cap = self._max_pages if max_pages is None else _validate_max_pages(max_pages)
+        return _apply_max_pages(selected, cap), cap
 
     def _validate_output(self, output: object) -> T:
         with _extraction_errors():
@@ -349,15 +362,20 @@ class _ExtractorSession[T: BaseModel]:
 
     @contextmanager
     def _session_agent_inputs(
-        self, file_bytes: bytes, file_type: str, pages: Sequence[int] | None = None
+        self,
+        file_bytes: bytes,
+        file_type: str,
+        pages: Sequence[int] | None = None,
+        max_pages: int | None = None,
     ) -> Iterator[tuple[PydanticAgent, list, ParsedDocument | None]]:
         """Pair the session agent with per-call run inputs for one extraction."""
         assert self._agent is not None
         parsed_inputs, parsed = maybe_parsed_inputs(
             file_bytes,
             file_type,
-            parse=should_parse(self._cite, self._style, pages),
+            parse=should_parse(self._cite, self._style, pages, max_pages),
             pages=pages,
+            max_pages=max_pages,
         )
         if not uses_workspace(self._style):
             inputs = (
@@ -459,6 +477,7 @@ class Extractor(_ExtractorSession[T]):
         input_file: ExtractionInputLike,
         media_type: str | None,
         pages: Sequence[int] | None = None,
+        max_pages: int | None = None,
     ) -> Iterator[tuple[PydanticAgent, list, ParsedDocument | None]]:
         """Resolve media and yield ``(agent, inputs, parsed)`` for one session call."""
         client = self._ensure_sync_open()
@@ -469,7 +488,7 @@ class Extractor(_ExtractorSession[T]):
                 max_input_bytes=self._max_input_bytes,
                 client=client,
             )
-        with self._session_agent_inputs(file_bytes, file_type, pages) as prepared:
+        with self._session_agent_inputs(file_bytes, file_type, pages, max_pages) as prepared:
             yield prepared
 
     def _extract_projected[R](
@@ -482,16 +501,17 @@ class Extractor(_ExtractorSession[T]):
         with_result: bool = False,
         on_progress: OnProgress | None = None,
         pages: Sequence[int] | None = None,
+        max_pages: int | None = None,
     ) -> R:
         """Run one retrying extraction and map the raw result through ``project``."""
         callback = self._on_progress if on_progress is None else on_progress
-        selected = self._pages if pages is None else _validate_pages(pages)
+        selected, cap = self._page_filter(pages, max_pages)
         started = time.perf_counter() if with_result else 0.0
         attempts = 0
         item_media_type, source_label = (
             _call_provenance(input_file, media_type) if with_result else (media_type, None)
         )
-        with self._prepare_session_extraction(input_file, media_type, selected) as (
+        with self._prepare_session_extraction(input_file, media_type, selected, cap) as (
             agent,
             inputs,
             parsed,
@@ -569,10 +589,16 @@ class Extractor(_ExtractorSession[T]):
         media_type: str | None = None,
         on_progress: Callable[[ExtractProgress], None] | None = None,
         pages: Sequence[int] | None = None,
+        max_pages: int | None = None,
     ) -> T:
         """Extract one input using the session's reusable agent and clients."""
         return self._extract_projected(
-            input_file, media_type, self._output_from_run, on_progress=on_progress, pages=pages
+            input_file,
+            media_type,
+            self._output_from_run,
+            on_progress=on_progress,
+            pages=pages,
+            max_pages=max_pages,
         )
 
     def extract_with_usage(
@@ -582,6 +608,7 @@ class Extractor(_ExtractorSession[T]):
         media_type: str | None = None,
         on_progress: Callable[[ExtractProgress], None] | None = None,
         pages: Sequence[int] | None = None,
+        max_pages: int | None = None,
     ) -> tuple[T, Usage]:
         """Extract one input and return its successful-call token usage."""
         return self._extract_projected(
@@ -591,6 +618,7 @@ class Extractor(_ExtractorSession[T]):
             with_usage=True,
             on_progress=on_progress,
             pages=pages,
+            max_pages=max_pages,
         )
 
     def extract_with_result(
@@ -600,6 +628,7 @@ class Extractor(_ExtractorSession[T]):
         media_type: str | None = None,
         on_progress: Callable[[ExtractProgress], None] | None = None,
         pages: Sequence[int] | None = None,
+        max_pages: int | None = None,
     ) -> ExtractionResult[T]:
         """Extract one input and return an :class:`ExtractionResult`.
 
@@ -614,6 +643,7 @@ class Extractor(_ExtractorSession[T]):
                 with_result=True,
                 on_progress=on_progress,
                 pages=pages,
+                max_pages=max_pages,
             ),
         )
 
@@ -686,6 +716,7 @@ class AsyncExtractor(_ExtractorSession[T]):
         input_file: ExtractionInputLike,
         media_type: str | None,
         pages: Sequence[int] | None = None,
+        max_pages: int | None = None,
     ) -> AsyncIterator[tuple[PydanticAgent, list, ParsedDocument | None]]:
         """Resolve media and yield ``(agent, inputs, parsed)`` for one session call."""
         client = self._ensure_async_open()
@@ -696,7 +727,7 @@ class AsyncExtractor(_ExtractorSession[T]):
                 media_type=media_type,
                 max_input_bytes=self._max_input_bytes,
             )
-        with self._session_agent_inputs(file_bytes, file_type, pages) as prepared:
+        with self._session_agent_inputs(file_bytes, file_type, pages, max_pages) as prepared:
             yield prepared
 
     async def _extract_projected[R](
@@ -709,16 +740,17 @@ class AsyncExtractor(_ExtractorSession[T]):
         with_result: bool = False,
         on_progress: OnProgress | None = None,
         pages: Sequence[int] | None = None,
+        max_pages: int | None = None,
     ) -> R:
         """Async counterpart to :meth:`Extractor._extract_projected`."""
         callback = self._on_progress if on_progress is None else on_progress
-        selected = self._pages if pages is None else _validate_pages(pages)
+        selected, cap = self._page_filter(pages, max_pages)
         started = time.perf_counter() if with_result else 0.0
         attempts = 0
         item_media_type, source_label = (
             _call_provenance(input_file, media_type) if with_result else (media_type, None)
         )
-        async with self._prepare_session_extraction(input_file, media_type, selected) as (
+        async with self._prepare_session_extraction(input_file, media_type, selected, cap) as (
             agent,
             inputs,
             parsed,
@@ -796,10 +828,16 @@ class AsyncExtractor(_ExtractorSession[T]):
         media_type: str | None = None,
         on_progress: Callable[[ExtractProgress], None] | None = None,
         pages: Sequence[int] | None = None,
+        max_pages: int | None = None,
     ) -> T:
         """Extract one input using the session's reusable agent and clients."""
         return await self._extract_projected(
-            input_file, media_type, self._output_from_run, on_progress=on_progress, pages=pages
+            input_file,
+            media_type,
+            self._output_from_run,
+            on_progress=on_progress,
+            pages=pages,
+            max_pages=max_pages,
         )
 
     async def extract_with_usage(
@@ -809,6 +847,7 @@ class AsyncExtractor(_ExtractorSession[T]):
         media_type: str | None = None,
         on_progress: Callable[[ExtractProgress], None] | None = None,
         pages: Sequence[int] | None = None,
+        max_pages: int | None = None,
     ) -> tuple[T, Usage]:
         """Extract one input and return its successful-call token usage."""
         return await self._extract_projected(
@@ -818,6 +857,7 @@ class AsyncExtractor(_ExtractorSession[T]):
             with_usage=True,
             on_progress=on_progress,
             pages=pages,
+            max_pages=max_pages,
         )
 
     async def extract_with_result(
@@ -827,6 +867,7 @@ class AsyncExtractor(_ExtractorSession[T]):
         media_type: str | None = None,
         on_progress: Callable[[ExtractProgress], None] | None = None,
         pages: Sequence[int] | None = None,
+        max_pages: int | None = None,
     ) -> ExtractionResult[T]:
         """Extract one input and return an :class:`ExtractionResult`.
 
@@ -841,5 +882,6 @@ class AsyncExtractor(_ExtractorSession[T]):
                 with_result=True,
                 on_progress=on_progress,
                 pages=pages,
+                max_pages=max_pages,
             ),
         )
