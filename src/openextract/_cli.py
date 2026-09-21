@@ -564,6 +564,7 @@ def _run_batch(
         pages=args.pages,
         language=args.language,
         timeout=args.timeout,
+        url_timeout=args.url_timeout,
     )
     return asyncio.run(_run_batch_async(schema_cls, items, labels, options, args, model))
 
@@ -613,6 +614,7 @@ def _run_single(
         "pages": args.pages,
         "language": args.language,
         "timeout": args.timeout,
+        "url_timeout": args.url_timeout,
     }
     if args.progress:
         shared["on_progress"] = _window_progress
@@ -671,6 +673,7 @@ def _run_swarm(
         "pages": args.pages,
         "language": args.language,
         "timeout": args.timeout,
+        "url_timeout": args.url_timeout,
     }
     if args.progress:
         options["on_progress"] = _window_progress
@@ -921,6 +924,17 @@ def _build_parser() -> argparse.ArgumentParser:
         help=(
             "Model request timeout in seconds (float > 0). "
             "Same timeout= as the library. Omit to use the provider default."
+        ),
+    )
+    parser.add_argument(
+        "--url-timeout",
+        type=float,
+        default=None,
+        metavar="SECONDS",
+        help=(
+            "URL fetch timeout in seconds (float > 0). "
+            "Same url_timeout= as the library. "
+            "Omit to use OPENEXTRACT_URL_TIMEOUT or 30s."
         ),
     )
     return parser

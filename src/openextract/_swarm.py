@@ -24,7 +24,7 @@ from ._citations import prepare_cited_run, split_cited_output
 from ._config import (
     _DEFAULT_RETRY_MAX_BACKOFF,
     _resolve_max_input_bytes,
-    _url_fetch_timeout,
+    _resolve_url_timeout,
     _validate_cite_min_confidence,
     _validate_max_concurrency,
     _validate_pages,
@@ -287,6 +287,7 @@ async def _run_swarm(
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
+    url_timeout: float | None = None,
     on_progress: OnProgress | None = None,
 ) -> SwarmResult[T]:
     """Load the input once, fan it out across agents, and reduce the outputs."""
@@ -298,6 +299,7 @@ async def _run_swarm(
     pages = _validate_pages(pages)
     language = normalize_language(language)
     run_settings = _session_model_settings(model_settings, timeout)
+    resolved_url_timeout = _resolve_url_timeout(url_timeout)
     concurrency = (
         min(_DEFAULT_SWARM_CONCURRENCY, len(members))
         if max_concurrency is None
@@ -309,7 +311,7 @@ async def _run_swarm(
 
     async with httpx.AsyncClient(
         follow_redirects=False,
-        timeout=_url_fetch_timeout(),
+        timeout=resolved_url_timeout,
     ) as client:
         with _extraction_errors():
             file_bytes, file_type = await _get_media_async(
@@ -402,6 +404,7 @@ def extract_swarm(
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
+    url_timeout: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> T:
     """Run several agents over one input and return the reduced result.
@@ -450,6 +453,9 @@ def extract_swarm(
         timeout: Optional model request timeout in seconds, same contract as
             :func:`extract`. Invalid values raise ``ValueError`` before any
             model call.
+        url_timeout: Optional HTTP timeout in seconds for fetching ``http(s)``
+            URL inputs, same contract as :func:`extract`. Invalid values raise
+            ``ValueError`` before any fetch or model call.
         on_progress: Optional per-window callback, same contract as
             :func:`extract`. Concurrent agents may interleave events.
 
@@ -460,8 +466,9 @@ def extract_swarm(
         ValueError: If ``agents`` is empty, ``size`` is out of range or
             disagrees with the agent list, a retry/concurrency option is
             invalid, ``cite_min_confidence`` is outside ``[0, 1]``,
-            ``pages`` is empty/invalid, ``language`` is empty, or
-            ``timeout`` is not a finite positive number of seconds. Raised
+            ``pages`` is empty/invalid, ``language`` is empty, ``timeout``
+            is not a finite positive number of seconds, or ``url_timeout``
+            is not a finite positive number of seconds. Raised
             before any model call.
         ExtractionError: The first agent's failure, when every agent failed.
         RuntimeError: If called from a running event loop. Use
@@ -492,6 +499,7 @@ def extract_swarm(
             language=language,
             model_settings=model_settings,
             timeout=timeout,
+            url_timeout=url_timeout,
             on_progress=on_progress,
         ),
     ).output
@@ -518,6 +526,7 @@ async def extract_swarm_async(
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
+    url_timeout: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> T:
     """Async sibling of :func:`extract_swarm`."""
@@ -543,6 +552,7 @@ async def extract_swarm_async(
         language=language,
         model_settings=model_settings,
         timeout=timeout,
+        url_timeout=url_timeout,
         on_progress=on_progress,
     )
     return result.output
@@ -571,6 +581,7 @@ def extract_swarm_with_results(
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
+    url_timeout: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> SwarmResult[T]:
     """Run a swarm and return the reduced output plus per-agent diagnostics.
@@ -608,6 +619,7 @@ def extract_swarm_with_results(
             language=language,
             model_settings=model_settings,
             timeout=timeout,
+            url_timeout=url_timeout,
             on_progress=on_progress,
         ),
     )
@@ -636,6 +648,7 @@ async def extract_swarm_with_results_async(
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
+    url_timeout: float | None = None,
     on_progress: Callable[[ExtractProgress], None] | None = None,
 ) -> SwarmResult[T]:
     """Async sibling of :func:`extract_swarm_with_results`."""
@@ -661,5 +674,6 @@ async def extract_swarm_with_results_async(
         language=language,
         model_settings=model_settings,
         timeout=timeout,
+        url_timeout=url_timeout,
         on_progress=on_progress,
     )

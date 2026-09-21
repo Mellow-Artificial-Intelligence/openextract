@@ -20,7 +20,7 @@ from ._config import (
     _allow_private_urls,
     _max_redirects,
     _resolve_max_input_bytes,
-    _url_fetch_timeout,
+    _resolve_url_timeout,
 )
 from ._types import ExtractionInput, ExtractionInputLike, MediaSource, ResolvedSource
 from .exceptions import InputFileError, InputTooLargeError, UrlFetchError
@@ -325,22 +325,32 @@ async def _read_url_with_client_async(
 
 
 @contextmanager
-def _input_client(client: httpx.Client | None) -> Iterator[httpx.Client]:
+def _input_client(
+    client: httpx.Client | None,
+    *,
+    url_timeout: float | None = None,
+) -> Iterator[httpx.Client]:
     """Yield ``client``, or a short-lived one configured the same way."""
     if client is not None:
         yield client
         return
-    with httpx.Client(follow_redirects=False, timeout=_url_fetch_timeout()) as owned:
+    with httpx.Client(follow_redirects=False, timeout=_resolve_url_timeout(url_timeout)) as owned:
         yield owned
 
 
 @asynccontextmanager
-async def _input_client_async(client: httpx.AsyncClient | None) -> AsyncIterator[httpx.AsyncClient]:
+async def _input_client_async(
+    client: httpx.AsyncClient | None,
+    *,
+    url_timeout: float | None = None,
+) -> AsyncIterator[httpx.AsyncClient]:
     """Async counterpart to :func:`_input_client`."""
     if client is not None:
         yield client
         return
-    async with httpx.AsyncClient(follow_redirects=False, timeout=_url_fetch_timeout()) as owned:
+    async with httpx.AsyncClient(
+        follow_redirects=False, timeout=_resolve_url_timeout(url_timeout)
+    ) as owned:
         yield owned
 
 
@@ -382,11 +392,12 @@ def _read_from_path(
     *,
     max_input_bytes: int,
     client: httpx.Client | None = None,
+    url_timeout: float | None = None,
 ) -> tuple[bytes, str]:
     """Read bytes from a local path or http(s) URL; return (bytes, media_type)."""
     if not _is_url(file_path):
         return _read_local_file(file_path, max_input_bytes=max_input_bytes)
-    with _input_client(client) as http_client:
+    with _input_client(client, url_timeout=url_timeout) as http_client:
         content, headers = _read_url_with_client(file_path, http_client, limit=max_input_bytes)
     return _media_from_content(file_path, content, headers)
 
@@ -396,6 +407,7 @@ async def _read_from_path_async(
     client: httpx.AsyncClient | None,
     *,
     max_input_bytes: int,
+    url_timeout: float | None = None,
 ) -> tuple[bytes, str]:
     """Async counterpart to :func:`_read_from_path`."""
     if not _is_url(file_path):
@@ -404,7 +416,7 @@ async def _read_from_path_async(
             file_path,
             max_input_bytes=max_input_bytes,
         )
-    async with _input_client_async(client) as http_client:
+    async with _input_client_async(client, url_timeout=url_timeout) as http_client:
         content, headers = await _read_url_with_client_async(
             file_path,
             http_client,
@@ -454,6 +466,7 @@ def _get_media(
     *,
     max_input_bytes: int | None = None,
     client: httpx.Client | None = None,
+    url_timeout: float | None = None,
 ) -> tuple[bytes, str]:
     """Resolve ``input_file`` to ``(bytes, media_type)``.
 
@@ -468,6 +481,7 @@ def _get_media(
             input_file,
             max_input_bytes=limit,
             client=client,
+            url_timeout=url_timeout,
         )
         return file_bytes, media_type or resolved_type
 
@@ -492,6 +506,7 @@ async def _get_media_async(
     media_type: str | None = None,
     *,
     max_input_bytes: int | None = None,
+    url_timeout: float | None = None,
 ) -> tuple[bytes, str]:
     """Resolve media without blocking the event loop on disk, DNS, or stream I/O."""
     input_file, media_type = _normalize_input(input_file, media_type)
@@ -501,6 +516,7 @@ async def _get_media_async(
             input_file,
             client,
             max_input_bytes=limit,
+            url_timeout=url_timeout,
         )
         return file_bytes, media_type or resolved_type
 

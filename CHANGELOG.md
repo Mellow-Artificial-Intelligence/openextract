@@ -9,6 +9,11 @@ timing when that is known.
 ## [Unreleased]
 
 ### Added
+- Optional `url_timeout` on oneshot extract APIs, batch, and swarm
+  (`float | None = None`). Same contract as session `url_timeout`: a finite
+  number of seconds greater than 0; `None` uses `OPENEXTRACT_URL_TIMEOUT` or
+  30 seconds. Invalid values raise `ValueError` before any fetch or model
+  call. CLI `--url-timeout SECONDS` (`float > 0`).
 - `ExtractionResult.as_dict()` JSON-stable dump for logging and pipeline
   gates: `{output, usage, attempts, duration, model, media_type, source,
   warnings, citations}`. `output` is `model_dump(mode="json")`; `citations`

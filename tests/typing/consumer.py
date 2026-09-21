@@ -103,6 +103,7 @@ cited: Invoice = extract(
     language="es",
     model_settings={"temperature": 0},
     timeout=30,
+    url_timeout=5,
     on_progress=_report,
 )
 _cite: Citation = Citation("total", "12.50", 1, (0.1, 0.2, 0.3, 0.05))

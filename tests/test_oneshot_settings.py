@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 from pydantic import BaseModel
 from pydantic_ai.models.test import TestModel
@@ -22,7 +24,12 @@ from openextract import (
     iter_extract_many_async,
 )
 from openextract._agent import _build_agent
-from tests.test_extract import _make_agent_mock, _make_async_agent_mock
+from tests.test_extract import (
+    _build_response,
+    _make_agent_mock,
+    _make_async_agent_mock,
+    _mock_sync_http_client,
+)
 
 
 class Person(BaseModel):
@@ -335,3 +342,192 @@ def test_group_agent_oneshot_forwards_timeout_to_swarm(mocker):
         name="Ada", age=36
     )
     assert captured == [{"timeout": 12.0}, {"timeout": 12.0}]
+
+
+def _mock_async_client_ctor(mocker, target: str):
+    client = MagicMock()
+    client.__aenter__ = AsyncMock(return_value=client)
+    client.__aexit__ = AsyncMock(return_value=False)
+    return mocker.patch(target, return_value=client)
+
+
+def test_extract_accepts_url_timeout():
+    assert extract(
+        Person,
+        _test_model(),
+        b"Ada is 36",
+        media_type="text/plain",
+        url_timeout=None,
+    ) == Person(name="Ada", age=36)
+    assert extract(
+        Person,
+        _test_model(),
+        b"Ada is 36",
+        media_type="text/plain",
+        url_timeout=5,
+    ) == Person(name="Ada", age=36)
+
+
+@pytest.mark.parametrize("value", _INVALID_TIMEOUTS)
+def test_extract_invalid_url_timeout_raises_before_model_call(mocker, value):
+    agent = mocker.patch("openextract._agent.Agent")
+
+    with pytest.raises(ValueError, match="url_timeout must be a finite positive"):
+        extract(
+            Person,
+            "openai:gpt-5",
+            b"x",
+            media_type="text/plain",
+            url_timeout=value,  # type: ignore[arg-type]
+        )
+
+    agent.assert_not_called()
+
+
+def test_extract_url_timeout_reaches_http_client(mocker):
+    fake_response = _build_response(content=b"Ada is 36", content_type="text/plain")
+    client_cls, _ = _mock_sync_http_client(mocker, response=fake_response)
+
+    result = extract(
+        Person,
+        _test_model(),
+        "https://example.com/doc.txt",
+        url_timeout=5,
+    )
+
+    assert result == Person(name="Ada", age=36)
+    client_cls.assert_called_once_with(follow_redirects=False, timeout=5.0)
+
+
+def test_extract_default_url_timeout_reaches_http_client(mocker):
+    fake_response = _build_response(content=b"Ada is 36", content_type="text/plain")
+    client_cls, _ = _mock_sync_http_client(mocker, response=fake_response)
+
+    extract(Person, _test_model(), "https://example.com/doc.txt")
+
+    client_cls.assert_called_once_with(follow_redirects=False, timeout=30.0)
+
+
+async def test_extract_async_url_timeout_reaches_http_client(mocker):
+    response = _build_response(content=b"Ada is 36", content_type="text/plain")
+    client = MagicMock()
+    client.build_request.return_value = MagicMock()
+    client.send = AsyncMock(return_value=response)
+    client.__aenter__ = AsyncMock(return_value=client)
+    client.__aexit__ = AsyncMock(return_value=False)
+    client_cls = mocker.patch("openextract._media.httpx.AsyncClient", return_value=client)
+
+    result = await extract_async(
+        Person,
+        _test_model(),
+        "https://example.com/doc.txt",
+        url_timeout=5,
+    )
+
+    assert result == Person(name="Ada", age=36)
+    client_cls.assert_called_once_with(follow_redirects=False, timeout=5.0)
+
+
+@pytest.mark.parametrize("value", _INVALID_TIMEOUTS)
+def test_batch_invalid_url_timeout_raises_before_model_call(mocker, value):
+    build = mocker.patch("openextract._batch._build_agent")
+
+    with pytest.raises(ValueError, match="url_timeout must be a finite positive"):
+        extract_many(
+            Person,
+            "openai:gpt-5",
+            [b"x"],
+            media_type="text/plain",
+            url_timeout=value,  # type: ignore[arg-type]
+        )
+
+    build.assert_not_called()
+
+
+def test_batch_url_timeout_reaches_http_client(mocker):
+    factory = _mock_async_client_ctor(mocker, "openextract._batch.httpx.AsyncClient")
+
+    results = extract_many(
+        Person,
+        _test_model(),
+        [b"Ada is 36"],
+        media_type="text/plain",
+        url_timeout=5,
+    )
+
+    assert results == [Person(name="Ada", age=36)]
+    factory.assert_called_once_with(follow_redirects=False, timeout=5.0)
+
+
+async def test_batch_async_and_iter_accept_url_timeout(mocker):
+    factory = _mock_async_client_ctor(mocker, "openextract._batch.httpx.AsyncClient")
+    model = _test_model()
+    results = await extract_many_async(
+        Person,
+        model,
+        [b"Ada is 36"],
+        media_type="text/plain",
+        url_timeout=8,
+    )
+    assert results == [Person(name="Ada", age=36)]
+    assert factory.call_args.kwargs["timeout"] == 8.0
+
+    streamed = [
+        item
+        async for item in iter_extract_many_async(
+            Person,
+            model,
+            [b"Ada is 36"],
+            media_type="text/plain",
+            url_timeout=8,
+        )
+    ]
+    assert streamed == [(0, Person(name="Ada", age=36))]
+
+
+@pytest.mark.parametrize("value", _INVALID_TIMEOUTS)
+def test_swarm_invalid_url_timeout_raises_before_model_call(mocker, value):
+    build = mocker.patch("openextract._swarm._build_agent")
+
+    with pytest.raises(ValueError, match="url_timeout must be a finite positive"):
+        extract_swarm(
+            Person,
+            "openai:gpt-5",
+            b"x",
+            media_type="text/plain",
+            url_timeout=value,  # type: ignore[arg-type]
+        )
+
+    build.assert_not_called()
+
+
+def test_swarm_url_timeout_reaches_http_client(mocker):
+    factory = _mock_async_client_ctor(mocker, "openextract._swarm.httpx.AsyncClient")
+
+    result = extract_swarm(
+        Person,
+        _test_model(),
+        b"Ada is 36",
+        media_type="text/plain",
+        url_timeout=5,
+    )
+
+    assert result == Person(name="Ada", age=36)
+    factory.assert_called_once_with(follow_redirects=False, timeout=5.0)
+
+
+def test_group_agent_oneshot_forwards_url_timeout_to_swarm(mocker):
+    factory = _mock_async_client_ctor(mocker, "openextract._swarm.httpx.AsyncClient")
+    group = define_agent(
+        "Group",
+        output_schema=Person,
+        subagents=[
+            define_agent("A", model=_test_model()),
+            define_agent("B", model=_test_model()),
+        ],
+    )
+
+    assert extract(group, b"Ada is 36", media_type="text/plain", url_timeout=5) == Person(
+        name="Ada", age=36
+    )
+    factory.assert_called_once_with(follow_redirects=False, timeout=5.0)

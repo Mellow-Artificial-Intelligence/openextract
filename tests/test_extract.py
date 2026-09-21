@@ -879,6 +879,14 @@ class TestUrlFetchConfiguration:
 
         assert client_cls.call_args.kwargs["timeout"] == 45.0
 
+    def test_explicit_url_timeout_on_owned_client(self, mocker):
+        fake_response = _build_response(content=b"ok")
+        client_cls, _ = _mock_sync_http_client(mocker, response=fake_response)
+
+        _get_media("https://1.1.1.1/doc.pdf", url_timeout=5)
+
+        assert client_cls.call_args.kwargs["timeout"] == 5.0
+
     def test_invalid_timeout_falls_back_to_default(self, monkeypatch):
         monkeypatch.setenv("OPENEXTRACT_URL_TIMEOUT", "not-a-number")
         assert _url_fetch_timeout() == 30.0
