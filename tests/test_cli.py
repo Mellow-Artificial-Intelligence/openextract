@@ -376,6 +376,7 @@ class TestMainSuccess:
             cite=False,
             cite_min_confidence=None,
             pages=None,
+            max_pages=None,
             language=None,
             timeout=None,
             url_timeout=None,

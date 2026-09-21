@@ -44,9 +44,9 @@ from ._config import (
     _max_redirects,
     _resolve_max_input_bytes,
     _resolve_url_timeout,
+    _select_pages,
     _url_fetch_timeout,
     _validate_cite_min_confidence,
-    _validate_pages,
     _validate_retry_options,
 )
 from ._errors import (
@@ -120,13 +120,18 @@ def _bind_agent_inputs(
     pages: Sequence[int] | None = None,
     language: str | None = None,
     model_settings: ModelSettings | None = None,
+    max_pages: int | None = None,
 ) -> Iterator[tuple[PydanticAgent, list, ParsedDocument | None]]:
     """Build the agent and run inputs after media has already been loaded."""
     run_schema, run_instructions = prepare_cited_run(
         schema, compose_extract_instructions(instructions, style, language), cite
     )
     parsed_inputs, parsed = maybe_parsed_inputs(
-        file_bytes, file_type, parse=should_parse(cite, style, pages), pages=pages
+        file_bytes,
+        file_type,
+        parse=should_parse(cite, style, pages, max_pages),
+        pages=pages,
+        max_pages=max_pages,
     )
     with prepared_style_run(style, file_bytes, file_type) as (capabilities, style_inputs):
         with _extraction_errors():
@@ -159,6 +164,7 @@ def _prepare_extraction(
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     url_timeout: float | None = None,
+    max_pages: int | None = None,
 ) -> Iterator[tuple[PydanticAgent, list, ParsedDocument | None]]:
     """Prepare one extraction while applying the public exception mapping."""
     with _extraction_errors():
@@ -179,6 +185,7 @@ def _prepare_extraction(
         pages,
         language,
         model_settings=model_settings,
+        max_pages=max_pages,
     ) as prepared:
         yield prepared
 
@@ -198,6 +205,7 @@ async def _prepare_extraction_async(
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     url_timeout: float | None = None,
+    max_pages: int | None = None,
 ) -> AsyncIterator[tuple[PydanticAgent, list, ParsedDocument | None]]:
     """Prepare one async extraction while applying public exception mapping."""
     with _extraction_errors():
@@ -219,6 +227,7 @@ async def _prepare_extraction_async(
         pages,
         language,
         model_settings=model_settings,
+        max_pages=max_pages,
     ) as prepared:
         yield prepared
 
@@ -320,6 +329,7 @@ def _swarm_kwargs(
     cite: bool,
     cite_min_confidence: float | None,
     pages: Sequence[int] | None,
+    max_pages: int | None,
     language: str | None,
     model_settings: ModelSettings | None,
     timeout: float | None,
@@ -337,6 +347,7 @@ def _swarm_kwargs(
         "cite": cite,
         "cite_min_confidence": cite_min_confidence,
         "pages": pages,
+        "max_pages": max_pages,
         "language": language,
         "model_settings": model_settings,
         "timeout": timeout,
@@ -390,6 +401,7 @@ def _extract_sync(
     cite: bool,
     cite_min_confidence: float | None,
     pages: Sequence[int] | None,
+    max_pages: int | None,
     language: str | None,
     model_settings: ModelSettings | None,
     timeout: float | None,
@@ -400,7 +412,7 @@ def _extract_sync(
 ) -> tuple[T, Usage, tuple[Citation, ...]] | ExtractionResult[T]:
     """Shared sync oneshot path used by ``extract`` and the usage/result helpers."""
     cite_min_confidence = _validate_cite_min_confidence(cite_min_confidence)
-    pages = _validate_pages(pages)
+    pages, max_pages = _select_pages(pages, max_pages)
     language = normalize_language(language)
     run_settings = _session_model_settings(model_settings, timeout)
     url_timeout = _resolve_url_timeout(url_timeout)
@@ -421,6 +433,7 @@ def _extract_sync(
             cite=cite,
             cite_min_confidence=cite_min_confidence,
             pages=pages,
+            max_pages=max_pages,
             language=language,
             model_settings=model_settings,
             timeout=timeout,
@@ -459,6 +472,7 @@ def _extract_sync(
         language,
         model_settings=run_settings,
         url_timeout=url_timeout,
+        max_pages=max_pages,
     ) as (agent, inputs, parsed):
 
         def _run(window: list) -> tuple[object, Usage]:
@@ -510,6 +524,7 @@ async def _extract_async(
     cite: bool,
     cite_min_confidence: float | None,
     pages: Sequence[int] | None,
+    max_pages: int | None,
     language: str | None,
     model_settings: ModelSettings | None,
     timeout: float | None,
@@ -520,7 +535,7 @@ async def _extract_async(
 ) -> tuple[T, Usage, tuple[Citation, ...]] | ExtractionResult[T]:
     """Shared async oneshot path used by the async extract entry points."""
     cite_min_confidence = _validate_cite_min_confidence(cite_min_confidence)
-    pages = _validate_pages(pages)
+    pages, max_pages = _select_pages(pages, max_pages)
     language = normalize_language(language)
     run_settings = _session_model_settings(model_settings, timeout)
     url_timeout = _resolve_url_timeout(url_timeout)
@@ -541,6 +556,7 @@ async def _extract_async(
             cite=cite,
             cite_min_confidence=cite_min_confidence,
             pages=pages,
+            max_pages=max_pages,
             language=language,
             model_settings=model_settings,
             timeout=timeout,
@@ -581,6 +597,7 @@ async def _extract_async(
         language=language,
         model_settings=run_settings,
         url_timeout=url_timeout,
+        max_pages=max_pages,
     ) as (agent, inputs, parsed):
 
         async def _run(window: list) -> tuple[object, Usage]:
@@ -631,6 +648,7 @@ def extract(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    max_pages: int | None = None,
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
@@ -690,6 +708,12 @@ def extract(
             remain, raises ``ValueError``. ``None`` (default) keeps every
             page. Invalid values raise ``ValueError`` at call time. Has no
             effect when the input is not locally parsed.
+        max_pages: Optional positive cap on 1-based PDF page numbers. When
+            set, only pages with number ``<= N`` are considered after any
+            ``pages`` filter (``pages`` ``None`` is treated as ``1..N``).
+            Invalid values raise ``ValueError`` at call time. If no pages
+            remain, raises ``ValueError``. Accepted for non-paginated inputs
+            with no effect.
         language: Optional BCP-47-ish tag or plain name (``en``, ``es``,
             ``fr``). When set, the model is told the document's primary
             language and to preserve that language/script in field values.
@@ -730,6 +754,7 @@ def extract(
         ValueError: If ``style`` is invalid, ``search``/``code`` is used with
             a non-text document, or ``cite_min_confidence`` is outside ``[0, 1]``.
             Also raised if ``pages`` is empty/invalid or matches no PDF page,
+            ``max_pages`` is invalid or filters out every requested page,
             ``language`` is empty, ``timeout`` is not a finite positive
             number of seconds, or ``url_timeout`` is not a finite positive
             number of seconds.
@@ -750,6 +775,7 @@ def extract(
             cite=cite,
             cite_min_confidence=cite_min_confidence,
             pages=pages,
+            max_pages=max_pages,
             language=language,
             model_settings=model_settings,
             timeout=timeout,
@@ -776,6 +802,7 @@ def extract_with_usage(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    max_pages: int | None = None,
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
@@ -785,7 +812,7 @@ def extract_with_usage(
     """Extract structured data and return ``(output, Usage)`` for token accounting.
 
     Same retry, agent, ``cite`` / ``cite_min_confidence``, ``pages``,
-    ``model_settings``, ``timeout``, ``url_timeout``, and ``on_progress``
+    ``max_pages``, ``model_settings``, ``timeout``, ``url_timeout``, and ``on_progress``
     semantics as :func:`extract`.
     Returns a :class:`Usage` describing the tokens consumed by the successful
     model call, or summed across the agents when an agent fans out into a swarm.
@@ -806,6 +833,7 @@ def extract_with_usage(
             cite=cite,
             cite_min_confidence=cite_min_confidence,
             pages=pages,
+            max_pages=max_pages,
             language=language,
             model_settings=model_settings,
             timeout=timeout,
@@ -832,6 +860,7 @@ async def extract_with_usage_async(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    max_pages: int | None = None,
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
@@ -855,6 +884,7 @@ async def extract_with_usage_async(
             cite=cite,
             cite_min_confidence=cite_min_confidence,
             pages=pages,
+            max_pages=max_pages,
             language=language,
             model_settings=model_settings,
             timeout=timeout,
@@ -881,6 +911,7 @@ def extract_with_result(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    max_pages: int | None = None,
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
@@ -890,7 +921,7 @@ def extract_with_result(
     """Extract structured data and return an :class:`ExtractionResult`.
 
     Same arguments and retry, agent, ``cite`` / ``cite_min_confidence``,
-    ``pages``, ``model_settings``, ``timeout``, ``url_timeout``, and
+    ``pages``, ``max_pages``, ``model_settings``, ``timeout``, ``url_timeout``, and
     ``on_progress`` semantics as :func:`extract`. The result carries the schema instance plus token
     usage, attempt count, duration, model/media metadata, a sanitized source
     label, and citations when ``cite=True`` — the same fields
@@ -917,6 +948,7 @@ def extract_with_result(
             cite=cite,
             cite_min_confidence=cite_min_confidence,
             pages=pages,
+            max_pages=max_pages,
             language=language,
             model_settings=model_settings,
             timeout=timeout,
@@ -943,6 +975,7 @@ async def extract_with_result_async(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    max_pages: int | None = None,
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
@@ -966,6 +999,7 @@ async def extract_with_result_async(
             cite=cite,
             cite_min_confidence=cite_min_confidence,
             pages=pages,
+            max_pages=max_pages,
             language=language,
             model_settings=model_settings,
             timeout=timeout,
@@ -992,6 +1026,7 @@ async def extract_async(
     cite: bool = False,
     cite_min_confidence: float | None = None,
     pages: Sequence[int] | None = None,
+    max_pages: int | None = None,
     language: str | None = None,
     model_settings: ModelSettings | None = None,
     timeout: float | None = None,
@@ -1018,6 +1053,7 @@ async def extract_async(
             cite=cite,
             cite_min_confidence=cite_min_confidence,
             pages=pages,
+            max_pages=max_pages,
             language=language,
             model_settings=model_settings,
             timeout=timeout,

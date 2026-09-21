@@ -75,16 +75,18 @@ def try_parse_document(
     data: bytes,
     media_type: str | None,
     pages: Sequence[int] | None = None,
+    max_pages: int | None = None,
 ) -> ParsedDocument | None:
     """Parse a paginated document when a local parser can handle it.
 
     Returns ``None`` when the extra is missing, the type is not a PDF, or the
     bytes are not a readable PDF. Never raises on a bad file. ``pages`` limits
-    the parse to those 1-based numbers; out-of-range entries are skipped.
+    the parse to those 1-based numbers; ``max_pages`` keeps only page numbers
+    ``<= N`` after that filter. Out-of-range entries are skipped.
     """
     if not _is_pdf(data, media_type):
         return None
-    return _parse_pdf(data, pages=pages)
+    return _parse_pdf(data, pages=pages, max_pages=max_pages)
 
 
 def parsed_run_inputs(parsed: ParsedDocument) -> list[str]:
@@ -272,6 +274,7 @@ def maybe_parsed_inputs(
     *,
     parse: bool,
     pages: Sequence[int] | None = None,
+    max_pages: int | None = None,
 ) -> tuple[list | None, ParsedDocument | None]:
     """Return page-indexed prompt inputs when a local parse can replace the file.
 
@@ -279,13 +282,19 @@ def maybe_parsed_inputs(
     locally rendered page images (or page headers if render failed). Never
     returns ``None`` inputs for a paginated parse — that would upload the PDF
     to the provider's document-parse engine. ``pages`` keeps only those
-    1-based numbers (out-of-range ignored). If every requested page is
-    missing, raises ``ValueError`` rather than falling back to the full file.
+    1-based numbers (out-of-range ignored). ``max_pages`` then keeps page
+    numbers ``<= N``. If every requested page is missing, raises
+    ``ValueError`` rather than falling back to the full file. Both filters
+    are accepted for non-paginated inputs and have no effect.
     """
-    parsed = try_parse_document(file_bytes, file_type, pages=pages) if parse else None
+    parsed = (
+        try_parse_document(file_bytes, file_type, pages=pages, max_pages=max_pages)
+        if parse
+        else None
+    )
     if parsed is None:
         return None, None
-    if pages is not None and not parsed.pages:
+    if (pages is not None or max_pages is not None) and not parsed.pages:
         raise ValueError("pages does not match any page in the document.")
     if parsed.has_text():
         return parsed_run_inputs(parsed), parsed
@@ -337,7 +346,11 @@ def _is_pdf(data: bytes, media_type: str | None) -> bool:
     return data.startswith(b"%PDF")
 
 
-def _parse_pdf(data: bytes, pages: Sequence[int] | None = None) -> ParsedDocument | None:
+def _parse_pdf(
+    data: bytes,
+    pages: Sequence[int] | None = None,
+    max_pages: int | None = None,
+) -> ParsedDocument | None:
     try:
         import pypdfium2 as pdfium
     except ImportError:
@@ -349,11 +362,14 @@ def _parse_pdf(data: bytes, pages: Sequence[int] | None = None) -> ParsedDocumen
         except Exception:
             return None
         try:
-            parsed_pages = tuple(
-                _parse_pdf_page(pdf, index)
-                for index in range(len(pdf))
-                if wanted is None or index + 1 in wanted
-            )
+            parsed_pages: list[ParsedPage] = []
+            for index in range(len(pdf)):
+                page_no = index + 1
+                if max_pages is not None and page_no > max_pages:
+                    break
+                if wanted is not None and page_no not in wanted:
+                    continue
+                parsed_pages.append(_parse_pdf_page(pdf, index))
         except Exception:
             return None
         finally:
@@ -361,8 +377,8 @@ def _parse_pdf(data: bytes, pages: Sequence[int] | None = None) -> ParsedDocumen
             if callable(close):
                 close()
         if parsed_pages:
-            return ParsedDocument(pages=parsed_pages)
-        return ParsedDocument(pages=()) if wanted is not None else None
+            return ParsedDocument(pages=tuple(parsed_pages))
+        return ParsedDocument(pages=()) if wanted is not None or max_pages is not None else None
 
 
 def _parse_pdf_page(pdf: Any, index: int) -> ParsedPage:

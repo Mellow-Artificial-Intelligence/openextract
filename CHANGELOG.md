@@ -9,6 +9,14 @@ timing when that is known.
 ## [Unreleased]
 
 ### Added
+- Optional `max_pages` on extract APIs, sessions, batch, and swarm
+  (`int | None = None`). Default `None` keeps every page (subject to
+  `pages=`). A positive int `N` considers only page numbers `<= N` after
+  any `pages` filter (`pages` unset is treated as `1..N`). Invalid values
+  raise `ValueError` at call/construct time. If no pages remain,
+  `ValueError`. Applies to local PDF parse-then-window and citation
+  grounding the same way `pages` does. Non-paginated inputs accept it
+  with no effect. CLI `--max-pages N`.
 - Session `Extractor.extract_with_result` / `AsyncExtractor.extract_with_result`
   return `ExtractionResult` (output, usage, attempts, duration, model/media
   metadata, sanitized source, citations) for one input. Same per-call kwargs as

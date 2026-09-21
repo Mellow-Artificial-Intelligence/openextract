@@ -102,6 +102,7 @@ cited: Invoice = extract(
     cite=True,
     cite_min_confidence=0.5,
     pages=(1, 2),
+    max_pages=2,
     language="es",
     model_settings={"temperature": 0},
     timeout=30,
@@ -146,7 +147,7 @@ aggregate: Usage = total_usage(results)
 
 def _session_consumer(extractor: Extractor[Invoice]) -> None:
     session_result: ExtractionResult[Invoice] = extractor.extract_with_result(
-        Path("/tmp/x.pdf"), pages=(1,)
+        Path("/tmp/x.pdf"), pages=(1,), max_pages=2
     )
     _assert_session: Invoice = session_result.output
     _ = session_result.citations
