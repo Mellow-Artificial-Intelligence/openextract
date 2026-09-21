@@ -454,9 +454,7 @@ def test_sync_extract_with_result_cite_and_pages(monkeypatch):
     events: list[ExtractProgress] = []
     with Extractor(Person, model, cite=True, pages=(1,)) as extractor:
         cited = extractor.extract_with_result(pdf, media_type="application/pdf")
-        windowed = extractor.extract_with_result(
-            pdf, media_type="application/pdf", pages=(1, 2, 3)
-        )
+        windowed = extractor.extract_with_result(pdf, media_type="application/pdf", pages=(1, 2, 3))
         override = extractor.extract_with_result(
             pdf, media_type="application/pdf", pages=(2,), on_progress=events.append
         )
