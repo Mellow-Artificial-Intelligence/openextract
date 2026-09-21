@@ -14,6 +14,7 @@ from openextract import (
     ExtractionInput,
     ExtractionResult,
     Extractor,
+    Usage,
     define_agent,
     extract,
     extract_async,
@@ -24,6 +25,7 @@ from openextract import (
     extract_with_result,
     extract_with_usage,
     extract_with_usage_async,
+    field_confidence,
 )
 from openextract._citations import (
     CITATION_INSTRUCTIONS,
@@ -134,6 +136,124 @@ class TestCitationMapping:
         assert payload["bbox"] == [0.1, 0.2, 0.3, 0.05]
         assert payload["field_path"] == "lines[0].qty"
         assert payload["reference_text"] == "3"
+
+
+class TestExtractionResultAsDict:
+    def test_as_dict_is_json_stable(self):
+        citations = (
+            Citation(
+                field="name",
+                quote="Ada",
+                page=1,
+                bbox=(0.1, 0.2, 0.3, 0.05),
+                confidence=0.95,
+                match="exact",
+            ),
+            Citation(field="age", quote="36"),
+        )
+        result = ExtractionResult(
+            output=Person(name="Ada", age=36),
+            usage=Usage(1, 2, 3),
+            attempts=2,
+            duration=0.25,
+            model="test",
+            media_type="text/plain",
+            source="page.pdf",
+            warnings=("truncated",),
+            citations=citations,
+        )
+        dumped = result.as_dict()
+        assert dumped == {
+            "output": {"name": "Ada", "age": 36},
+            "usage": {"input_tokens": 1, "output_tokens": 2, "total_tokens": 3},
+            "attempts": 2,
+            "duration": 0.25,
+            "model": "test",
+            "media_type": "text/plain",
+            "source": "page.pdf",
+            "warnings": ["truncated"],
+            "citations": [citation.as_dict() for citation in citations],
+        }
+        assert json.loads(json.dumps(dumped)) == dumped
+        assert set(dumped) == {
+            "output",
+            "usage",
+            "attempts",
+            "duration",
+            "model",
+            "media_type",
+            "source",
+            "warnings",
+            "citations",
+        }
+
+    def test_as_dict_empty_citations_and_warnings(self):
+        result = ExtractionResult(
+            output=Person(name="Ada", age=36),
+            usage=Usage(0, 0, 0),
+            attempts=1,
+            duration=0.0,
+            model=None,
+            media_type=None,
+            source=None,
+        )
+        dumped = result.as_dict()
+        assert dumped["citations"] == []
+        assert dumped["warnings"] == []
+        assert dumped["output"] == Person(name="Ada", age=36).model_dump(mode="json")
+        assert json.loads(json.dumps(dumped)) == dumped
+
+
+class TestFieldConfidence:
+    def test_empty_citations(self):
+        assert field_confidence([]) == {}
+        assert field_confidence(()) == {}
+        result = ExtractionResult(
+            output=Person(name="Ada", age=36),
+            usage=Usage(0, 0, 0),
+            attempts=1,
+            duration=0.0,
+            model=None,
+            media_type=None,
+            source=None,
+        )
+        assert result.field_confidence() == {}
+
+    def test_same_field_takes_minimum(self):
+        citations = (
+            Citation("vendor", "Acme", 1, confidence=0.95, match="exact"),
+            Citation("vendor", "Acme Corp", 2, confidence=0.40, match="page"),
+            Citation("vendor", "Acme", 1, confidence=0.80, match="value"),
+            Citation("total", "12.50", 1, confidence=0.80, match="value"),
+        )
+        assert field_confidence(citations) == {"vendor": 0.40, "total": 0.80}
+
+    def test_none_confidences_are_omitted(self):
+        citations = (
+            Citation("vendor", confidence=None),
+            Citation("notes"),
+            Citation("total", "12.50", confidence=0.80, match="value"),
+            Citation("total", confidence=None),
+        )
+        assert field_confidence(citations) == {"total": 0.80}
+
+    def test_result_method_delegates_to_helper(self):
+        citations = (
+            Citation("name", "Ada", 1, confidence=0.95, match="exact"),
+            Citation("name", "Ada Lovelace", 1, confidence=0.55, match="quote"),
+            Citation("age", "36"),
+        )
+        result = ExtractionResult(
+            output=Person(name="Ada", age=36),
+            usage=Usage(1, 2, 3),
+            attempts=1,
+            duration=0.1,
+            model="test",
+            media_type="text/plain",
+            source="page.pdf",
+            citations=citations,
+        )
+        assert result.field_confidence() == field_confidence(citations) == {"name": 0.55}
 
 
 class TestSanitize:

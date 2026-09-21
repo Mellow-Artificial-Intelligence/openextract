@@ -6,10 +6,11 @@ import os
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import BinaryIO, TypeVar
+from typing import BinaryIO, TypeVar, cast
 
 from pydantic import BaseModel
 
+from ._confidence import field_confidence as _aggregate_field_confidence
 from ._config import _DEFAULT_RETRY_MAX_BACKOFF, _validate_retry_options
 
 T = TypeVar("T", bound=BaseModel)
@@ -191,6 +192,40 @@ class ExtractionResult[T]:
     source: str | None
     warnings: tuple[str, ...] = ()
     citations: tuple[Citation, ...] = ()
+
+    def as_dict(self) -> dict[str, object]:
+        """JSON-stable result for logging and pipeline gates.
+
+        Keys are ``output``, ``usage``, ``attempts``, ``duration``, ``model``,
+        ``media_type``, ``source``, ``warnings``, ``citations``. ``output`` is
+        ``model_dump(mode="json")`` on the Pydantic schema instance. ``usage``
+        is ``{input_tokens, output_tokens, total_tokens}``. ``warnings`` is a
+        list. ``citations`` is a list of :meth:`Citation.as_dict` payloads.
+        Never includes raw media, credentials, or provider internals.
+        """
+        return {
+            "output": cast(BaseModel, self.output).model_dump(mode="json"),
+            "usage": {
+                "input_tokens": self.usage.input_tokens,
+                "output_tokens": self.usage.output_tokens,
+                "total_tokens": self.usage.total_tokens,
+            },
+            "attempts": self.attempts,
+            "duration": self.duration,
+            "model": self.model,
+            "media_type": self.media_type,
+            "source": self.source,
+            "warnings": list(self.warnings),
+            "citations": [citation.as_dict() for citation in self.citations],
+        }
+
+    def field_confidence(self) -> dict[str, float]:
+        """Minimum heuristic confidence per dotted field path.
+
+        Delegates to :func:`field_confidence` on ``self.citations``. Fields
+        with only ``None`` confidences are omitted.
+        """
+        return _aggregate_field_confidence(self.citations)
 
 
 @dataclass(frozen=True)

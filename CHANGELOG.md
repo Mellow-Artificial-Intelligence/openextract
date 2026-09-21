@@ -9,6 +9,15 @@ timing when that is known.
 ## [Unreleased]
 
 ### Added
+- `ExtractionResult.as_dict()` JSON-stable dump for logging and pipeline
+  gates: `{output, usage, attempts, duration, model, media_type, source,
+  warnings, citations}`. `output` is `model_dump(mode="json")`; `citations`
+  reuse `Citation.as_dict()`. Never includes raw media, credentials, or
+  provider internals.
+- `field_confidence(citations)` maps each dotted `Citation.field` to the
+  **minimum** non-`None` heuristic confidence (conservative review gate).
+  Fields with only `None` confidences are omitted. `ExtractionResult.field_confidence()`
+  delegates to the helper on `self.citations`.
 - Cookbook for openextract + OpenRouter Decisions (Jev Latest) fraud-check
   at `examples/advanced/openrouter_jev_fraud.py`. `extract()` + TestModel
   pulls document metadata, content, and risk signals (memo / PDF / image);

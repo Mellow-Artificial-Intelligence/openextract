@@ -23,6 +23,7 @@ PUBLIC_FUNCTIONS = (
     "extract_many_with_results",
     "extract_many_with_results_async",
     "total_usage",
+    "field_confidence",
     "normalize_reduce",
     "reduce_outputs",
     "extract_swarm",
