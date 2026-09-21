@@ -454,6 +454,9 @@ def test_sync_extract_with_result_cite_and_pages(monkeypatch):
     events: list[ExtractProgress] = []
     with Extractor(Person, model, cite=True, pages=(1,)) as extractor:
         cited = extractor.extract_with_result(pdf, media_type="application/pdf")
+        windowed = extractor.extract_with_result(
+            pdf, media_type="application/pdf", pages=(1, 2, 3)
+        )
         override = extractor.extract_with_result(
             pdf, media_type="application/pdf", pages=(2,), on_progress=events.append
         )
@@ -462,6 +465,8 @@ def test_sync_extract_with_result_cite_and_pages(monkeypatch):
     assert cited.output == Person(name="Ada", age=36)
     assert cited.citations[0].field == "name"
     assert cited.citations[0].quote == "Ada Lovelace"
+    assert windowed.attempts >= 2
+    assert windowed.output == Person(name="Ada", age=36)
     assert [event.page for event in events] == [2]
     assert override.usage == usage
     assert override.citations[0].field == "name"
@@ -488,6 +493,30 @@ async def test_async_extract_with_result_shape_cite_and_usage():
     assert result.source == "note.txt"
     assert result.citations[0].field == "name"
     assert result.citations[0].quote == "Grace"
+
+
+async def test_async_extract_with_result_pages_override(monkeypatch):
+    from tests.pdf_fixture import synthetic_pdf
+
+    monkeypatch.setattr("openextract._parse.DEFAULT_PARSE_WINDOW_CHARS", 40)
+    pdf = synthetic_pdf(pages=["AAAA " * 30, "Ada Lovelace " + "BBBB " * 30, "CCCC " * 30])
+    model = TestModel(custom_output_args={"name": "Ada", "age": 36})
+    events: list[ExtractProgress] = []
+    async with AsyncExtractor(Person, model, pages=(1,)) as extractor:
+        result = await extractor.extract_with_result(
+            pdf, media_type="application/pdf", pages=(2,), on_progress=events.append
+        )
+        windowed = await extractor.extract_with_result(
+            pdf, media_type="application/pdf", pages=(1, 2, 3)
+        )
+        output, usage = await extractor.extract_with_usage(
+            pdf, media_type="application/pdf", pages=(2,)
+        )
+    assert result.output == output == Person(name="Ada", age=36)
+    assert result.usage == usage
+    assert [event.page for event in events] == [2]
+    assert windowed.attempts >= 2
+    assert windowed.output == Person(name="Ada", age=36)
 
 
 def test_sync_extract_with_result_counts_retries(mocker):

@@ -605,13 +605,16 @@ class Extractor(_ExtractorSession[T]):
 
         Citations follow the session ``cite`` / ``cite_min_confidence`` settings.
         """
-        return self._extract_projected(
-            input_file,
-            media_type,
-            self._output_from_run,
-            with_result=True,
-            on_progress=on_progress,
-            pages=pages,
+        return cast(
+            ExtractionResult[T],
+            self._extract_projected(
+                input_file,
+                media_type,
+                self._output_from_run,
+                with_result=True,
+                on_progress=on_progress,
+                pages=pages,
+            ),
         )
 
 
@@ -829,11 +832,14 @@ class AsyncExtractor(_ExtractorSession[T]):
 
         Citations follow the session ``cite`` / ``cite_min_confidence`` settings.
         """
-        return await self._extract_projected(
-            input_file,
-            media_type,
-            self._output_from_run,
-            with_result=True,
-            on_progress=on_progress,
-            pages=pages,
+        return cast(
+            ExtractionResult[T],
+            await self._extract_projected(
+                input_file,
+                media_type,
+                self._output_from_run,
+                with_result=True,
+                on_progress=on_progress,
+                pages=pages,
+            ),
         )
