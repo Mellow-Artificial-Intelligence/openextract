@@ -411,13 +411,14 @@ def _usage_from_result(result) -> Usage:
     return Usage(0, 0, 0)
 
 
-def _model_identifier(model: str | Model, agent: object) -> str | None:
+def _model_identifier(model: str | Model | None, agent: object) -> str | None:
     """Return a stable model identifier for result diagnostics, when known."""
     if isinstance(model, str):
         return _route_model(model)
-    name = getattr(model, "model_name", None)
-    if isinstance(name, str):
-        return name
+    if model is not None:
+        name = getattr(model, "model_name", None)
+        if isinstance(name, str):
+            return name
     agent_model = getattr(agent, "model", None)
     name = getattr(agent_model, "model_name", None)
     return name if isinstance(name, str) else None

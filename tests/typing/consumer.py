@@ -13,10 +13,12 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from openextract import (
+    AsyncExtractor,
     Citation,
     ExtractionInput,
     ExtractionResult,
     ExtractionStyle,
+    Extractor,
     ExtractProgress,
     SwarmResult,
     Usage,
@@ -142,6 +144,15 @@ results_with_exceptions: list[ExtractionResult[Invoice] | Exception] = extract_m
 aggregate: Usage = total_usage(results)
 
 
+def _session_consumer(extractor: Extractor[Invoice]) -> None:
+    session_result: ExtractionResult[Invoice] = extractor.extract_with_result(
+        Path("/tmp/x.pdf"), pages=(1,)
+    )
+    _assert_session: Invoice = session_result.output
+    _ = session_result.citations
+    _ = session_result.usage
+
+
 async def async_consumer() -> None:
     async_defaulted: list[Invoice] = await extract_many_async(Invoice, "openai:gpt-5", ["a.pdf"])
     async_exceptions: list[Invoice | Exception] = await extract_many_async(
@@ -157,3 +168,10 @@ async def async_consumer() -> None:
     _ = async_exceptions
     _ = async_results
     _ = async_oneshot
+
+
+async def _async_session_consumer(extractor: AsyncExtractor[Invoice]) -> None:
+    async_session: ExtractionResult[Invoice] = await extractor.extract_with_result(
+        Path("/tmp/x.pdf")
+    )
+    _ = async_session

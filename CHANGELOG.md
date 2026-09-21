@@ -9,6 +9,12 @@ timing when that is known.
 ## [Unreleased]
 
 ### Added
+- Session `Extractor.extract_with_result` / `AsyncExtractor.extract_with_result`
+  return `ExtractionResult` (output, usage, attempts, duration, model/media
+  metadata, sanitized source, citations) for one input. Same per-call kwargs as
+  session `extract` / `extract_with_usage` (`media_type`, `on_progress`,
+  `pages`). Citations follow the session `cite` / `cite_min_confidence`
+  settings. No new public names.
 - Optional `url_timeout` on oneshot extract APIs, batch, and swarm
   (`float | None = None`). Same contract as session `url_timeout`: a finite
   number of seconds greater than 0; `None` uses `OPENEXTRACT_URL_TIMEOUT` or

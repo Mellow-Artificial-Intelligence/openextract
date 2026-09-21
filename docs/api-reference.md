@@ -16,9 +16,10 @@ How-to: [Guide](guide.md). Integration contract for generated code: [For agents]
 ### `Extractor(schema, model=None, instructions=None, *, style='direct', agent=None, model_settings=None, timeout=None, instrument=False, retry_policy=None, max_input_bytes=None, url_timeout=None, cite=False, cite_min_confidence=None, pages=None, language=None, on_progress=None)`
 
 Reusable synchronous extraction session. Enter it with `with`; then call
-`extract(input_file, *, media_type=None, on_progress=None, pages=None)` or
-`extract_with_usage(input_file, *, media_type=None, on_progress=None, pages=None)`. The
-agent, model provider client, and URL-fetch client are constructed once and
+`extract(input_file, *, media_type=None, on_progress=None, pages=None)`,
+`extract_with_usage(input_file, *, media_type=None, on_progress=None, pages=None)`,
+or `extract_with_result(input_file, *, media_type=None, on_progress=None, pages=None)`.
+The agent, model provider client, and URL-fetch client are constructed once and
 closed on context exit. `on_progress` on the constructor is the session
 default; a per-call `on_progress` overrides it. `pages` on the constructor is
 the session default; a per-call `pages` overrides it. See
@@ -34,7 +35,8 @@ configured Pydantic AI `Agent`; it is mutually exclusive with `model`, and its
 output is revalidated against `schema`. Non-`direct` styles and `cite=True`
 cannot be combined with an injected `agent`. `cite=True` wraps the session
 schema so the model returns per-field citations; `extract` still returns the
-schema instance. `cite_min_confidence` drops weak or unstamped citations after
+schema instance. `extract_with_result` returns [`ExtractionResult`](#extractionresult)
+with citations when `cite=True`. `cite_min_confidence` drops weak or unstamped citations after
 grounding when `cite=True`. `pages` limits local parse-then-window and
 citation grounding to those 1-based PDF pages (`None` keeps every page).
 `language` appends a document-language hint so field values keep that
@@ -42,10 +44,11 @@ language/script (`None` leaves instructions unchanged).
 
 ### `AsyncExtractor(schema, model=None, instructions=None, *, style='direct', agent=None, model_settings=None, timeout=None, instrument=False, retry_policy=None, max_input_bytes=None, url_timeout=None, cite=False, cite_min_confidence=None, pages=None, language=None, on_progress=None)`
 
-Async session counterpart. Enter it with `async with`; then await `extract` or
-`extract_with_usage`. It shares one async HTTP client and one agent across
-calls, including concurrent calls made on the entering event loop. Close it
-manually with `aclose()` only when a context manager is impractical.
+Async session counterpart. Enter it with `async with`; then await `extract`,
+`extract_with_usage`, or `extract_with_result`. It shares one async HTTP client
+and one agent across calls, including concurrent calls made on the entering
+event loop. Close it manually with `aclose()` only when a context manager is
+impractical.
 
 ### `RetryPolicy(max_retries=0, backoff=1.0, max_backoff=60.0)`
 
@@ -82,7 +85,8 @@ Extract one input synchronously and return an instance of `schema`.
 are parsed locally; long documents are extracted in page windows and merged.
 Boxes come from parser spans, not the model. The return type stays the schema
 instance; citations land on [`ExtractionResult`](#extractionresult) from
-`extract_with_result*` and the `*_with_results` APIs. `cite_min_confidence` (a float in `[0, 1]`) keeps only
+`extract_with_result*` / session `extract_with_result` and the `*_with_results`
+APIs. `cite_min_confidence` (a float in `[0, 1]`) keeps only
 citations whose heuristic `confidence` is not `None` and is at least that
 threshold; omit it to keep every citation. Invalid values raise `ValueError`.
 `language` is an optional BCP-47-ish tag or plain name (`en`, `es`, `fr`).
@@ -454,8 +458,8 @@ payloads stay `{field_path, page, bbox, reference_text}`.
 
 ### `ExtractionResult`
 
-A frozen, generic dataclass returned by `extract_with_result*` and
-`extract_many_with_results*`. It never
+A frozen, generic dataclass returned by `extract_with_result*`, session
+`extract_with_result`, and `extract_many_with_results*`. It never
 retains raw media, credentials, query strings, fragments, or provider
 internals; `source` is sanitized.
 
