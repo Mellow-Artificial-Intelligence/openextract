@@ -29,6 +29,7 @@ from openextract import (
     extract_with_result,
     extract_with_result_async,
     extract_with_usage,
+    field_confidence,
     schema_from_json,
     total_usage,
 )
@@ -114,6 +115,12 @@ _ = _dumped
 _ = _field
 _ = _confidence
 _ = _match
+_result_dump: dict[str, object] = oneshot.as_dict()
+_per_field: dict[str, float] = field_confidence(oneshot.citations)
+_result_field: dict[str, float] = oneshot.field_confidence()
+_ = _result_dump
+_ = _per_field
+_ = _result_field
 
 # extract_swarm_with_results returns SwarmResult with reduced citations.
 swarm: SwarmResult[Invoice] = extract_swarm_with_results(

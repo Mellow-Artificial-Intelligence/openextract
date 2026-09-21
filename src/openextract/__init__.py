@@ -21,6 +21,7 @@ from ._batch import (
     extract_many_with_results_async,
     iter_extract_many_async,
 )
+from ._confidence import field_confidence
 from ._extract import (
     extract,
     extract_async,
@@ -105,6 +106,7 @@ __all__ = [
     "resolve_output_schema",
     "resolve_swarm_members",
     "schema_from_json",
+    "field_confidence",
     "total_usage",
     "Usage",
     "ExtractionError",

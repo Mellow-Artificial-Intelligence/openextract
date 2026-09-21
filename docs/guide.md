@@ -223,6 +223,14 @@ onto ExtractBench `FieldCitation` (`field` → `field_path`, `quote` →
 `reference_text`) and does **not** include `confidence` / `match`. ExtractBench requires `page >= 1`; quote-only citations
 stay on `ExtractionResult` but cannot be scored.
 
+`ExtractionResult.as_dict()` dumps the whole result for JSON logs (`output`
+via `model_dump(mode="json")`, usage tokens, attempts, duration, model/media
+metadata, sanitized `source`, `warnings`, and `citations` as
+`Citation.as_dict()` list). `field_confidence(result.citations)` — or
+`result.field_confidence()` — maps each dotted field to the **minimum**
+non-`None` heuristic confidence so review workflows can gate on the weakest
+span. Fields with only `None` confidences are omitted.
+
 ```python
 from openextract import extract_many_with_results, extract_with_usage
 
@@ -239,6 +247,8 @@ results = extract_many_with_results(
 for citation in results[0].citations:
     print(citation.as_dict())
     print(citation.as_field_citation())
+print(results[0].field_confidence())
+print(results[0].as_dict()["usage"])
 ```
 
 Default is off: no extra instructions or schema wrap. Citations never retain

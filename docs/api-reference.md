@@ -210,6 +210,15 @@ Sum token usage across batch extraction results, for example the list returned
 by `extract_many_with_results` or `extract_many_with_results_async`. Returns a
 single [`Usage`](#usage) whose fields are the totals of the successful items.
 
+### `field_confidence(citations)`
+
+Map each distinct [`Citation.field`](#citation) to the **minimum** non-`None`
+heuristic `confidence` among citations for that dotted path. Fields whose
+citations are all `confidence is None` are omitted. Empty input returns `{}`.
+The min is a conservative gate for review workflows (the weakest supporting
+span). [`ExtractionResult.field_confidence()`](#extractionresult) delegates to
+this helper on `self.citations`.
+
 ## Swarm
 
 A swarm runs several agents over one input and reduces their outputs. The input
@@ -458,6 +467,16 @@ internals; `source` is sanitized.
 | `source` | `str \| None` | Sanitized source label; `None` for unnamed bytes/file-like inputs. |
 | `warnings` | `tuple[str, ...]` | Extensible diagnostics channel; currently always empty. |
 | `citations` | `tuple[Citation, ...]` | Per-field source spans when `cite=True`; empty otherwise. |
+
+`as_dict()` is the JSON-stable dump for logging and pipeline gates:
+`{output, usage, attempts, duration, model, media_type, source, warnings,
+citations}`. `output` is `model_dump(mode="json")` on the Pydantic instance.
+`usage` is `{input_tokens, output_tokens, total_tokens}`. `warnings` is a
+list. `citations` is a list of [`Citation.as_dict()`](#citation) payloads.
+Never includes raw media, credentials, or provider internals.
+
+`field_confidence()` returns `{dotted_field: min_confidence}` via
+[`field_confidence`](#field_confidencecitations) on `self.citations`.
 
 ### `ExtractProgress`
 

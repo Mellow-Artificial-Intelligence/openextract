@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Final, Literal, assert_never, cast
+from collections.abc import Iterable
+from typing import TYPE_CHECKING, Final, Literal, assert_never, cast
+
+if TYPE_CHECKING:
+    from ._types import Citation
 
 # How the local parser (or quote/value check) supported this citation.
 CitationMatch = Literal["exact", "numeric", "fuzzy", "value", "page", "quote"]
@@ -48,3 +52,23 @@ def score_citation_match(
         case "exact" | "numeric" | "fuzzy" | "value":
             return MATCH_SCORES[kind]
     assert_never(kind)  # pragma: no cover - exhaustive CitationMatch
+
+
+def field_confidence(citations: Iterable[Citation]) -> dict[str, float]:
+    """Minimum heuristic confidence per dotted field path.
+
+    Among citations that share a :attr:`Citation.field`, the **minimum**
+    non-``None`` :attr:`Citation.confidence` is kept so review workflows can
+    gate on the weakest supporting span. Fields whose citations are all
+    ``confidence is None`` are omitted. Empty input returns ``{}``.
+    """
+    scores: dict[str, float] = {}
+    for citation in citations:
+        confidence = citation.confidence
+        if confidence is None:
+            continue
+        field = citation.field
+        current = scores.get(field)
+        if current is None or confidence < current:
+            scores[field] = confidence
+    return scores
