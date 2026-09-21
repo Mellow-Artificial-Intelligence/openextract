@@ -36,6 +36,7 @@ NO_API_EXAMPLES: list[str] = [
     "examples.batch.stream_batch_extract",
     "examples.documents.line_item_extraction",
     "examples.advanced.openrouter_jev",
+    "examples.advanced.openrouter_jev_fraud",
 ]
 
 

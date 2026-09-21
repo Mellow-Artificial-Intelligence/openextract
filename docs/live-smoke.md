@@ -26,6 +26,7 @@ Without these env vars, integration tests skip.
 | ---- | --------------- | ----- | ---------- |
 | `test_live_openai_image_smoke` | `openai:gpt-5` | bundled PNG fixture | `OPENAI_API_KEY` |
 | `test_live_openrouter_jev_decisions_smoke` | `~typesafe/jev-latest` via `POST /api/alpha/decisions` | extracted memo state | `OPENROUTER_API_KEY` |
+| `test_live_openrouter_jev_fraud_decisions_smoke` | `~typesafe/jev-latest` via `POST /api/alpha/decisions` | extracted fraud-doc state | `OPENROUTER_API_KEY` |
 
 Override the OpenAI smoke model with `OPENEXTRACT_LIVE_MODEL`. Override the
 Jev Decisions model with `OPENROUTER_DECISIONS_MODEL` (a Decisions ID such as
@@ -34,6 +35,7 @@ Jev Decisions model with `OPENROUTER_DECISIONS_MODEL` (a Decisions ID such as
 Cookbook live run (same Decisions endpoint, no pytest)::
 
     OPENROUTER_API_KEY=... uv run python -m examples.advanced.openrouter_jev --live
+    OPENROUTER_API_KEY=... uv run python -m examples.advanced.openrouter_jev_fraud --live
 
 ## Design rules
 

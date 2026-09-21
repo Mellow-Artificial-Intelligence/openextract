@@ -9,6 +9,14 @@ timing when that is known.
 ## [Unreleased]
 
 ### Added
+- Cookbook for openextract + OpenRouter Decisions (Jev Latest) fraud-check
+  at `examples/advanced/openrouter_jev_fraud.py`. `extract()` + TestModel
+  pulls document metadata, content, and risk signals (memo / PDF / image);
+  `--live` POSTs `{model, state, questions}` to
+  `https://openrouter.ai/api/alpha/decisions` with `~typesafe/jev-latest`.
+  Result is `result` / `confidence` / `reasoning` — `reasoning` is composed
+  from extracted signals and the selected choice label (Jev does not emit
+  prose). `--fixture` / default uses canned answers (no network).
 - Cookbook for openextract + OpenRouter Decisions (Jev Latest) at
   `examples/advanced/openrouter_jev.py`. `extract()` + TestModel prepares
   structured `state`; `--live` POSTs `{model, state, questions}` to

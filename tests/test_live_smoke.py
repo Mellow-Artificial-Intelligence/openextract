@@ -16,6 +16,7 @@ import pytest
 from pydantic import BaseModel
 
 import examples.advanced.openrouter_jev as jev
+import examples.advanced.openrouter_jev_fraud as fraud
 from openextract import extract
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -67,3 +68,19 @@ def test_live_openrouter_jev_decisions_smoke() -> None:
     assert result.decision.action in {"approve", "reject", "escalate"}
     assert 0.0 <= result.decision.auto_refund_noul <= 1.0
     assert result.state.ticket_id.strip()
+
+
+@pytest.mark.integration
+def test_live_openrouter_jev_fraud_decisions_smoke() -> None:
+    """OpenRouter Decisions fraud-check (Jev Latest); skipped unless enabled."""
+    if not _live_enabled():
+        pytest.skip("Set OPENEXTRACT_LIVE_SMOKE=1 to run live provider smoke tests")
+    if not os.environ.get("OPENROUTER_API_KEY"):
+        pytest.skip("OPENROUTER_API_KEY is required for the OpenRouter Jev live smoke test")
+
+    result = fraud.run_cookbook(live=True)
+    assert result.result in {"fraud", "not_fraud", "review"}
+    assert 0.0 <= result.confidence <= 1.0
+    assert result.reasoning
+    assert result.state.content.strip()
+    assert result.state.payer.strip()
