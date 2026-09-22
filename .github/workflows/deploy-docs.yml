@@ -1,13 +1,8 @@
-name: Deploy documentation to Pages
+name: Deploy site to Pages
 
 on:
   push:
-    branches: ["main"]
-    paths:
-      - "docs/**"
-      - ".github/workflows/deploy-docs.yml"
-  pull_request:
-    branches: ["main"]
+    branches: [main]
     paths:
       - "docs/**"
       - ".github/workflows/deploy-docs.yml"
@@ -18,46 +13,24 @@ permissions:
   pages: write
   id-token: write
 
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # Build is read-only, so it only needs to serialize against itself per ref.
-    # Superseded pull-request builds are cancelled instead of queued.
-    concurrency:
-      group: pages-build-${{ github.event.pull_request.number || github.ref }}
-      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
-        with:
-          persist-credentials: false
-      - name: Setup Pages
-        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b  # v5.0.0
-      - name: Build with Jekyll
-        uses: actions/jekyll-build-pages@44a6e6beabd48582f863aeeb6cb2151cc1716697  # v1.0.13
-        with:
-          source: ./docs
-          destination: ./_site
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa  # v3.0.1
-        with:
-          path: ./_site
-
-  deploy:
-    if: github.event_name != 'pull_request'
-    needs: build
-    # Pages allows one deployment at a time; queue rather than cancel so a
-    # merged commit is never dropped.
-    concurrency:
-      group: pages
-      cancel-in-progress: false
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
     steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b  # v5.0.0
+      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa  # v3.0.1
+        with:
+          path: ./docs
+      - id: deployment
         uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e  # v4.0.5

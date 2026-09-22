@@ -1,458 +1,459 @@
----
-layout: null
-title: openextract
----
 <!DOCTYPE html>
-<html lang="en" class="scroll-smooth">
+<html lang="en">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>openextract - Structured Data Extraction</title>
-    <meta name="description" content="Extract structured data from documents, images, audio, and video using LLMs." />
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <script src="https://unpkg.com/lucide@latest"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-      tailwind.config = {
-        theme: {
-          extend: {
-            fontFamily: {
-              sans: ['Inter', 'system-ui', 'sans-serif'],
-              mono: ['JetBrains Mono', 'monospace'],
-            },
-            animation: {
-              'fade-in': 'fadeIn 0.8s ease-out forwards',
-              'slide-up': 'slideUp 0.6s ease-out forwards',
-            },
-            keyframes: {
-              fadeIn: {
-                '0%': { opacity: '0' },
-                '100%': { opacity: '1' },
-              },
-              slideUp: {
-                '0%': { opacity: '0', transform: 'translateY(20px)' },
-                '100%': { opacity: '1', transform: 'translateY(0)' },
-              },
-            },
-          }
-        }
-      }
-    </script>
-    <style>
-      body {
-        background-color: #fafafa;
-        min-height: 100vh;
-      }
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>openextract</title>
+<meta name="description" content="Extract structured data from documents, images, audio, and video using LLMs. One function, any file, a validated Pydantic model.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --light: #E8E8E8;
+    --paper: #FFFFFF;
+    --ink: #0D0D0D;
+    --gray: #737373;
+    --rule: #BFBFBF;
+    --dark: #0D0D0D;
+    --on-dark: #F5F5F5;
+    --on-dark-gray: #8A8A8A;
+    --dark-rule: #2B2B2B;
+    --sans: "Inter Tight", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    --gutter: clamp(16px, 4vw, 64px);
+  }
 
-      /* Subtle grid */
-      .grid-bg {
-        background-image:
-          linear-gradient(to right, rgba(0,0,0,0.03) 1px, transparent 1px),
-          linear-gradient(to bottom, rgba(0,0,0,0.03) 1px, transparent 1px);
-        background-size: 60px 60px;
-      }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; background: var(--dark); }
+  body {
+    margin: 0;
+    background: var(--light);
+    color: var(--ink);
+    font: 400 17px/1.45 var(--sans);
+  }
+  a { color: inherit; text-decoration: none; }
+  a:hover { text-decoration: underline; text-underline-offset: 3px; }
+  :focus-visible { outline: 1px solid currentColor; outline-offset: 3px; }
+  ::selection { background: var(--ink); color: var(--paper); }
 
-      /* Scrollbar */
-      ::-webkit-scrollbar { width: 6px; }
-      ::-webkit-scrollbar-track { background: #fafafa; }
-      ::-webkit-scrollbar-thumb { background: #ddd; border-radius: 3px; }
+  .wrap { max-width: 1440px; margin: 0 auto; padding-inline: var(--gutter); }
+  .band-dark { background: var(--dark); color: var(--on-dark); }
+  .band-dark ::selection { background: var(--on-dark); color: var(--dark); }
 
-      /* Selection */
-      ::selection { background: rgba(0, 0, 0, 0.1); color: black; }
+  .mono { font: 400 13px/1.5 var(--mono); letter-spacing: 0.01em; }
+  .grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: 24px; }
 
-      /* Code block */
-      .code-block {
-        background: #fff;
-        border: 1px solid rgba(0, 0, 0, 0.1);
-      }
-    </style>
+  /* Label row that opens every section */
+  .section-head {
+    display: flex; justify-content: space-between; gap: 16px;
+    border-top: 1px solid currentColor; padding-top: 10px;
+  }
+  .section-head .dim { color: var(--gray); }
+  .band-dark .section-head .dim { color: var(--on-dark-gray); }
+
+  /* Top bar */
+  .topbar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px 24px; padding-block: 20px 28px; }
+  .topbar .mark { display: inline-flex; align-items: center; gap: 10px; }
+  .topbar .mark::before { content: "{ }"; font-weight: 500; }
+  .topbar nav { display: flex; gap: 28px; }
+
+  /* Headlines */
+  .headline {
+    font: 500 clamp(52px, 9.2vw, 148px)/0.9 var(--sans);
+    letter-spacing: -0.052em; margin: 0; text-wrap: balance;
+  }
+  .headline .quiet { color: var(--gray); }
+  .headline.small { font-size: clamp(40px, 5.6vw, 84px); letter-spacing: -0.045em; }
+
+  /* Columns hanging off a rule */
+  .col { border-left: 1px solid currentColor; padding-left: 14px; display: flex; flex-direction: column; gap: 44px; min-width: 0; }
+  .lead { font: 400 clamp(21px, 2vw, 27px)/1.22 var(--sans); letter-spacing: -0.015em; margin: 0; }
+  .lead code { font: 400 0.8em var(--mono); letter-spacing: 0; }
+
+  /* Hero */
+  .hero { padding-block: 0 104px; }
+  .hero .headline { margin-top: clamp(40px, 6vw, 88px); }
+  .hero .cols { margin-top: clamp(56px, 7vw, 104px); row-gap: 56px; }
+  .hero .c1 { grid-column: 1 / span 4; }
+  .hero .c2 { grid-column: 5 / span 4; }
+  .hero .c3 { grid-column: 9 / span 4; }
+
+  .install { display: grid; grid-template-columns: minmax(0, 1fr) auto; border: 1px solid var(--ink); background: var(--paper); }
+  .install code { font: 400 14px/1 var(--mono); padding: 18px 16px; overflow-x: auto; white-space: nowrap; }
+  .copy {
+    font: 500 13px/1 var(--mono);
+    min-width: 96px; padding: 0 20px; border: 0;
+    background: var(--ink); color: var(--paper); cursor: pointer;
+  }
+  .copy:hover { background: #333333; }
+
+  .hexdump { margin: 0; font: 400 12.5px/1.75 var(--mono); white-space: pre; overflow-x: auto; color: var(--gray); }
+  .hexdump b { font-weight: 500; color: var(--paper); background: var(--ink); }
+  .verdict { display: flex; justify-content: space-between; gap: 12px; border-top: 1px solid var(--rule); padding-top: 10px; }
+  .verdict span:last-child { font-weight: 500; }
+
+  /* Settling band */
+  .field { padding-block: 28px 32px; }
+  .canvas-box { position: relative; height: clamp(380px, 46vw, 640px); margin-top: 24px; }
+  .canvas-box canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .field-foot { display: flex; justify-content: space-between; gap: 16px; margin-top: 18px; color: var(--on-dark-gray); }
+
+  /* Example */
+  .example { padding-block: 104px 120px; }
+  .example .headline { margin-top: 40px; }
+  .example .cols { margin-top: 72px; row-gap: 56px; }
+  .example .col { grid-column: span 4; gap: 24px; }
+
+  .sheet { background: var(--paper); border: 1px solid var(--rule); padding: 28px 24px; font-size: 15px; }
+  .sheet .from { font: 500 22px/1.15 var(--sans); letter-spacing: -0.02em; margin: 0 0 4px; }
+  .sheet .addr { color: var(--gray); margin: 0 0 22px; font-size: 13px; }
+  .sheet dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 20px; margin: 0 0 20px; font-size: 13px; }
+  .sheet dt { color: var(--gray); }
+  .sheet dd { margin: 0; font-variant-numeric: tabular-nums; }
+  .lines { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+  .lines td { padding: 8px 0; border-top: 1px solid #DDDDDD; }
+  .lines td:last-child { text-align: right; }
+  .lines tr.total td { border-top: 1px solid var(--ink); font-size: 16px; font-weight: 500; padding-top: 12px; }
+  .hit { background: var(--ink); color: var(--paper); padding: 0 3px; }
+  .hit sup { font: 500 10px/1 var(--mono); margin-left: 3px; }
+
+  pre { margin: 0; }
+  .code { font: 400 13px/1.75 var(--mono); background: var(--paper); border: 1px solid var(--rule); padding: 20px; overflow-x: auto; }
+  .code .d { color: var(--gray); }
+
+  .readout { margin: 0; border-top: 1px solid var(--ink); }
+  .readout > div { display: grid; grid-template-columns: 1.75rem 6.5rem minmax(0, 1fr); align-items: baseline; padding-block: 16px; border-bottom: 1px solid var(--rule); }
+  .readout .n { font: 500 11px/1 var(--mono); }
+  .readout dt { font: 400 13px/1 var(--mono); color: var(--gray); }
+  .readout dd { margin: 0; font: 400 22px/1.2 var(--sans); letter-spacing: -0.015em; overflow-wrap: anywhere; }
+
+  /* Reference */
+  .reference { padding-block: 104px 96px; }
+  .reference .headline { margin-top: 40px; }
+  .ref-list { margin-top: 72px; border-top: 1px solid var(--on-dark); }
+  details { border-bottom: 1px solid var(--dark-rule); }
+  summary { list-style: none; cursor: pointer; padding-block: 22px; align-items: baseline; }
+  summary::-webkit-details-marker { display: none; }
+  summary .key { grid-column: 1 / span 3; color: var(--on-dark-gray); }
+  summary .question { grid-column: 4 / span 8; font: 400 clamp(20px, 2vw, 26px)/1.25 var(--sans); letter-spacing: -0.015em; }
+  summary .sign { grid-column: 12; justify-self: end; font: 400 22px/1 var(--mono); }
+  summary .sign::before { content: "+"; }
+  details[open] summary .sign::before { content: "\2212"; }
+  details[open] summary .key { color: var(--on-dark); }
+  summary:hover .question { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 5px; }
+  .answer { padding-block: 0 32px; }
+  .answer > * { grid-column: 4 / span 8; }
+  .answer > * + * { margin-top: 22px; }
+  .answer p { margin: 0; color: var(--on-dark-gray); max-width: 60ch; }
+  .answer pre { font: 400 13px/1.75 var(--mono); overflow-x: auto; border-left: 1px solid var(--on-dark); padding: 4px 0 4px 16px; }
+  .answer .d { color: var(--on-dark-gray); }
+  .spec { margin: 0; }
+  .spec > div { display: grid; grid-template-columns: minmax(0, 14rem) minmax(0, 1fr); gap: 20px; padding-block: 10px; border-top: 1px solid var(--dark-rule); }
+  .spec dt { font: 400 13px/1.6 var(--mono); }
+  .spec dd { margin: 0; color: var(--on-dark-gray); }
+
+  /* Footer */
+  footer { padding-block: 0 24px; }
+  .footer-row { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px 28px; border-top: 1px solid var(--dark-rule); padding-top: 18px; color: var(--on-dark-gray); }
+  .footer-row nav { display: flex; gap: 24px; }
+  .footer-row a:hover { color: var(--on-dark); }
+  .footer-mark {
+    margin: 40px 0 0; font: 500 clamp(64px, 21.2vw, 318px)/0.78 var(--sans);
+    letter-spacing: -0.065em; white-space: nowrap; overflow: hidden; color: var(--on-dark);
+  }
+
+  @media (max-width: 1000px) {
+    .hero .c1, .hero .c2 { grid-column: span 6; }
+    .hero .c3 { grid-column: 1 / -1; }
+    .example .col { grid-column: 1 / -1; }
+    summary .key { grid-column: 1 / -1; }
+    summary .question { grid-column: 1 / span 11; }
+    .answer > * { grid-column: 1 / -1; }
+  }
+  @media (max-width: 640px) {
+    .hero .c1, .hero .c2 { grid-column: 1 / -1; }
+    .col { gap: 28px; }
+    .section-head .dim { display: none; }
+    .spec > div, .readout > div { grid-template-columns: 1fr; gap: 4px; }
+    .readout .n { display: none; }
+    .field-foot span:last-child { display: none; }
+  }
+</style>
 </head>
-<body class="text-black font-sans antialiased grid-bg">
+<body>
 
-    <!-- Navigation -->
-    <header class="fixed top-0 w-full z-50 bg-[#fafafa]/80 backdrop-blur-lg border-b border-black/5">
-      <div class="max-w-5xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
-        <a href="{{ '/' | relative_url }}" class="flex items-center gap-2">
-          <div class="w-8 h-8 bg-black flex items-center justify-center">
-            <span class="text-white font-mono font-bold text-xs">OE</span>
-          </div>
-          <span class="font-mono text-sm text-black/60 hidden sm:inline">openextract</span>
-        </a>
+<header class="wrap topbar mono">
+  <a class="mark" href="https://github.com/Mellow-Artificial-Intelligence/openextract">openextract</a>
+  <nav aria-label="Project">
+    <a href="https://github.com/Mellow-Artificial-Intelligence/openextract">GitHub</a>
+    <a href="https://pypi.org/project/openextract/">PyPI</a>
+    <a href="https://github.com/Mellow-Artificial-Intelligence/openextract/blob/main/CHANGELOG.md">Changelog</a>
+  </nav>
+</header>
 
-        <nav class="flex items-center gap-4 sm:gap-6">
-          <a href="{{ '/guide.html' | relative_url }}" class="font-mono text-xs text-black/40 hover:text-black transition-colors">Guide</a>
-          <a href="{{ '/agents.html' | relative_url }}" class="font-mono text-xs text-black/40 hover:text-black transition-colors">Agents</a>
-          <a href="{{ '/api-reference.html' | relative_url }}" class="font-mono text-xs text-black/40 hover:text-black transition-colors">API</a>
-          <a href="https://github.com/Mellow-Artificial-Intelligence/openextract" class="font-mono text-xs text-black/40 hover:text-black transition-colors">GitHub</a>
-          <a href="https://pypi.org/project/openextract/" class="font-mono text-xs text-black/40 hover:text-black transition-colors">PyPI</a>
-        </nav>
+<section class="wrap hero">
+  <div class="section-head mono"><span>Structured extraction for Python</span><span class="dim">v1.0 · MIT</span></div>
+  <h1 class="headline">Any file in.<br><span class="quiet">A validated model out.</span></h1>
+  <div class="grid cols">
+    <div class="col c1">
+      <span class="mono">One function</span>
+      <p class="lead">openextract reads documents, images, audio, and video with the LLM of your choice and hands back a typed Pydantic object. Not a string. Not a dict. The model you asked for, already validated.</p>
+    </div>
+    <div class="col c2">
+      <span class="mono">Install</span>
+      <p class="lead">Installs every provider SDK. For just one, use its extra, like <code>[anthropic]</code>. Set its API key and call <code>extract</code>.</p>
+      <div class="install">
+        <code id="install-cmd">pip install 'openextract[all]'</code>
+        <button class="copy" id="copy-install" type="button">Copy</button>
       </div>
-    </header>
+    </div>
+    <div class="col c3">
+      <span class="mono">No media type needed</span>
+<pre class="hexdump" aria-label="The first 48 bytes of a PDF">0000  <b>25 50 44 46</b> 2d 31 2e 35  <b>%PDF</b>-1.5
+0008  0a 25 8f 0a 31 30 30 20  .%..100
+0010  30 20 6f 62 6a 0a 3c 3c  0 obj.&lt;&lt;
+0018  20 2f 46 69 6c 74 65 72   /Filter
+0020  20 2f 46 6c 61 74 65 44   /FlateD
+0028  65 63 6f 64 65 20 2f 4c  ecode /L</pre>
+      <div class="verdict mono"><span>leading bytes →</span><span>application/pdf</span></div>
+    </div>
+  </div>
+</section>
 
-    <main>
+<section class="band-dark" aria-label="Unstructured text settling into typed fields">
+  <div class="wrap field">
+    <div class="section-head mono"><span>invoice.pdf → Invoice</span><span class="dim">3 fields · validated</span></div>
+    <div class="canvas-box"><canvas id="settle" aria-hidden="true"></canvas></div>
+    <div class="field-foot mono"><span>Every character on the page is a candidate. Three fields become your model.</span><span>str · float · str</span></div>
+  </div>
+</section>
 
-      <!-- Hero Section -->
-      <section class="relative min-h-screen flex items-center justify-center pt-14">
-        <div class="max-w-3xl mx-auto px-4 sm:px-6 py-16 sm:py-24 text-center">
+<section class="wrap example">
+  <div class="section-head mono"><span>Example</span><span class="dim">extract.py</span></div>
+  <h2 class="headline small">Name the shape.<br><span class="quiet">Get the facts.</span></h2>
+  <div class="grid cols">
+    <figure class="col" style="margin:0">
+      <span class="mono">Source — invoice.pdf</span>
+      <div class="sheet">
+        <p class="from"><span class="hit">Halvorsen Print Co.<sup>1</sup></span></p>
+        <p class="addr">Kanalgata 14, 5003 Bergen, Norway</p>
+        <dl>
+          <dt>Invoice</dt><dd>No. 2291</dd>
+          <dt>Issued</dt><dd>12 Sep 2026</dd>
+          <dt>Due</dt><dd>12 Oct 2026</dd>
+        </dl>
+        <table class="lines">
+          <tr><td>Letterpress run, 500 cards</td><td>860.00</td></tr>
+          <tr><td>Cotton stock, 600 gsm</td><td>380.00</td></tr>
+          <tr class="total"><td>Total due</td><td><span class="hit">1,240.00<sup>2</sup></span> <span class="hit">EUR<sup>3</sup></span></td></tr>
+        </table>
+      </div>
+    </figure>
+    <div class="col">
+      <span class="mono">Call — extract.py</span>
+<pre class="code"><code><span class="d">from</span> pydantic <span class="d">import</span> BaseModel
+<span class="d">from</span> openextract <span class="d">import</span> extract
 
-          <!-- Badge -->
-          <a href="#whats-new" class="animate-slide-up opacity-0 inline-flex items-center gap-2.5 px-3 py-1.5 border border-black/10 bg-white text-xs mb-8 hover:border-black/30 transition-colors">
-            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-            <span class="font-mono text-black/40">on main</span>
-            <span class="text-black/40">|</span>
-            <span class="text-black/40">sessions, styles, and typed results</span>
-          </a>
 
-          <!-- Headline -->
-          <h1 class="animate-slide-up opacity-0 [animation-delay:100ms] text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight mb-4 sm:mb-6 bg-gradient-to-b from-black to-black/60 bg-clip-text text-transparent">
-            Structured Extraction
-          </h1>
+<span class="d">class</span> Invoice(BaseModel):
+    vendor: str
+    total: float
+    currency: str
 
-          <!-- Subheadline -->
-          <p class="text-base sm:text-lg text-black/60 mb-2 sm:mb-3 font-mono">
-            Typed output from any media.
-          </p>
-          <p class="text-sm text-black/40 max-w-md mx-auto mb-8 sm:mb-10 px-2">
-            Extract structured data from documents, images, audio, and video using LLMs and Pydantic schemas.
-          </p>
 
-          <!-- CTAs -->
-          <div class="flex flex-col sm:flex-row gap-3 justify-center mb-10 sm:mb-14">
-            <a href="{{ '/guide.html' | relative_url }}"
-               class="h-10 px-5 bg-black text-white font-medium text-sm flex items-center justify-center hover:bg-black/80 transition-colors">
-               Read the guide
-            </a>
-            <a href="https://github.com/Mellow-Artificial-Intelligence/openextract"
-               class="h-10 px-5 bg-white border border-black/10 text-black font-medium text-sm flex items-center justify-center hover:bg-black/5 hover:border-black/20 transition-colors">
-               View Source
-            </a>
-            <button onclick="copyInstall()" class="h-10 px-3 sm:px-4 bg-white border border-black/10 text-black/60 font-mono text-xs sm:text-sm flex items-center justify-center gap-2 sm:gap-3 hover:bg-black/5 hover:border-black/20 transition-all group">
-              <span class="text-black/40">$</span> <span class="truncate">uv add openextract</span>
-              <span id="copy-icon" class="text-black/40 group-hover:text-black/60 flex-shrink-0"><i data-lucide="copy" class="w-3.5 h-3.5"></i></span>
-              <span id="check-icon" class="hidden text-emerald-500 flex-shrink-0"><i data-lucide="check" class="w-3.5 h-3.5"></i></span>
-            </button>
-          </div>
-
-          <!-- Terminal preview -->
-          <div class="max-w-lg mx-auto mb-8 sm:mb-10">
-            <div class="code-block overflow-hidden text-left">
-              <div class="px-3 sm:px-4 py-2.5 border-b border-black/5 flex items-center justify-between">
-                <span class="font-mono text-[10px] text-black/40 uppercase tracking-wider">Terminal</span>
-                <span class="font-mono text-[10px] text-black/40">install</span>
-              </div>
-              <div class="p-3 sm:p-4 overflow-x-auto">
-<pre class="text-xs sm:text-sm font-mono leading-relaxed"><code><span class="text-black/40">$</span> <span class="text-black/90">uv add openextract</span>
-<span class="text-black/40">$</span> <span class="text-black/90">openextract report.pdf \</span>
-    <span class="text-black/90">--schema mypkg:Invoice \</span>
-    <span class="text-black/90">--model</span> <span class="text-emerald-600">xai:grok-4.3</span>
-<span class="text-black/40">{ "total": 1240.00, "currency": "USD", ... }</span></code></pre>
-              </div>
-            </div>
-          </div>
-
-          <!-- Tech badges -->
-          <div class="flex flex-wrap justify-center gap-3 sm:gap-4 font-mono text-[10px] sm:text-[11px] text-black/40">
-            <span class="flex items-center gap-1.5"><i data-lucide="shield-check" class="w-3 h-3"></i> Pydantic</span>
-            <span class="flex items-center gap-1.5"><i data-lucide="cpu" class="w-3 h-3"></i> Any LLM</span>
-          </div>
-        </div>
-      </section>
-
-      <!-- Features -->
-      <section class="pt-10 sm:pt-14 pb-16 sm:pb-24 border-t border-black/5">
-        <div class="max-w-5xl mx-auto px-4 sm:px-6">
-          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-
-            <div class="p-5 border border-black/10 bg-white">
-              <div class="w-9 h-9 border border-black/10 flex items-center justify-center mb-4">
-                <i data-lucide="zap" class="w-4 h-4 text-black/40"></i>
-              </div>
-              <h3 class="font-mono text-sm font-medium text-black/90 mb-2">Zero Config</h3>
-              <p class="text-sm text-black/60 leading-relaxed">
-                One function call, or a reusable session. Bring a schema, media, and a model string.
-              </p>
-            </div>
-
-            <div class="p-5 border border-black/10 bg-white">
-              <div class="w-9 h-9 border border-black/10 flex items-center justify-center mb-4">
-                <i data-lucide="files" class="w-4 h-4 text-black/40"></i>
-              </div>
-              <h3 class="font-mono text-sm font-medium text-black/90 mb-2">Multi-Media</h3>
-              <p class="text-sm text-black/60 leading-relaxed">
-                Documents, images, audio, and video with smart routing.
-              </p>
-            </div>
-
-            <div class="p-5 border border-black/10 bg-white">
-              <div class="w-9 h-9 border border-black/10 flex items-center justify-center mb-4">
-                <i data-lucide="cpu" class="w-4 h-4 text-black/40"></i>
-              </div>
-              <h3 class="font-mono text-sm font-medium text-black/90 mb-2">Any LLM</h3>
-              <p class="text-sm text-black/60 leading-relaxed">
-                OpenAI, Anthropic, Google, Bedrock, xAI, Groq, Mistral, OpenRouter, Ollama, and more via pydantic-ai.
-              </p>
-            </div>
-
-            <div class="p-5 border border-black/10 bg-white">
-              <div class="w-9 h-9 border border-black/10 flex items-center justify-center mb-4">
-                <i data-lucide="check-circle" class="w-4 h-4 text-black/40"></i>
-              </div>
-              <h3 class="font-mono text-sm font-medium text-black/90 mb-2">Type Safe</h3>
-              <p class="text-sm text-black/60 leading-relaxed">
-                Pydantic schemas ensure validated, typed output every time.
-              </p>
-            </div>
-
-          </div>
-        </div>
-      </section>
-
-      <!-- How it works -->
-      <section class="py-16 sm:py-24 border-t border-black/5">
-        <div class="max-w-6xl mx-auto px-4 sm:px-6">
-          <div class="grid grid-cols-1 lg:grid-cols-[1fr,1.4fr] gap-8 lg:gap-12 items-center">
-
-            <div>
-              <p class="font-mono text-[11px] text-black/40 uppercase tracking-wider mb-3">How it works</p>
-              <h2 class="text-2xl sm:text-3xl font-bold mb-4 sm:mb-6 text-black/90">
-                Schema in, typed data out
-              </h2>
-              <p class="text-black/60 mb-8 leading-relaxed">
-                Define a <code class="font-mono text-black/90 bg-black/5 px-1.5 py-0.5 text-sm">BaseModel</code>, call <code class="font-mono text-black/90 bg-black/5 px-1.5 py-0.5 text-sm">extract()</code>, get validated output.
-              </p>
-
-              <div class="space-y-5">
-                <div class="flex gap-4">
-                  <div class="w-7 h-7 border border-black/10 flex items-center justify-center font-mono text-xs text-black/40 flex-shrink-0">1</div>
-                  <div>
-                    <h4 class="font-mono text-sm text-black/90 mb-1">Define a schema</h4>
-                    <p class="text-sm text-black/60">Describe the shape you want with a Pydantic model.</p>
-                  </div>
-                </div>
-                <div class="flex gap-4">
-                  <div class="w-7 h-7 border border-black/10 flex items-center justify-center font-mono text-xs text-black/40 flex-shrink-0">2</div>
-                  <div>
-                    <h4 class="font-mono text-sm text-black/90 mb-1">Point at any media</h4>
-                    <p class="text-sm text-black/60">Documents, images, audio, or video via path, URL, bytes, or a session.</p>
-                  </div>
-                </div>
-                <div class="flex gap-4">
-                  <div class="w-7 h-7 border border-black/10 flex items-center justify-center font-mono text-xs text-black/40 flex-shrink-0">3</div>
-                  <div>
-                    <h4 class="font-mono text-sm text-black/90 mb-1">Get typed output</h4>
-                    <p class="text-sm text-black/60">Validated against your schema. No parsing, no regex.</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="code-block overflow-hidden">
-              <div class="px-3 sm:px-4 py-2.5 border-b border-black/5 flex items-center justify-between">
-                <span class="font-mono text-[10px] text-black/40 uppercase tracking-wider">Terminal</span>
-                <span class="font-mono text-[10px] text-black/40">extract.py</span>
-              </div>
-              <div class="p-3 sm:p-4 overflow-x-auto">
-<pre class="text-xs sm:text-sm font-mono leading-relaxed"><code><span class="text-black/40">from</span> <span class="text-black/70">pydantic</span> <span class="text-black/40">import</span> <span class="text-black/70">BaseModel</span>
-<span class="text-black/40">from</span> <span class="text-black/70">openextract</span> <span class="text-black/40">import</span> <span class="text-black/70">extract</span>
-
-<span class="text-black/40">class</span> <span class="text-black/80">Report</span>(<span class="text-black/70">BaseModel</span>):
-    <span class="text-black/50">title</span>: <span class="text-black/50">str</span>
-    <span class="text-black/50">findings</span>: <span class="text-black/50">list</span>[<span class="text-black/50">str</span>]
-    <span class="text-black/50">severity</span>: <span class="text-black/50">int</span>
-
-<span class="text-black/70">result</span> <span class="text-black/40">=</span> <span class="text-black/70">extract</span>(
-    <span class="text-black/40">schema=</span><span class="text-black/70">Report</span>,
-    <span class="text-black/40">model=</span><span class="text-emerald-600">"xai:grok-4.3"</span>,
-    <span class="text-black/40">input_file=</span><span class="text-emerald-600">"https://example.com/report.pdf"</span>,
-    <span class="text-black/40">instructions=</span><span class="text-emerald-600">"Extract findings"</span>,
+invoice = extract(
+    Invoice,
+    "openai:gpt-5",
+    "invoice.pdf",
 )</code></pre>
-              </div>
-            </div>
+    </div>
+    <div class="col">
+      <span class="mono">Output — Invoice</span>
+      <dl class="readout">
+        <div><span class="n">1</span><dt>vendor</dt><dd>Halvorsen Print Co.</dd></div>
+        <div><span class="n">2</span><dt>total</dt><dd>1240.0</dd></div>
+        <div><span class="n">3</span><dt>currency</dt><dd>EUR</dd></div>
+      </dl>
+    </div>
+  </div>
+</section>
 
-          </div>
+<section class="band-dark" id="reference">
+  <div class="wrap reference">
+    <div class="section-head mono"><span>Reference</span><span class="dim">2 functions · 4 exceptions</span></div>
+    <h2 class="headline small">Everything else<br><span class="quiet">is inferred.</span></h2>
+    <div class="ref-list">
+      <details open>
+        <summary class="grid"><span class="key mono">extract()</span><span class="question">What do I pass in?</span><span class="sign" aria-hidden="true"></span></summary>
+        <div class="answer grid">
+<pre><code>extract(schema, model, source, instructions=<span class="d">None</span>, *, media_type=<span class="d">None</span>)</code></pre>
+          <dl class="spec">
+            <div><dt>schema</dt><dd>The Pydantic model you want back.</dd></div>
+            <div><dt>model</dt><dd>A pydantic-ai model string like "anthropic:claude-sonnet-5", or a configured Model.</dd></div>
+            <div><dt>source</dt><dd>A file path, a pathlib.Path, an https:// URL, or raw bytes.</dd></div>
+            <div><dt>instructions</dt><dd>Optional guidance, like "Amounts are in EUR."</dd></div>
+            <div><dt>media_type</dt><dd>Only needed to override what openextract infers.</dd></div>
+          </dl>
         </div>
-      </section>
-
-      <!-- What's new on main -->
-      <section id="whats-new" class="py-16 sm:py-24 border-t border-black/5 scroll-mt-14">
-        <div class="max-w-5xl mx-auto px-4 sm:px-6">
-          <div class="flex items-baseline justify-between mb-8 sm:mb-10 flex-wrap gap-3">
-            <div>
-              <p class="font-mono text-[11px] text-black/40 uppercase tracking-wider mb-2">What&rsquo;s new</p>
-              <h2 class="text-2xl sm:text-3xl font-bold text-black/90">In v0.15.0</h2>
-              <p class="text-sm text-black/40 mt-2">The latest PyPI release: <span class="font-mono">v0.15.0</span>.</p>
-            </div>
-            <a href="https://github.com/Mellow-Artificial-Intelligence/openextract/blob/main/CHANGELOG.md#0150---2026-09-18" class="font-mono text-xs text-black/40 hover:text-black/90 transition-colors inline-flex items-center gap-1.5">
-              Full changelog <i data-lucide="arrow-up-right" class="w-3 h-3"></i>
-            </a>
-          </div>
-
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4 mb-4">
-            <div class="p-6 border border-black/10 bg-white">
-              <div class="flex items-center gap-3 mb-3">
-                <div class="w-9 h-9 border border-black/10 flex items-center justify-center">
-                  <i data-lucide="table" class="w-4 h-4 text-black/40"></i>
-                </div>
-                <span class="font-mono text-[10px] text-black/40 uppercase tracking-wider">Styles</span>
-              </div>
-              <h3 class="font-mono text-base font-medium text-black/90 mb-2">form and table</h3>
-              <p class="text-sm text-black/60 leading-relaxed mb-4">
-                <code class="font-mono text-black/90 text-xs">style='form'</code> for labeled forms and receipts; <code class="font-mono text-black/90 text-xs">style='table'</code> for line-item docs. PDFs reuse parse-then-window so fields and rows merge across pages. Boxes are still never invented (<code class="font-mono text-black/90 text-xs">cite=True</code> for parser-backed citations).
-              </p>
-              <div class="flex flex-wrap gap-1.5">
-                <span class="font-mono text-[11px] text-black/90 border border-black/10 px-2 py-1">form</span>
-                <span class="font-mono text-[11px] text-black/90 border border-black/10 px-2 py-1">table</span>
-                <span class="font-mono text-[11px] text-black/90 border border-black/10 px-2 py-1">cite=True</span>
-              </div>
-            </div>
-
-            <div class="p-6 border border-black/10 bg-white">
-              <div class="flex items-center gap-3 mb-3">
-                <div class="w-9 h-9 border border-black/10 flex items-center justify-center">
-                  <i data-lucide="terminal" class="w-4 h-4 text-black/40"></i>
-                </div>
-                <span class="font-mono text-[10px] text-black/40 uppercase tracking-wider">CLI</span>
-              </div>
-              <h3 class="font-mono text-base font-medium text-black/90 mb-2">Batch + filters</h3>
-              <p class="text-sm text-black/60 leading-relaxed mb-4">
-                Directory inputs (<code class="font-mono text-black/90 text-xs">--recursive</code>), <code class="font-mono text-black/90 text-xs">--out PATH</code>, <code class="font-mono text-black/90 text-xs">--pages RANGE</code>, <code class="font-mono text-black/90 text-xs">--language TAG</code>, and <code class="font-mono text-black/90 text-xs">--schema</code> as a JSON Schema file path.
-              </p>
-              <div class="flex flex-wrap gap-1.5">
-                <span class="font-mono text-[11px] text-black/90 border border-black/10 px-2 py-1">--recursive</span>
-                <span class="font-mono text-[11px] text-black/90 border border-black/10 px-2 py-1">--out</span>
-                <span class="font-mono text-[11px] text-black/90 border border-black/10 px-2 py-1">--pages</span>
-              </div>
-            </div>
-
-            <div class="p-6 border border-black/10 bg-white">
-              <div class="flex items-center gap-3 mb-3">
-                <div class="w-9 h-9 border border-black/10 flex items-center justify-center">
-                  <i data-lucide="gauge" class="w-4 h-4 text-black/40"></i>
-                </div>
-                <span class="font-mono text-[10px] text-black/40 uppercase tracking-wider">Cite</span>
-              </div>
-              <h3 class="font-mono text-base font-medium text-black/90 mb-2">Citation confidence</h3>
-              <p class="text-sm text-black/60 leading-relaxed mb-4">
-                Heuristic <code class="font-mono text-black/90 text-xs">confidence</code> / <code class="font-mono text-black/90 text-xs">match</code> on <code class="font-mono text-black/90 text-xs">Citation</code> when <code class="font-mono text-black/90 text-xs">cite=True</code>. Optional <code class="font-mono text-black/90 text-xs">cite_min_confidence</code> / <code class="font-mono text-black/90 text-xs">--cite-min-confidence</code> drops weak cites. Still not a model probability; boxes are never invented.
-              </p>
-              <div class="flex flex-wrap gap-1.5">
-                <span class="font-mono text-[11px] text-black/90 border border-black/10 px-2 py-1">confidence</span>
-                <span class="font-mono text-[11px] text-black/90 border border-black/10 px-2 py-1">match</span>
-                <span class="font-mono text-[11px] text-black/90 border border-black/10 px-2 py-1">cite_min_confidence</span>
-              </div>
-            </div>
-          </div>
-
-          <p class="font-mono text-xs text-black/40">
-            Also in v0.15.0: <code>on_progress</code> / <code>--progress</code> window callbacks, <code>SchemaValidationError</code> field-path messages, and CLI <code>--cite</code> via <code>Citation.as_dict()</code>.
-            <a href="https://github.com/Mellow-Artificial-Intelligence/openextract/blob/main/CHANGELOG.md#0140---2026-09-12" class="hover:text-black/90 transition-colors">v0.14.0</a>
-            shipped <code>Citation.as_dict</code>, CLI <code>--cite</code>, and swarm citations.
-          </p>
+      </details>
+      <details>
+        <summary class="grid"><span class="key mono">media_type</span><span class="question">How does it know the file type?</span><span class="sign" aria-hidden="true"></span></summary>
+        <div class="answer grid">
+          <p>It takes the first answer it finds: the media_type you passed, the file extension, the URL's Content-Type header, then the file's leading bytes.</p>
+          <dl class="spec">
+            <div><dt>Recognized by content</dt><dd>PDF, PNG, JPEG, GIF, WebP, MP3, WAV, FLAC, OGG, MP4, and UTF-8 text.</dd></div>
+          </dl>
         </div>
-      </section>
-
-      <!-- Documentation -->
-      <section id="docs" class="py-16 sm:py-24 border-t border-black/5 scroll-mt-14">
-        <div class="max-w-5xl mx-auto px-4 sm:px-6">
-          <p class="font-mono text-[11px] text-black/40 uppercase tracking-wider mb-2">Documentation</p>
-          <h2 class="text-2xl sm:text-3xl font-bold text-black/90 mb-3">Guides and contracts</h2>
-          <p class="text-sm text-black/50 mb-8 sm:mb-10 max-w-2xl">Start with the guide. Coding agents should use the agent contract or <a href="{{ '/llms.txt' | relative_url }}" class="underline">llms.txt</a>.</p>
-          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
-            <a href="{{ '/guide.html' | relative_url }}" class="p-5 border border-black/10 bg-white hover:border-black/30 transition-colors">
-              <h3 class="font-mono text-sm font-medium text-black/90 mb-2">Guide</h3>
-              <p class="text-sm text-black/60 leading-relaxed">Install, inputs, styles, sessions, batch, errors, and CLI — the how-to.</p>
-            </a>
-            <a href="{{ '/agents.html' | relative_url }}" class="p-5 border border-black/10 bg-white hover:border-black/30 transition-colors">
-              <h3 class="font-mono text-sm font-medium text-black/90 mb-2">For agents</h3>
-              <p class="text-sm text-black/60 leading-relaxed">Which API to generate, input pitfalls, exceptions, and TestModel fixtures.</p>
-            </a>
-            <a href="{{ '/api-reference.html' | relative_url }}" class="p-5 border border-black/10 bg-white hover:border-black/30 transition-colors">
-              <h3 class="font-mono text-sm font-medium text-black/90 mb-2">API reference</h3>
-              <p class="text-sm text-black/60 leading-relaxed">Public functions, sessions, input/result contracts, and common arguments.</p>
-            </a>
-            <a href="{{ '/cli.html' | relative_url }}" class="p-5 border border-black/10 bg-white hover:border-black/30 transition-colors">
-              <h3 class="font-mono text-sm font-medium text-black/90 mb-2">CLI contracts</h3>
-              <p class="text-sm text-black/60 leading-relaxed">Stdout, stderr, exit codes, retries, styles, and batch partial failures.</p>
-            </a>
-            <a href="{{ '/providers.html' | relative_url }}" class="p-5 border border-black/10 bg-white hover:border-black/30 transition-colors">
-              <h3 class="font-mono text-sm font-medium text-black/90 mb-2">Providers</h3>
-              <p class="text-sm text-black/60 leading-relaxed">Capability matrix, extras, credentials, and verified vs expected media support.</p>
-            </a>
-            <a href="{{ '/troubleshooting.html' | relative_url }}" class="p-5 border border-black/10 bg-white hover:border-black/30 transition-colors">
-              <h3 class="font-mono text-sm font-medium text-black/90 mb-2">Troubleshooting</h3>
-              <p class="text-sm text-black/60 leading-relaxed">Missing extras, URL fetch, schema failures, retries, and batch API choice.</p>
-            </a>
-          </div>
+      </details>
+      <details>
+        <summary class="grid"><span class="key mono">exceptions</span><span class="question">What happens when it fails?</span><span class="sign" aria-hidden="true"></span></summary>
+        <div class="answer grid">
+          <p>Every error subclasses ExtractionError and keeps the original exception as its cause.</p>
+          <dl class="spec">
+            <div><dt>ModelError</dt><dd>The provider returns an error.</dd></div>
+            <div><dt>SchemaValidationError</dt><dd>The output doesn't match your schema.</dd></div>
+            <div><dt>ProviderNotInstalledError</dt><dd>The provider's SDK isn't installed.</dd></div>
+            <div><dt>ExtractionError</dt><dd>A URL can't be fetched.</dd></div>
+          </dl>
         </div>
-      </section>
-
-      <!-- Supported Formats -->
-      <section class="py-16 sm:py-24 border-t border-black/5">
-        <div class="max-w-3xl mx-auto px-4 sm:px-6 text-center">
-          <h2 class="font-mono text-sm text-black/60 mb-6">Works with any media</h2>
-          <div class="flex flex-wrap justify-center gap-2">
-            <span class="inline-flex items-center gap-2 text-sm text-black/60 border border-black/10 bg-white px-4 py-2">
-              <i data-lucide="file-text" class="w-4 h-4"></i> Documents
-            </span>
-            <span class="inline-flex items-center gap-2 text-sm text-black/60 border border-black/10 bg-white px-4 py-2">
-              <i data-lucide="image" class="w-4 h-4"></i> Images
-            </span>
-            <span class="inline-flex items-center gap-2 text-sm text-black/60 border border-black/10 bg-white px-4 py-2">
-              <i data-lucide="volume-2" class="w-4 h-4"></i> Audio
-            </span>
-            <span class="inline-flex items-center gap-2 text-sm text-black/60 border border-black/10 bg-white px-4 py-2">
-              <i data-lucide="video" class="w-4 h-4"></i> Video
-            </span>
-          </div>
-          <p class="font-mono text-xs text-black/40 mt-5">PDF, DOCX, PNG, JPG, MP3, MP4, and 20+ formats</p>
+      </details>
+      <details>
+        <summary class="grid"><span class="key mono">providers</span><span class="question">Which models can I use?</span><span class="sign" aria-hidden="true"></span></summary>
+        <div class="answer grid">
+          <p>Any model pydantic-ai supports. Install the matching extra and set its API key.</p>
+<pre><code>pip install 'openextract[anthropic]'   <span class="d"># openai, google, bedrock, groq, mistral,</span>
+                                       <span class="d"># cohere, huggingface, openrouter, xai, all</span></code></pre>
         </div>
-      </section>
-
-    </main>
-
-    <!-- Footer -->
-    <footer class="py-6 sm:py-8 border-t border-black/5">
-      <div class="max-w-5xl mx-auto px-4 sm:px-6 flex flex-col sm:flex-row justify-between items-center gap-4">
-        <span class="font-mono text-xs text-black/40">&copy; 2026 openextract. MIT License.</span>
-        <div class="flex gap-6">
-          <a href="{{ '/guide.html' | relative_url }}" class="font-mono text-xs text-black/40 hover:text-black/60 transition-colors">Guide</a>
-          <a href="https://github.com/Mellow-Artificial-Intelligence/openextract" class="font-mono text-xs text-black/40 hover:text-black/60 transition-colors">GitHub</a>
-          <a href="https://pypi.org/project/openextract/" class="font-mono text-xs text-black/40 hover:text-black/60 transition-colors">PyPI</a>
+      </details>
+      <details>
+        <summary class="grid"><span class="key mono">extract_async()</span><span class="question">Is there an async version?</span><span class="sign" aria-hidden="true"></span></summary>
+        <div class="answer grid">
+          <p>Yes. It takes the same arguments. Await it.</p>
+<pre><code>invoice = <span class="d">await</span> extract_async(Invoice, "openai:gpt-5", "invoice.pdf")</code></pre>
         </div>
-      </div>
-    </footer>
+      </details>
+    </div>
+  </div>
 
-    <script>
-      lucide.createIcons();
+  <footer class="wrap">
+    <div class="footer-row mono">
+      <span>MIT License · 2026</span>
+      <nav aria-label="Footer">
+        <a href="https://github.com/Mellow-Artificial-Intelligence/openextract">GitHub</a>
+        <a href="https://pypi.org/project/openextract/">PyPI</a>
+        <a href="https://github.com/Mellow-Artificial-Intelligence/openextract/issues">Issues</a>
+      </nav>
+    </div>
+    <p class="footer-mark" aria-hidden="true">openextract</p>
+  </footer>
+</section>
 
-      function copyToClipboard(text) {
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          return navigator.clipboard.writeText(text);
+<script>
+  document.getElementById("copy-install").addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    try {
+      await navigator.clipboard.writeText(document.getElementById("install-cmd").textContent);
+      button.textContent = "Copied";
+    } catch {
+      const range = document.createRange();
+      range.selectNodeContents(document.getElementById("install-cmd"));
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      button.textContent = "Selected";
+    }
+    setTimeout(() => { button.textContent = "Copy"; }, 1600);
+  });
+
+  // The invoice's characters drift as noise, then the extracted ones settle into typed rows.
+  (() => {
+    const canvas = document.getElementById("settle");
+    const context = canvas.getContext("2d");
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const rows = [["vendor", "Halvorsen Print Co."], ["total", "1240.0"], ["currency", "EUR"]];
+    const noiseText = "Kanalgata145003BergenNorwayInvoiceNo2291Issued12Sep2026Due12Oct2026Letterpressrun500cards86000Cottonstock600gsm38000Totaldue";
+    const cycleMs = 9000;
+    // Start mid-cycle so the first frame shows the settled fields.
+    const startOffsetMs = cycleMs * 0.6;
+    let width = 0, height = 0, glyphs = [], fontSize = 20;
+
+    let seed = 42;
+    const random = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    const ease = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    const clamp = value => Math.min(1, Math.max(0, value));
+
+    function makeGlyph(char, targetX, targetY, isField, isValue) {
+      return {
+        char, isField, isValue,
+        startX: random() * width, startY: random() * height,
+        targetX: targetX ?? 0, targetY: targetY ?? 0,
+        drift: random() * Math.PI * 2, delay: random() * 0.35,
+      };
+    }
+
+    function layout() {
+      const ratio = window.devicePixelRatio || 1;
+      width = canvas.clientWidth; height = canvas.clientHeight;
+      canvas.width = width * ratio; canvas.height = height * ratio;
+      context.setTransform(ratio, 0, 0, ratio, 0, 0);
+      seed = 42;
+      fontSize = Math.max(14, Math.min(width / 30, 44));
+      const advance = fontSize * 0.6;
+      const keyColumn = 10 * advance;
+      const blockWidth = keyColumn + 19 * advance;
+      const left = Math.max(0, (width - blockWidth) / 2);
+      const lineHeight = fontSize * 1.9;
+      const top = height / 2 - lineHeight;
+      glyphs = [];
+      rows.forEach(([key, value], row) => {
+        const y = top + row * lineHeight;
+        [...key].forEach((char, i) => glyphs.push(makeGlyph(char, left + i * advance, y, true, false)));
+        [...value].forEach((char, i) => glyphs.push(makeGlyph(char, left + keyColumn + i * advance, y, true, true)));
+      });
+      const noiseCount = Math.round(Math.min(width, 1400) / 5);
+      for (let i = 0; i < noiseCount; i++) {
+        glyphs.push(makeGlyph(noiseText[i % noiseText.length], null, null, false, false));
+      }
+    }
+
+    function settledAmount(time) {
+      const t = ((time + startOffsetMs) % cycleMs) / cycleMs;
+      if (t < 0.12) return 0;
+      if (t < 0.42) return (t - 0.12) / 0.3;
+      if (t < 0.84) return 1;
+      return 1 - (t - 0.84) / 0.16;
+    }
+
+    function draw(time) {
+      const progress = reducedMotion ? 1 : settledAmount(time);
+      context.clearRect(0, 0, width, height);
+      context.font = `400 ${fontSize}px "JetBrains Mono", ui-monospace, monospace`;
+      context.textBaseline = "middle";
+      for (const glyph of glyphs) {
+        const local = ease(clamp((progress - glyph.delay * 0.5) / (1 - 0.175)));
+        const wobble = (1 - local) * 6 * Math.sin(time * 0.0008 + glyph.drift);
+        let x, y, alpha;
+        if (glyph.isField) {
+          x = glyph.startX + (glyph.targetX - glyph.startX) * local + wobble;
+          y = glyph.startY + (glyph.targetY - glyph.startY) * local + wobble;
+          alpha = glyph.isValue ? 0.35 + 0.65 * local : 0.35 + 0.2 * local;
+        } else {
+          x = glyph.startX + wobble * 2;
+          y = glyph.startY + Math.cos(time * 0.0006 + glyph.drift) * 4;
+          alpha = 0.3 - 0.22 * progress;
         }
-        // Fallback for older browsers or file:// protocol
-        const textarea = document.createElement('textarea');
-        textarea.value = text;
-        textarea.style.position = 'fixed';
-        textarea.style.opacity = '0';
-        document.body.appendChild(textarea);
-        textarea.select();
-        document.execCommand('copy');
-        document.body.removeChild(textarea);
-        return Promise.resolve();
+        context.fillStyle = `rgba(245, 245, 245, ${alpha})`;
+        context.fillText(glyph.char, x, y);
       }
+      if (!reducedMotion) requestAnimationFrame(draw);
+    }
 
-      function copyInstall() {
-        copyToClipboard("uv add openextract").then(() => {
-          document.getElementById('copy-icon').classList.add('hidden');
-          document.getElementById('check-icon').classList.remove('hidden');
-          setTimeout(() => {
-            document.getElementById('check-icon').classList.add('hidden');
-            document.getElementById('copy-icon').classList.remove('hidden');
-          }, 1500);
-        });
-      }
-    </script>
+    layout();
+    window.addEventListener("resize", () => { layout(); if (reducedMotion) draw(0); });
+    document.fonts?.ready.then(() => { if (reducedMotion) draw(0); });
+    draw(0);
+  })();
+</script>
 </body>
 </html>
