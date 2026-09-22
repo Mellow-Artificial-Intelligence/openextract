@@ -287,7 +287,7 @@ print(f"tokens: {usage.input_tokens} in / {usage.output_tokens} out / {usage.tot
 Every public API accepts a `pathlib.Path` (or any `os.PathLike`) directly, in
 addition to `str` paths/URLs, `bytes`, and binary file-like objects. Batch
 calls accept `ExtractionInput` items so heterogeneous inputs can carry their
-own media type in one batch:
+own media type, page filter, and language in one batch:
 
 ```python
 from pathlib import Path
@@ -300,11 +300,14 @@ results = extract_many(
         Path("./reports/q3.pdf"),
         ExtractionInput(source=b"...pdf bytes...", media_type="application/pdf"),
         ExtractionInput(source=b"...png bytes...", media_type="image/png"),
+        ExtractionInput("./reports/es.pdf", pages=(1, 2), language="es"),
     ],
+    max_pages=5,
 )
 ```
 
-A batch-wide `media_type` still applies to any item that does not specify one.
+A batch-wide `media_type`, `pages`, `max_pages`, or `language` still applies
+to any item that does not specify that field.
 `return_exceptions` is typed, so checkers infer `list[PdfInfo]` by default and
 `list[PdfInfo | Exception]` when it is `True`.
 
@@ -702,7 +705,7 @@ below even though it is not exported from `__all__`.
 | `extract_many_with_results` | Provisional | Batch API returning per-item `ExtractionResult` objects (output, usage, attempts, duration, model/media metadata, sanitized source). |
 | `extract_many_with_results_async` | Provisional | Async sibling of `extract_many_with_results`. |
 | `total_usage` | Provisional | Sum `Usage` across batch `ExtractionResult` objects. |
-| `ExtractionInput` | Provisional | Frozen input contract wrapping a media source with optional per-item `media_type` and safe `name`. |
+| `ExtractionInput` | Provisional | Frozen input contract wrapping a media source with optional per-item `media_type`, `pages`, `max_pages`, `language`, and safe `name`. |
 | `ExtractionResult` | Provisional | Frozen generic result contract; never retains raw media, credentials, or provider internals. Additive `citations` when `cite=True`. |
 | `Citation` | Provisional | Per-field source span (`field`, `quote`, `page`, optional normalized `bbox`). Additive heuristic `confidence` / `match` when `cite=True` (not model-provided). `as_dict()` is the JSON shape (`bbox` as four floats or `null`; `confidence` / `match` a float / string or `null`). `as_field_citation()` maps to ExtractBench `FieldCitation`. |
 | `ExtractProgress` | Provisional | Per-window progress event (`current`, `total`, `page`, `pages`) delivered to `on_progress` before each model call. |

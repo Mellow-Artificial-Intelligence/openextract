@@ -23,12 +23,13 @@ from ._config import (
     _apply_max_pages,
     _validate_max_concurrency,
     _validate_max_pages,
+    _validate_pages,
     parse_page_range,
 )
 from ._extract import _plan_agent, extract, extract_with_usage
 from ._reduce import SwarmReduce
 from ._schema_json import _probe_json_schema_file, schema_from_json
-from ._styles import ExtractionStyle
+from ._styles import ExtractionStyle, normalize_language
 from ._swarm import extract_swarm, extract_swarm_with_results
 from ._types import (
     Citation,
@@ -50,7 +51,7 @@ _EXIT_PARTIAL_FAILURE = 7
 _EXIT_REMOTE_AGENT = 8
 _EXIT_INTERRUPTED = 130  # 128 + SIGINT, the conventional Ctrl-C exit code
 _EXIT_BROKEN_PIPE = 141  # 128 + SIGPIPE, the conventional broken-pipe exit code
-_MANIFEST_KEYS = frozenset({"source", "media_type", "name"})
+_MANIFEST_KEYS = frozenset({"source", "media_type", "name", "pages", "max_pages", "language"})
 
 
 def _schema_from_import(schema_path: str) -> type[BaseModel]:
@@ -268,7 +269,49 @@ def _parse_manifest_entry(text: str, line_number: int) -> ExtractionInput:
     name = record.get("name")
     if name is not None and not isinstance(name, str):
         raise ValueError(f"manifest line {line_number}: 'name' must be a string")
-    return ExtractionInput(source=source, media_type=media_type, name=name)
+    pages = _parse_manifest_pages(record.get("pages"), line_number)
+    max_pages = _parse_manifest_max_pages(record.get("max_pages"), line_number)
+    try:
+        _apply_max_pages(pages, max_pages)
+    except ValueError as exc:
+        raise ValueError(f"manifest line {line_number}: {exc}") from exc
+    language = record.get("language")
+    if language is not None and not isinstance(language, str):
+        raise ValueError(f"manifest line {line_number}: 'language' must be a string")
+    try:
+        language = normalize_language(language)
+    except ValueError as exc:
+        raise ValueError(f"manifest line {line_number}: {exc}") from exc
+    return ExtractionInput(
+        source=source,
+        media_type=media_type,
+        name=name,
+        pages=pages,
+        max_pages=max_pages,
+        language=language,
+    )
+
+
+def _parse_manifest_pages(value: object, line_number: int) -> tuple[int, ...] | None:
+    """Parse a manifest ``pages`` field (int list or compact range string)."""
+    if value is None:
+        return None
+    try:
+        if isinstance(value, str):
+            return parse_page_range(value)
+        return _validate_pages(value)
+    except ValueError as exc:
+        raise ValueError(f"manifest line {line_number}: {exc}") from exc
+
+
+def _parse_manifest_max_pages(value: object, line_number: int) -> int | None:
+    """Parse a manifest ``max_pages`` field."""
+    if value is None:
+        return None
+    try:
+        return _validate_max_pages(value)
+    except ValueError as exc:
+        raise ValueError(f"manifest line {line_number}: {exc}") from exc
 
 
 def _load_manifest(path: str) -> list[ExtractionInput]:
@@ -800,8 +843,9 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="FILE",
         help=(
             'JSONL file of inputs, one {"source": ..., "media_type"?: ..., '
-            '"name"?: ...} object per line. Mutually exclusive with positional '
-            "input files; always uses batch semantics."
+            '"name"?: ..., "pages"?: ..., "max_pages"?: ..., "language"?: ...} '
+            "object per line. Mutually exclusive with positional input files; "
+            "always uses batch semantics."
         ),
     )
     parser.add_argument(

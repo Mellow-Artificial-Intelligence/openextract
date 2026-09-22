@@ -74,7 +74,7 @@ Every extract API accepts:
 | Path string or `pathlib.Path` | MIME type is guessed from the name; override with `media_type`. |
 | `http://` or `https://` URL | Fetched with SSRF host checks. See [SECURITY.md](https://github.com/Mellow-Artificial-Intelligence/openextract/blob/main/SECURITY.md#url-input-security-model). |
 | `bytes` or a binary file-like object | **`media_type` is required.** |
-| `ExtractionInput` | Per-item `media_type` and optional safe `name` for batch diagnostics. |
+| `ExtractionInput` | Per-item `media_type`, `pages`, `max_pages`, `language`, and optional safe `name` for batch diagnostics. |
 
 ```python
 from pathlib import Path

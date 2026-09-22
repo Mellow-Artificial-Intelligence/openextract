@@ -175,12 +175,13 @@ openextract --manifest inputs.jsonl \
 ```
 
 `--manifest FILE` reads inputs from a JSONL file instead of positional
-arguments, so heterogeneous batches can set per-input media types:
+arguments, so heterogeneous batches can set per-input media types, page
+filters, and language:
 
 ```json
-{"source": "./invoices/a.pdf", "media_type": "application/pdf", "name": "invoice-a"}
+{"source": "./invoices/a.pdf", "media_type": "application/pdf", "name": "invoice-a", "pages": [1, 2]}
 {"source": "https://example.com/report", "media_type": "text/html"}
-{"source": "./notes.txt"}
+{"source": "./notes.txt", "language": "es", "max_pages": 3}
 ```
 
 - `source` (required): a path or `http(s)://` URL. Stdin (`-`) is not
@@ -189,6 +190,12 @@ arguments, so heterogeneous batches can set per-input media types:
   to `--media-type`, then to inference.
 - `name` (optional): safe display label used in JSONL records, progress lines,
   and error entries instead of the source.
+- `pages` (optional): 1-based PDF pages as an int array (`[1, 3]`) or compact
+  range string (`"1-3,5"`). Overrides `--pages` for that entry.
+- `max_pages` (optional): positive page-number cap. Overrides `--max-pages`
+  for that entry.
+- `language` (optional): document language hint. Overrides `--language` for
+  that entry.
 - Blank lines are skipped; unknown keys are rejected.
 - `--manifest` is mutually exclusive with positional inputs and `--recursive`,
   and always uses batch semantics (a one-entry manifest still emits a JSON

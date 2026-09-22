@@ -1031,6 +1031,32 @@ class TestManifest:
         lines = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
         assert [line["input"] for line in lines] == ["invoice-a", "b.txt"]
 
+    def test_manifest_page_and_language_overrides(self, mocker, capsys, tmp_path):
+        manifest = self._write_manifest(
+            tmp_path,
+            [
+                '{"source": "a.pdf", "pages": [1, 3], "max_pages": 4, "language": "es"}',
+                '{"source": "b.pdf", "pages": "2"}',
+            ],
+        )
+        ada = _FixtureSchema(name="Ada", age=36)
+        mock_stream = _patch_iter_extractions(mocker, events=[(0, ada), (1, ada)])
+
+        exit_code = main([*_BASE_ARGS, "--manifest", manifest, "--output", "jsonl"])
+
+        assert exit_code == 0
+        items = mock_stream.call_args.args[2]
+        assert items == [
+            ExtractionInput(
+                source="a.pdf",
+                pages=(1, 3),
+                max_pages=4,
+                language="es",
+            ),
+            ExtractionInput(source="b.pdf", pages=(2,)),
+        ]
+        capsys.readouterr()
+
     def test_manifest_single_entry_still_uses_batch_output(self, mocker, capsys, tmp_path):
         manifest = self._write_manifest(tmp_path, ['{"source": "a.pdf"}'])
         ada = _FixtureSchema(name="Ada", age=36)
@@ -1075,6 +1101,11 @@ class TestManifest:
             ('{"source": "-"}', "stdin (-) is not supported"),
             ('{"source": "a.pdf", "media_type": 7}', "'media_type' must be a string"),
             ('{"source": "a.pdf", "name": 7}', "'name' must be a string"),
+            ('{"source": "a.pdf", "pages": []}', "pages must"),
+            ('{"source": "a.pdf", "pages": [5, 6], "max_pages": 3}', "pages must"),
+            ('{"source": "a.pdf", "max_pages": 0}', "max_pages must"),
+            ('{"source": "a.pdf", "language": ""}', "language must"),
+            ('{"source": "a.pdf", "language": 7}', "'language' must be a string"),
         ],
     )
     def test_manifest_invalid_entries_return_1(self, capsys, tmp_path, line, message):

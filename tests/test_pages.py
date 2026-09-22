@@ -14,6 +14,9 @@ from openextract import (
     extract,
     extract_async,
     extract_many,
+    extract_many_async,
+    extract_many_with_results,
+    extract_many_with_results_async,
     extract_swarm,
     extract_with_usage,
     extract_with_usage_async,
@@ -254,6 +257,99 @@ async def test_async_extract_and_session_pages():
             pdf, media_type="application/pdf", pages=(2,), on_progress=override.append
         )
         assert [event.page for event in override] == [2]
+
+
+def test_oneshot_extraction_input_pages_override_kwargs():
+    events: list[ExtractProgress] = []
+    result = extract(
+        Person,
+        _plain_model(),
+        ExtractionInput(_three_page_pdf(), media_type="application/pdf", pages=(3,)),
+        pages=(1,),
+        on_progress=events.append,
+    )
+    assert result == Person(name="Ada", age=36)
+    assert [event.page for event in events] == [3]
+
+
+def test_batch_item_pages_override_vs_default():
+    model = _plain_model()
+    pdf = _three_page_pdf()
+    events: list[ExtractProgress] = []
+    results = extract_many(
+        Person,
+        model,
+        [
+            ExtractionInput(pdf, media_type="application/pdf", pages=(2,)),
+            ExtractionInput(pdf, media_type="application/pdf"),
+        ],
+        pages=(1,),
+        max_concurrency=1,
+        on_progress=events.append,
+    )
+    assert results == [Person(name="Ada", age=36), Person(name="Ada", age=36)]
+    assert [event.page for event in events] == [2, 1]
+
+
+def test_batch_item_max_pages_empty_set_and_invalid_pages():
+    model = _plain_model()
+    with pytest.raises(ValueError, match="pages must include at least one"):
+        extract_many(
+            Person,
+            model,
+            [ExtractionInput(b"x", media_type="text/plain", pages=(5, 6), max_pages=3)],
+        )
+    with pytest.raises(ValueError, match="pages must"):
+        extract_many(
+            Person,
+            model,
+            [ExtractionInput(b"x", media_type="text/plain", pages=[])],
+        )
+    with pytest.raises(ValueError, match="max_pages must"):
+        extract_many(
+            Person,
+            model,
+            [ExtractionInput(b"x", media_type="text/plain", max_pages=0)],
+        )
+
+
+def test_batch_item_pages_with_results():
+    model = _plain_model()
+    events: list[ExtractProgress] = []
+    results = extract_many_with_results(
+        Person,
+        model,
+        [ExtractionInput(_three_page_pdf(), media_type="application/pdf", max_pages=1)],
+        pages=(1, 2, 3),
+        on_progress=events.append,
+    )
+    assert [item.output for item in results] == [Person(name="Ada", age=36)]
+    assert [event.page for event in events] == [1]
+
+
+async def test_batch_item_pages_async_and_with_results():
+    model = _plain_model()
+    pdf = _three_page_pdf()
+    events: list[ExtractProgress] = []
+    results = await extract_many_async(
+        Person,
+        model,
+        [ExtractionInput(pdf, media_type="application/pdf", pages=(3,))],
+        pages=(1,),
+        on_progress=events.append,
+    )
+    assert results == [Person(name="Ada", age=36)]
+    assert [event.page for event in events] == [3]
+    rich_events: list[ExtractProgress] = []
+    rich = await extract_many_with_results_async(
+        Person,
+        model,
+        [ExtractionInput(pdf, media_type="application/pdf", pages=(2,))],
+        max_pages=3,
+        on_progress=rich_events.append,
+    )
+    assert [item.output for item in rich] == [Person(name="Ada", age=36)]
+    assert [event.page for event in rich_events] == [2]
 
 
 def test_batch_and_swarm_forward_pages():

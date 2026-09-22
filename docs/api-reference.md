@@ -459,10 +459,13 @@ equivalent to passing the raw source directly.
 | `source` | `str \| os.PathLike[str] \| bytes \| BinaryIO` | Local path, HTTP(S) URL, `Path`, raw `bytes`, or binary file-like object. |
 | `media_type` | `str \| None` | Per-item MIME type. Required for `bytes` and file-like sources when no batch-wide override is supplied. |
 | `name` | `str \| None` | Optional safe source label recorded on `ExtractionResult.source`. |
+| `pages` | `Sequence[int] \| None` | Optional 1-based PDF pages for this item. Same contract as `extract(..., pages=)`. |
+| `max_pages` | `int \| None` | Optional positive page-number cap for this item. Same contract as `extract(..., max_pages=)`. |
+| `language` | `str \| None` | Optional document language hint for this item. Same contract as `extract(..., language=)`. |
 
-Batch item media types resolve per item: an `ExtractionInput.media_type` wins
-over the batch-wide `media_type` argument, which remains the fallback for raw
-items.
+Per-item fields resolve independently: a set `ExtractionInput` value wins over
+the call-wide `media_type` / `pages` / `max_pages` / `language` argument, which
+remains the fallback for raw items and unset fields.
 
 ### `Citation`
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from typing import BinaryIO, TypeVar, cast
 
@@ -13,7 +13,8 @@ from pydantic import BaseModel
 from ._confidence import citations_by_field as _group_citations_by_field
 from ._confidence import field_confidence as _aggregate_field_confidence
 from ._confidence import filter_citations as _filter_citations
-from ._config import _DEFAULT_RETRY_MAX_BACKOFF, _validate_retry_options
+from ._config import _DEFAULT_RETRY_MAX_BACKOFF, _select_pages, _validate_retry_options
+from ._styles import normalize_language
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -31,8 +32,8 @@ class ExtractionInput:
     """A single input for extraction with optional per-item media metadata.
 
     Wraps a raw :data:`MediaSource` so heterogeneous batch inputs can specify
-    their own ``media_type`` (and an optional safe ``name`` for diagnostics)
-    without falling back to a single batch-wide media type.
+    their own ``media_type``, page filter, language, and an optional safe
+    ``name`` for diagnostics without falling back to a single batch-wide value.
 
     Attributes:
         source: The media source — a local path, ``http(s)://`` URL,
@@ -42,11 +43,21 @@ class ExtractionInput:
             override is supplied. Overrides inference for path/URL sources.
         name: Optional safe source name recorded on :class:`ExtractionResult`
             diagnostics. Never populated with raw content or credentials.
+        pages: Optional 1-based PDF page numbers for this item. Same contract
+            as the extract APIs. When set, overrides the call-wide ``pages``.
+        max_pages: Optional positive page-number cap for this item. Same
+            contract as the extract APIs. When set, overrides the call-wide
+            ``max_pages``.
+        language: Optional document language hint for this item. Same contract
+            as the extract APIs. When set, overrides the call-wide ``language``.
     """
 
     source: MediaSource
     media_type: str | None = None
     name: str | None = None
+    pages: Sequence[int] | None = None
+    max_pages: int | None = None
+    language: str | None = None
 
 
 # Anything accepted as a single input or batch item: a raw :data:`MediaSource`
@@ -322,3 +333,26 @@ def _resolve_item(
         media_type = item.media_type if item.media_type is not None else global_media_type
         return item.source, media_type, item.name
     return item, global_media_type, None
+
+
+def _resolve_item_options(
+    item: ExtractionInputLike,
+    pages: object,
+    max_pages: object,
+    language: str | None,
+) -> tuple[tuple[int, ...] | None, int | None, str | None]:
+    """Resolve per-item pages/max_pages/language, else keep call-wide defaults.
+
+    Unset ``ExtractionInput`` fields fall back to the call-wide values. Set
+    fields win. Validation matches the extract APIs (``_select_pages`` /
+    ``normalize_language``) and runs at prepare time, not in ``__init__``.
+    """
+    if isinstance(item, ExtractionInput):
+        if item.pages is not None:
+            pages = item.pages
+        if item.max_pages is not None:
+            max_pages = item.max_pages
+        if item.language is not None:
+            language = item.language
+    selected, cap = _select_pages(pages, max_pages)
+    return selected, cap, normalize_language(language)

@@ -73,7 +73,7 @@ from openextract._media import (
     _safe_source_context,
 )
 from openextract._retry import _retry_delay
-from openextract._types import _extraction_result, _resolve_item
+from openextract._types import _extraction_result, _resolve_item, _resolve_item_options
 
 
 def _build_response(
@@ -3689,6 +3689,35 @@ class TestBatchItemResolution:
         _, media_type, _ = _resolve_item(item, "application/pdf")
 
         assert media_type == "application/pdf"
+
+    def test_item_options_use_batch_defaults(self):
+        pages, max_pages, language = _resolve_item_options(ExtractionInput(b"x"), [1, 3], 5, "fr")
+
+        assert (pages, max_pages, language) == ((1, 3), 5, "fr")
+
+    def test_item_options_override_batch_defaults(self):
+        item = ExtractionInput(b"x", pages=(2, 4, 9), max_pages=4, language=" es ")
+
+        pages, max_pages, language = _resolve_item_options(item, [1, 3], 5, "fr")
+
+        assert (pages, max_pages, language) == ((2, 4), 4, "es")
+
+    def test_item_options_partial_override_keeps_other_defaults(self):
+        pages, max_pages, language = _resolve_item_options(
+            ExtractionInput(b"x", pages=(1, 8)), [1, 2, 3], 5, "fr"
+        )
+
+        assert (pages, max_pages, language) == ((1,), 5, "fr")
+
+    def test_item_options_reject_invalid_values(self):
+        with pytest.raises(ValueError, match="pages must"):
+            _resolve_item_options(ExtractionInput(b"x", pages=[]), None, None, None)
+        with pytest.raises(ValueError, match="pages must include at least one"):
+            _resolve_item_options(
+                ExtractionInput(b"x", pages=(5, 6), max_pages=3), None, None, None
+            )
+        with pytest.raises(ValueError, match="language must be a non-empty string"):
+            _resolve_item_options(ExtractionInput(b"x", language=""), None, None, "es")
 
     def test_item_source_label_prefers_name(self):
         label = _item_source_label("https://user:secret@example.com/f?q=1", "invoice")

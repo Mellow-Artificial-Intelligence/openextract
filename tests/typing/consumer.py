@@ -71,6 +71,13 @@ mixed: list[Invoice] = extract_many(
     [
         ExtractionInput(source=b"pdf", media_type="application/pdf"),
         ExtractionInput(source=b"png", media_type="image/png"),
+        ExtractionInput(
+            source=b"pdf",
+            media_type="application/pdf",
+            pages=(1, 2),
+            max_pages=3,
+            language="es",
+        ),
     ],
 )
 
