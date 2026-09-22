@@ -246,9 +246,7 @@ async def _iter_extractions(
                 parsed_inputs, parsed = maybe_parsed_inputs(
                     file_bytes,
                     file_type,
-                    parse=should_parse(
-                        options.cite, options.style, item_pages, item_max_pages
-                    ),
+                    parse=should_parse(options.cite, options.style, item_pages, item_max_pages),
                     pages=item_pages,
                     max_pages=item_max_pages,
                 )

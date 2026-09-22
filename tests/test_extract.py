@@ -3691,9 +3691,7 @@ class TestBatchItemResolution:
         assert media_type == "application/pdf"
 
     def test_item_options_use_batch_defaults(self):
-        pages, max_pages, language = _resolve_item_options(
-            ExtractionInput(b"x"), [1, 3], 5, "fr"
-        )
+        pages, max_pages, language = _resolve_item_options(ExtractionInput(b"x"), [1, 3], 5, "fr")
 
         assert (pages, max_pages, language) == ((1, 3), 5, "fr")
 
