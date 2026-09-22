@@ -93,11 +93,35 @@
   .verdict { display: flex; justify-content: space-between; gap: 12px; border-top: 1px solid var(--rule); padding-top: 10px; }
   .verdict span:last-child { font-weight: 500; }
 
-  /* Settling band */
+  /* Scan band */
   .field { padding-block: 28px 32px; }
-  .canvas-box { position: relative; height: clamp(380px, 46vw, 640px); margin-top: 24px; }
-  .canvas-box canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
-  .field-foot { display: flex; justify-content: space-between; gap: 16px; margin-top: 18px; color: var(--on-dark-gray); }
+  .scan-demo { margin-top: 48px; row-gap: 48px; align-items: start; }
+  .scan-demo .doc { grid-column: 1 / span 6; }
+  .scan-demo .extracted { grid-column: 8 / span 5; }
+  .band-dark .col { border-left-color: var(--dark-rule); }
+  .doc-lines {
+    position: relative; margin: 0; font: 400 13px/2.1 var(--mono);
+    color: var(--on-dark-gray); white-space: pre; overflow: hidden;
+  }
+  .tok { padding: 1px 3px; margin: 0 -3px; transition: background-color 180ms ease, color 180ms ease; }
+  .tok.on { background: var(--on-dark); color: var(--dark); }
+  .scanline {
+    position: absolute; left: 0; right: 0; top: 0; height: 1px;
+    background: var(--on-dark); opacity: 0; pointer-events: none;
+  }
+  .scanline::before {
+    content: ""; position: absolute; left: 0; right: 0; bottom: 1px; height: 36px;
+    background: linear-gradient(to bottom, rgba(245, 245, 245, 0), rgba(245, 245, 245, 0.07));
+  }
+  .scanned { margin: 0; border-top: 1px solid var(--on-dark); }
+  .scanned > div { display: grid; grid-template-columns: 1.75rem 6.5rem minmax(0, 1fr); align-items: baseline; padding-block: 14px; border-bottom: 1px solid var(--dark-rule); }
+  .scanned .n { font: 500 11px/1 var(--mono); color: var(--on-dark-gray); }
+  .scanned dt { font: 400 13px/1 var(--mono); color: var(--on-dark-gray); }
+  .scanned dd { margin: 0; font: 400 22px/1.2 var(--sans); letter-spacing: -0.015em; opacity: 0.18; transform: translateX(-6px); transition: opacity 260ms ease, transform 260ms ease; overflow-wrap: anywhere; }
+  .scanned > div.on dd { opacity: 1; transform: none; }
+  .scan-status { display: flex; justify-content: space-between; gap: 12px; margin-top: 14px; color: var(--on-dark-gray); }
+  .scan-status [data-state="done"] { color: var(--on-dark); }
+  .field-foot { display: flex; justify-content: space-between; gap: 16px; margin-top: 56px; color: var(--on-dark-gray); }
 
   /* Example */
   .example { padding-block: 104px 120px; }
@@ -167,6 +191,7 @@
     .hero .c1, .hero .c2 { grid-column: span 6; }
     .hero .c3 { grid-column: 1 / -1; }
     .example .col { grid-column: 1 / -1; }
+    .scan-demo .doc, .scan-demo .extracted { grid-column: 1 / -1; }
     summary .key { grid-column: 1 / -1; }
     summary .question { grid-column: 1 / span 11; }
     .answer > * { grid-column: 1 / -1; }
@@ -178,6 +203,7 @@
     .spec > div, .readout > div { grid-template-columns: 1fr; gap: 4px; }
     .readout .n { display: none; }
     .field-foot span:last-child { display: none; }
+    .doc-lines { font-size: 11.5px; overflow-x: auto; }
   }
 </style>
 </head>
@@ -221,11 +247,34 @@
   </div>
 </section>
 
-<section class="band-dark" aria-label="Unstructured text settling into typed fields">
+<section class="band-dark" aria-label="A scan of invoice.pdf filling in the Invoice fields">
   <div class="wrap field">
     <div class="section-head mono"><span>invoice.pdf → Invoice</span><span class="dim">3 fields · validated</span></div>
-    <div class="canvas-box"><canvas id="settle" aria-hidden="true"></canvas></div>
-    <div class="field-foot mono"><span>Every character on the page is a candidate. Three fields become your model.</span><span>str · float · str</span></div>
+    <div class="grid scan-demo">
+      <div class="col doc">
+        <span class="mono">Source</span>
+<pre class="doc-lines" id="doc-lines">INVOICE                              No. 2291
+<span class="tok on" data-field="0">Halvorsen Print Co.</span>
+Kanalgata 14, 5003 Bergen, Norway
+Issued 12 Sep 2026          Due 12 Oct 2026
+
+Letterpress run, 500 cards ........... 860.00
+Cotton stock, 600 gsm ................ 380.00
+Total due ...................... <span class="tok on" data-field="1">1,240.00</span> <span class="tok on" data-field="2">EUR</span><span class="scanline" id="scanline" aria-hidden="true"></span></pre>
+      </div>
+      <div class="col extracted">
+        <span class="mono">Invoice</span>
+        <div>
+          <dl class="scanned" id="scanned">
+            <div class="on"><span class="n">1</span><dt>vendor</dt><dd>Halvorsen Print Co.</dd></div>
+            <div class="on"><span class="n">2</span><dt>total</dt><dd>1240.0</dd></div>
+            <div class="on"><span class="n">3</span><dt>currency</dt><dd>EUR</dd></div>
+          </dl>
+          <div class="scan-status mono"><span id="scan-count">3 / 3 fields</span><span id="scan-state" data-state="done">validated</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="field-foot mono"><span>Reads the file, finds the fields, returns them typed.</span><span>str · float · str</span></div>
   </div>
 </section>
 
@@ -366,93 +415,58 @@ invoice = extract(
     setTimeout(() => { button.textContent = "Copy"; }, 1600);
   });
 
-  // The invoice's characters drift as noise, then the extracted ones settle into typed rows.
+  // A scan line reads the invoice; each field it passes lights up and fills its row.
   (() => {
-    const canvas = document.getElementById("settle");
-    const context = canvas.getContext("2d");
-    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const rows = [["vendor", "Halvorsen Print Co."], ["total", "1240.0"], ["currency", "EUR"]];
-    const noiseText = "Kanalgata145003BergenNorwayInvoiceNo2291Issued12Sep2026Due12Oct2026Letterpressrun500cards86000Cottonstock600gsm38000Totaldue";
-    const cycleMs = 9000;
-    // Start mid-cycle so the first frame shows the settled fields.
-    const startOffsetMs = cycleMs * 0.6;
-    let width = 0, height = 0, glyphs = [], fontSize = 20;
+    const lines = document.getElementById("doc-lines");
+    const scanline = document.getElementById("scanline");
+    const tokens = [...lines.querySelectorAll(".tok")];
+    const rows = [...document.getElementById("scanned").children];
+    const count = document.getElementById("scan-count");
+    const state = document.getElementById("scan-state");
+    const scanMs = 3200, holdMs = 3400, resetMs = 700;
+    const cycleMs = scanMs + holdMs + resetMs;
+    // Start inside the hold so the first frame shows the finished result.
+    const startOffsetMs = scanMs + 400;
+    let shown = -1;
 
-    let seed = 42;
-    const random = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-    const ease = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-    const clamp = value => Math.min(1, Math.max(0, value));
-
-    function makeGlyph(char, targetX, targetY, isField, isValue) {
-      return {
-        char, isField, isValue,
-        startX: random() * width, startY: random() * height,
-        targetX: targetX ?? 0, targetY: targetY ?? 0,
-        drift: random() * Math.PI * 2, delay: random() * 0.35,
-      };
-    }
-
-    function layout() {
-      const ratio = window.devicePixelRatio || 1;
-      width = canvas.clientWidth; height = canvas.clientHeight;
-      canvas.width = width * ratio; canvas.height = height * ratio;
-      context.setTransform(ratio, 0, 0, ratio, 0, 0);
-      seed = 42;
-      fontSize = Math.max(14, Math.min(width / 30, 44));
-      const advance = fontSize * 0.6;
-      const keyColumn = 10 * advance;
-      const blockWidth = keyColumn + 19 * advance;
-      const left = Math.max(0, (width - blockWidth) / 2);
-      const lineHeight = fontSize * 1.9;
-      const top = height / 2 - lineHeight;
-      glyphs = [];
-      rows.forEach(([key, value], row) => {
-        const y = top + row * lineHeight;
-        [...key].forEach((char, i) => glyphs.push(makeGlyph(char, left + i * advance, y, true, false)));
-        [...value].forEach((char, i) => glyphs.push(makeGlyph(char, left + keyColumn + i * advance, y, true, true)));
-      });
-      const noiseCount = Math.round(Math.min(width, 1400) / 5);
-      for (let i = 0; i < noiseCount; i++) {
-        glyphs.push(makeGlyph(noiseText[i % noiseText.length], null, null, false, false));
+    function show(found, scanY) {
+      if (found !== shown) {
+        shown = found;
+        tokens.forEach(token => token.classList.toggle("on", Number(token.dataset.field) < found));
+        rows.forEach((row, index) => row.classList.toggle("on", index < found));
+        count.textContent = `${found} / ${rows.length} fields`;
+        state.textContent = found === rows.length ? "validated" : "scanning";
+        state.dataset.state = found === rows.length ? "done" : "scanning";
       }
+      scanline.style.opacity = scanY === null ? "0" : "1";
+      if (scanY !== null) scanline.style.transform = `translateY(${scanY}px)`;
     }
 
-    function settledAmount(time) {
-      const t = ((time + startOffsetMs) % cycleMs) / cycleMs;
-      if (t < 0.12) return 0;
-      if (t < 0.42) return (t - 0.12) / 0.3;
-      if (t < 0.84) return 1;
-      return 1 - (t - 0.84) / 0.16;
-    }
-
-    function draw(time) {
-      const progress = reducedMotion ? 1 : settledAmount(time);
-      context.clearRect(0, 0, width, height);
-      context.font = `400 ${fontSize}px "JetBrains Mono", ui-monospace, monospace`;
-      context.textBaseline = "middle";
-      for (const glyph of glyphs) {
-        const local = ease(clamp((progress - glyph.delay * 0.5) / (1 - 0.175)));
-        const wobble = (1 - local) * 6 * Math.sin(time * 0.0008 + glyph.drift);
-        let x, y, alpha;
-        if (glyph.isField) {
-          x = glyph.startX + (glyph.targetX - glyph.startX) * local + wobble;
-          y = glyph.startY + (glyph.targetY - glyph.startY) * local + wobble;
-          alpha = glyph.isValue ? 0.35 + 0.65 * local : 0.35 + 0.2 * local;
-        } else {
-          x = glyph.startX + wobble * 2;
-          y = glyph.startY + Math.cos(time * 0.0006 + glyph.drift) * 4;
-          alpha = 0.3 - 0.22 * progress;
-        }
-        context.fillStyle = `rgba(245, 245, 245, ${alpha})`;
-        context.fillText(glyph.char, x, y);
+    function fieldsAbove(scanY) {
+      const found = new Set();
+      for (const token of tokens) {
+        if (token.offsetTop + token.offsetHeight / 2 <= scanY) found.add(token.dataset.field);
       }
-      if (!reducedMotion) requestAnimationFrame(draw);
+      return found.size;
     }
 
-    layout();
-    window.addEventListener("resize", () => { layout(); if (reducedMotion) draw(0); });
-    document.fonts?.ready.then(() => { if (reducedMotion) draw(0); });
-    draw(0);
+    function frame(time) {
+      const t = (time + startOffsetMs) % cycleMs;
+      const height = lines.scrollHeight;
+      if (t < scanMs) {
+        const scanY = (t / scanMs) * height;
+        show(fieldsAbove(scanY), scanY);
+      } else if (t < scanMs + holdMs) {
+        show(rows.length, null);
+      } else {
+        show(0, null);
+      }
+      requestAnimationFrame(frame);
+    }
+
+    if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      requestAnimationFrame(frame);
+    }
   })();
 </script>
 </body>
