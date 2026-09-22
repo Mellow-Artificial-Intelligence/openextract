@@ -96,18 +96,10 @@ async def _run_session_batch[R](
     if not files:
         return []
     semaphore = asyncio.Semaphore(max_concurrency)
-    stop = asyncio.Event()
 
     async def _one(item: ExtractionInputLike) -> R:
         async with semaphore:
-            if stop.is_set() and not return_exceptions:
-                raise asyncio.CancelledError
-            try:
-                return await run_item(item)
-            except Exception:
-                if not return_exceptions:
-                    stop.set()
-                raise
+            return await run_item(item)
 
     tasks = [asyncio.create_task(_one(item)) for item in files]
     try:
