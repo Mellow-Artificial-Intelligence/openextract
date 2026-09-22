@@ -84,7 +84,7 @@ async def _run_session_batch[R](
     *,
     max_concurrency: int,
     return_exceptions: bool,
-) -> list[R] | list[R | Exception]:
+) -> list:
     """Run session extractions with bounded concurrency, restoring input order.
 
     Reuses the caller's session agent via ``run_item``. ``max_concurrency``
@@ -394,7 +394,7 @@ class _ExtractorSession[T: BaseModel]:
         return cast(
             R,
             self._finish_projected(
-                self._validate_output(output),
+                self._validate_output(cast(Any, output)),
                 usage,
                 citations,
                 with_usage=with_usage,

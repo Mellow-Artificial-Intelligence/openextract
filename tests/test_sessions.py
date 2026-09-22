@@ -554,9 +554,7 @@ def test_sync_extract_many_reuses_agent_and_preserves_order():
 
 def test_sync_extract_many_return_exceptions_and_fail_fast():
     retryable = ModelError("boom", retryable=True)
-    mixed = FakeAgent(
-        [{"name": "Ada", "age": 36}, retryable, {"name": "Grace", "age": 85}]
-    )
+    mixed = FakeAgent([{"name": "Ada", "age": 36}, retryable, {"name": "Grace", "age": 85}])
     failing = FakeAgent([{"name": "Ada", "age": 36}, retryable])
 
     with Extractor(Person, agent=mixed) as extractor:
@@ -645,9 +643,7 @@ async def test_async_extract_many_reuses_agent_and_preserves_order():
 
 async def test_async_extract_many_return_exceptions_and_fail_fast():
     retryable = ModelError("boom", retryable=True)
-    mixed = FakeAgent(
-        [{"name": "Ada", "age": 36}, retryable, {"name": "Grace", "age": 85}]
-    )
+    mixed = FakeAgent([{"name": "Ada", "age": 36}, retryable, {"name": "Grace", "age": 85}])
     failing = FakeAgent([{"name": "Ada", "age": 36}, retryable])
 
     async with AsyncExtractor(Person, agent=mixed) as extractor:

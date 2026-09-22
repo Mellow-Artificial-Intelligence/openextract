@@ -152,9 +152,7 @@ def _session_consumer(extractor: Extractor[Invoice]) -> None:
     _assert_session: Invoice = session_result.output
     _ = session_result.citations
     _ = session_result.usage
-    session_batch: list[Invoice] = extractor.extract_many(
-        [Path("/tmp/a.pdf"), Path("/tmp/b.pdf")]
-    )
+    session_batch: list[Invoice] = extractor.extract_many([Path("/tmp/a.pdf"), Path("/tmp/b.pdf")])
     session_batch_exc: list[Invoice | Exception] = extractor.extract_many(
         [Path("/tmp/a.pdf")], return_exceptions=True
     )
