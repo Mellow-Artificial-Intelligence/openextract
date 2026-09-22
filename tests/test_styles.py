@@ -878,7 +878,7 @@ class TestLanguageHint:
         with pytest.raises(ValueError, match="language must be a non-empty string"):
             extract_many(
                 _Person,
-                model,
+                TestModel(custom_output_args={"name": "Ada", "age": 36}),
                 [ExtractionInput(b"x", media_type="text/plain", language="   ")],
             )
 
@@ -938,9 +938,7 @@ class TestLanguageHint:
         result = extract(
             schema=_Person,
             model="openai:gpt-5",
-            input_file=ExtractionInput(
-                b"Ada is 36", media_type="text/plain", language="es"
-            ),
+            input_file=ExtractionInput(b"Ada is 36", media_type="text/plain", language="es"),
             language="fr",
         )
         assert result is expected

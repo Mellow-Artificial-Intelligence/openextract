@@ -313,6 +313,20 @@ def test_batch_item_max_pages_empty_set_and_invalid_pages():
         )
 
 
+def test_batch_item_pages_with_results():
+    model = _plain_model()
+    events: list[ExtractProgress] = []
+    results = extract_many_with_results(
+        Person,
+        model,
+        [ExtractionInput(_three_page_pdf(), media_type="application/pdf", max_pages=1)],
+        pages=(1, 2, 3),
+        on_progress=events.append,
+    )
+    assert [item.output for item in results] == [Person(name="Ada", age=36)]
+    assert [event.page for event in events] == [1]
+
+
 async def test_batch_item_pages_async_and_with_results():
     model = _plain_model()
     pdf = _three_page_pdf()
@@ -327,25 +341,15 @@ async def test_batch_item_pages_async_and_with_results():
     assert results == [Person(name="Ada", age=36)]
     assert [event.page for event in events] == [3]
     rich_events: list[ExtractProgress] = []
-    rich = extract_many_with_results(
-        Person,
-        model,
-        [ExtractionInput(pdf, media_type="application/pdf", max_pages=1)],
-        pages=(1, 2, 3),
-        on_progress=rich_events.append,
-    )
-    assert [item.output for item in rich] == [Person(name="Ada", age=36)]
-    assert [event.page for event in rich_events] == [1]
-    async_rich_events: list[ExtractProgress] = []
-    async_rich = await extract_many_with_results_async(
+    rich = await extract_many_with_results_async(
         Person,
         model,
         [ExtractionInput(pdf, media_type="application/pdf", pages=(2,))],
         max_pages=3,
-        on_progress=async_rich_events.append,
+        on_progress=rich_events.append,
     )
-    assert [item.output for item in async_rich] == [Person(name="Ada", age=36)]
-    assert [event.page for event in async_rich_events] == [2]
+    assert [item.output for item in rich] == [Person(name="Ada", age=36)]
+    assert [event.page for event in rich_events] == [2]
 
 
 def test_batch_and_swarm_forward_pages():
