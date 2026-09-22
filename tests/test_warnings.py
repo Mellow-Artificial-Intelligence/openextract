@@ -204,7 +204,11 @@ class TestSessionBatchSwarm:
             result = await extractor.extract_with_result(
                 _three_page_pdf(), media_type="application/pdf"
             )
+            many = await extractor.extract_many_with_results(
+                [ExtractionInput(_three_page_pdf(), media_type="application/pdf")]
+            )
         assert result.warnings == (max_pages_warning(2, 1, 3),)
+        assert many[0].warnings == (max_pages_warning(2, 1, 3),)
 
     def test_batch_and_swarm(self):
         pdf = _three_page_pdf()
