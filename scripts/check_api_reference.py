@@ -24,6 +24,8 @@ PUBLIC_FUNCTIONS = (
     "extract_many_with_results_async",
     "total_usage",
     "field_confidence",
+    "citations_by_field",
+    "filter_citations",
     "normalize_reduce",
     "reduce_outputs",
     "extract_swarm",

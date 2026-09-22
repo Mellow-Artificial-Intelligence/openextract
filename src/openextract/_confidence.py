@@ -72,3 +72,41 @@ def field_confidence(citations: Iterable[Citation]) -> dict[str, float]:
         if current is None or confidence < current:
             scores[field] = confidence
     return scores
+
+
+def citations_by_field(citations: Iterable[Citation]) -> dict[str, tuple[Citation, ...]]:
+    """Group citations by dotted field path, preserving order within each field.
+
+    Field keys follow first-seen order. Empty input returns ``{}``.
+    """
+    grouped: dict[str, list[Citation]] = {}
+    for citation in citations:
+        grouped.setdefault(citation.field, []).append(citation)
+    return {field: tuple(items) for field, items in grouped.items()}
+
+
+def filter_citations(
+    citations: Iterable[Citation],
+    *,
+    min_confidence: float | None = None,
+    fields: Iterable[str] | None = None,
+) -> tuple[Citation, ...]:
+    """Keep citations that pass optional confidence and field filters.
+
+    ``min_confidence`` compares :attr:`Citation.confidence`. Citations with
+    ``confidence is None`` fail a min-confidence gate. ``fields``, when set,
+    keeps only those dotted paths. Both ``None`` leaves the list unchanged
+    (still returned as a tuple). Empty input returns ``()``.
+    """
+    allowed = None if fields is None else frozenset(fields)
+    if min_confidence is None and allowed is None:
+        return tuple(citations)
+    return tuple(
+        citation
+        for citation in citations
+        if (allowed is None or citation.field in allowed)
+        and (
+            min_confidence is None
+            or (citation.confidence is not None and citation.confidence >= min_confidence)
+        )
+    )

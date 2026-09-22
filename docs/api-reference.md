@@ -233,6 +233,21 @@ The min is a conservative gate for review workflows (the weakest supporting
 span). [`ExtractionResult.field_confidence()`](#extractionresult) delegates to
 this helper on `self.citations`.
 
+### `citations_by_field(citations)`
+
+Group citations by dotted [`Citation.field`](#citation), preserving citation
+order within each field. Field keys follow first-seen order. Empty input
+returns `{}`. [`ExtractionResult.citations_by_field()`](#extractionresult)
+delegates to this helper on `self.citations`.
+
+### `filter_citations(citations, *, min_confidence=None, fields=None)`
+
+Keep citations that pass optional review filters. `min_confidence` compares
+[`Citation.confidence`](#citation); citations with `confidence is None` fail
+that gate. `fields`, when set, keeps only those dotted paths. Both `None`
+returns every citation as a tuple. [`ExtractionResult.filter_citations(...)`](#extractionresult)
+delegates to this helper on `self.citations`.
+
 ## Swarm
 
 A swarm runs several agents over one input and reduces their outputs. The input
@@ -491,6 +506,10 @@ Never includes raw media, credentials, or provider internals.
 
 `field_confidence()` returns `{dotted_field: min_confidence}` via
 [`field_confidence`](#field_confidencecitations) on `self.citations`.
+`citations_by_field()` groups spans by dotted path via
+[`citations_by_field`](#citations_by_fieldcitations).
+`filter_citations(min_confidence=None, fields=None)` keeps spans that pass
+those gates via [`filter_citations`](#filter_citationscitations-min_confidencenone-fieldsnone).
 
 ### `ExtractProgress`
 
