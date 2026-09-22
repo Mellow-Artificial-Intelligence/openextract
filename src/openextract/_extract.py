@@ -97,6 +97,7 @@ from ._types import (
     _resolve_item_options,
     total_usage,
 )
+from ._warnings import extraction_warnings, merge_warnings
 from ._windows import extract_windows_async, extract_windows_sync
 
 if TYPE_CHECKING:
@@ -382,6 +383,7 @@ def _result_from_swarm(
         media_type=media_type,
         source=source,
         citations=swarm.citations,
+        warnings=merge_warnings(*(agent.warnings for agent in successes)),
     )
 
 
@@ -481,7 +483,7 @@ def _extract_sync(
                 return result.output, _usage_from_result(result)
             return _extract_once(agent, window), Usage(0, 0, 0)
 
-        output, usage, citations = extract_windows_sync(
+        output, usage, citations, cite_warnings = extract_windows_sync(
             _run,
             inputs,
             parsed,
@@ -503,6 +505,7 @@ def _extract_sync(
             media_type=item_media_type,
             source=source_label,
             citations=citations,
+            warnings=extraction_warnings(parsed, pages, max_pages, cite_warnings),
         )
     return output, usage, citations
 
@@ -604,7 +607,7 @@ async def _extract_async(
             result = await _run_extraction_async(agent, window)
             return result.output, _usage_from_result(result) if need_usage else Usage(0, 0, 0)
 
-        output, usage, citations = await extract_windows_async(
+        output, usage, citations, cite_warnings = await extract_windows_async(
             _run,
             inputs,
             parsed,
@@ -626,6 +629,7 @@ async def _extract_async(
             media_type=item_media_type,
             source=source_label,
             citations=citations,
+            warnings=extraction_warnings(parsed, pages, max_pages, cite_warnings),
         )
     return output, usage, citations
 

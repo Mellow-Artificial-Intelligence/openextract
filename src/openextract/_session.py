@@ -61,6 +61,7 @@ from ._types import (
     _extraction_result,
     _resolve_item,
 )
+from ._warnings import extraction_warnings
 from ._windows import emit_progress, extract_windows_async, extract_windows_sync
 
 if TYPE_CHECKING:
@@ -223,18 +224,22 @@ class _ExtractorSession[T: BaseModel]:
 
     def _split_run(
         self, result: Any, parsed: ParsedDocument | None = None
-    ) -> tuple[T, tuple[Citation, ...]]:
-        output, citations = split_cited_output(
+    ) -> tuple[T, tuple[Citation, ...], tuple[str, ...]]:
+        output, citations, warnings = split_cited_output(
             result.output,
             self._schema,
             cite=self._cite,
             parsed=parsed,
             cite_min_confidence=self._cite_min_confidence,
         )
-        return self._validate_output(result.output if not self._cite else output), citations
+        return (
+            self._validate_output(result.output if not self._cite else output),
+            citations,
+            warnings,
+        )
 
     def _output_from_run(self, result: Any, parsed: ParsedDocument | None = None) -> T:
-        output, _citations = self._split_run(result, parsed)
+        output, _citations, _warnings = self._split_run(result, parsed)
         return output
 
     def _output_and_usage(
@@ -252,8 +257,10 @@ class _ExtractorSession[T: BaseModel]:
         media_type: str | None,
         source: str | None,
         agent: object,
+        pages: Sequence[int] | None = None,
+        max_pages: int | None = None,
     ) -> ExtractionResult[T]:
-        output, citations = self._split_run(result, parsed)
+        output, citations, cite_warnings = self._split_run(result, parsed)
         return self._session_result(
             output,
             _usage_from_result(result),
@@ -263,6 +270,7 @@ class _ExtractorSession[T: BaseModel]:
             media_type=media_type,
             source=source,
             agent=agent,
+            warnings=extraction_warnings(parsed, pages, max_pages, cite_warnings),
         )
 
     def _session_result(
@@ -276,6 +284,7 @@ class _ExtractorSession[T: BaseModel]:
         media_type: str | None,
         source: str | None,
         agent: object,
+        warnings: tuple[str, ...] = (),
     ) -> ExtractionResult[T]:
         return _extraction_result(
             output,
@@ -286,6 +295,7 @@ class _ExtractorSession[T: BaseModel]:
             media_type=media_type,
             source=source,
             citations=citations,
+            warnings=warnings,
         )
 
     def _finish_projected(
@@ -301,6 +311,7 @@ class _ExtractorSession[T: BaseModel]:
         media_type: str | None,
         source: str | None,
         agent: object,
+        warnings: tuple[str, ...] = (),
     ) -> T | tuple[T, Usage] | ExtractionResult[T]:
         if with_result:
             return self._session_result(
@@ -312,6 +323,7 @@ class _ExtractorSession[T: BaseModel]:
                 media_type=media_type,
                 source=source,
                 agent=agent,
+                warnings=warnings,
             )
         if with_usage:
             return output, usage
@@ -330,6 +342,8 @@ class _ExtractorSession[T: BaseModel]:
         item_media_type: str | None,
         source_label: str | None,
         started: float,
+        pages: Sequence[int] | None = None,
+        max_pages: int | None = None,
     ) -> R:
         """Retrying async extraction after media and run inputs are prepared."""
         windows = parsed_window_inputs(parsed, inputs)
@@ -353,6 +367,8 @@ class _ExtractorSession[T: BaseModel]:
                             media_type=item_media_type,
                             source=source_label,
                             agent=agent,
+                            pages=pages,
+                            max_pages=max_pages,
                         ),
                     )
                 return project(result, parsed)
@@ -371,7 +387,7 @@ class _ExtractorSession[T: BaseModel]:
             result = await _run_extraction_async(agent, window)
             return result.output, _usage_from_result(result)
 
-        output, usage, citations = await extract_windows_async(
+        output, usage, citations, cite_warnings = await extract_windows_async(
             _run,
             inputs,
             parsed,
@@ -396,6 +412,7 @@ class _ExtractorSession[T: BaseModel]:
                 media_type=item_media_type,
                 source=source_label,
                 agent=agent,
+                warnings=extraction_warnings(parsed, pages, max_pages, cite_warnings),
             ),
         )
 
@@ -651,6 +668,8 @@ class Extractor(_ExtractorSession[T]):
                                 media_type=item_media_type,
                                 source=source_label,
                                 agent=agent,
+                                pages=selected,
+                                max_pages=cap,
                             ),
                         )
                     return project(result, parsed)
@@ -669,7 +688,7 @@ class Extractor(_ExtractorSession[T]):
                 result = self._run_agent(agent, window)
                 return result.output, _usage_from_result(result)
 
-            output, usage, citations = extract_windows_sync(
+            output, usage, citations, cite_warnings = extract_windows_sync(
                 _run,
                 inputs,
                 parsed,
@@ -694,6 +713,7 @@ class Extractor(_ExtractorSession[T]):
                     media_type=item_media_type,
                     source=source_label,
                     agent=agent,
+                    warnings=extraction_warnings(parsed, selected, cap, cite_warnings),
                 ),
             )
 
@@ -732,6 +752,8 @@ class Extractor(_ExtractorSession[T]):
                 item_media_type=item_media_type,
                 source_label=source_label,
                 started=started,
+                pages=selected,
+                max_pages=cap,
             )
 
     def _extract_many_projected[R](
@@ -1091,6 +1113,8 @@ class AsyncExtractor(_ExtractorSession[T]):
                 item_media_type=item_media_type,
                 source_label=source_label,
                 started=started,
+                pages=selected,
+                max_pages=cap,
             )
 
     async def _extract_many_projected[R](

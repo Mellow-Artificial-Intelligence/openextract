@@ -16,6 +16,13 @@ timing when that is known.
   pages, an empty page set after `max_pages`, or an empty language). JSONL
   manifests accept the same keys (pages as an int list or compact range
   string).
+- `ExtractionResult.warnings` now records soft degradations instead of
+  staying empty: page-filter drops (`pages` / `max_pages`, counts only) and
+  `cite_min_confidence` drops (count + threshold). Threaded through oneshot
+  `extract_with_result*`, session `extract_with_result*`, batch
+  `extract_many_with_results*`, and swarm result builders so `as_dict()`
+  includes them. Happy path remains `warnings=()`. Messages are stable,
+  secret-free, and contain no paths or raw media.
 - Session `Extractor.extract_many` / `extract_many_with_results` and
   `AsyncExtractor.extract_many` / `extract_many_with_results` batch many
   inputs on a reusable session without dropping to oneshot `extract_many*`.

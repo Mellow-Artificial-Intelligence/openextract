@@ -59,6 +59,7 @@ class ParsedDocument:
     """Page-indexed local parse used to ground citations."""
 
     pages: tuple[ParsedPage, ...]
+    available_pages: int | None = None
 
     def has_text(self) -> bool:
         return any(page.text.strip() for page in self.pages)
@@ -362,8 +363,9 @@ def _parse_pdf(
         except Exception:
             return None
         try:
+            available = len(pdf)
             parsed_pages: list[ParsedPage] = []
-            for index in range(len(pdf)):
+            for index in range(available):
                 page_no = index + 1
                 if max_pages is not None and page_no > max_pages:
                     break
@@ -377,8 +379,10 @@ def _parse_pdf(
             if callable(close):
                 close()
         if parsed_pages:
-            return ParsedDocument(pages=tuple(parsed_pages))
-        return ParsedDocument(pages=()) if wanted is not None or max_pages is not None else None
+            return ParsedDocument(pages=tuple(parsed_pages), available_pages=available)
+        if wanted is not None or max_pages is not None:
+            return ParsedDocument(pages=(), available_pages=available)
+        return None
 
 
 def _parse_pdf_page(pdf: Any, index: int) -> ParsedPage:

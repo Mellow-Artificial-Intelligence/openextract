@@ -53,6 +53,7 @@ from ._types import (
     _resolve_item,
     _resolve_item_options,
 )
+from ._warnings import extraction_warnings
 from ._windows import extract_windows_async
 
 if TYPE_CHECKING:
@@ -295,7 +296,7 @@ async def _iter_extractions(
                         output = await _run_with_shared_agent(run_agent, window)
                         return output, Usage(0, 0, 0)
 
-                    output, usage, citations = await extract_windows_async(
+                    output, usage, citations, cite_warnings = await extract_windows_async(
                         _run,
                         inputs,
                         parsed,
@@ -317,6 +318,9 @@ async def _iter_extractions(
                         media_type=item_media_type,
                         source=_item_source_label(source, name),
                         citations=citations,
+                        warnings=extraction_warnings(
+                            parsed, item_pages, item_max_pages, cite_warnings
+                        ),
                     )
                 return output
             except Exception:

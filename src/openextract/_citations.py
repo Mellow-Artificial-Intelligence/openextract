@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field, create_model
 from ._confidence import filter_citations
 from ._parse import ParsedDocument, align_citations_to_window, ground_citations
 from ._types import Citation, T
+from ._warnings import cite_min_confidence_warning
 
 _MAX_QUOTE = 2000
 _FIELD_PATH = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*|\[\d+\])*$")
@@ -103,6 +104,18 @@ def prepare_cited_run(
     return cited_output_schema(schema), with_citation_instructions(instructions)
 
 
+def apply_cite_min_confidence(
+    citations: Iterable[Citation],
+    min_confidence: float | None,
+) -> tuple[tuple[Citation, ...], tuple[str, ...]]:
+    """Filter citations and emit a warning when the threshold drops any."""
+    before = tuple(citations)
+    kept = filter_citations(before, min_confidence=min_confidence)
+    if min_confidence is None or len(kept) == len(before):
+        return kept, ()
+    return kept, (cite_min_confidence_warning(min_confidence, len(before) - len(kept)),)
+
+
 def split_cited_output(
     raw: object,
     schema: type[T],
@@ -111,8 +124,8 @@ def split_cited_output(
     parsed: ParsedDocument | None = None,
     window: ParsedDocument | None = None,
     cite_min_confidence: float | None = None,
-) -> tuple[T, tuple[Citation, ...]]:
-    """Unwrap a cited model payload into ``(schema instance, citations)``.
+) -> tuple[T, tuple[Citation, ...], tuple[str, ...]]:
+    """Unwrap a cited model payload into ``(schema instance, citations, warnings)``.
 
     When ``cite`` is false the raw output is returned unchanged and citations
     are empty, matching the default extract path. When a local parse is
@@ -121,7 +134,7 @@ def split_cited_output(
     ``cite_min_confidence`` drops weak or unstamped cites after grounding.
     """
     if not cite:
-        return cast(T, raw), ()
+        return cast(T, raw), (), ()
     wrapper_type = cited_output_schema(schema)
     wrapper = cast(Any, raw if isinstance(raw, wrapper_type) else wrapper_type.model_validate(raw))
     output = cast(T, wrapper.output)
@@ -129,7 +142,8 @@ def split_cited_output(
     if window is not None:
         citations = align_citations_to_window(citations, window)
     citations = ground_citations(citations, parsed, output)
-    return output, filter_citations(citations, min_confidence=cite_min_confidence)
+    citations, warnings = apply_cite_min_confidence(citations, cite_min_confidence)
+    return output, citations, warnings
 
 
 def citations_from_payload(payload: object) -> tuple[Citation, ...]:

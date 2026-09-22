@@ -507,7 +507,7 @@ internals; `source` is sanitized.
 | `model` | `str \| None` | Model identifier that produced the output, when known. |
 | `media_type` | `str \| None` | Media type requested for the item, when provided. |
 | `source` | `str \| None` | Sanitized source label; `None` for unnamed bytes/file-like inputs. |
-| `warnings` | `tuple[str, ...]` | Extensible diagnostics channel; currently always empty. |
+| `warnings` | `tuple[str, ...]` | Soft-degradation diagnostics; empty when nothing was dropped. Page filters emit counts of requested or available pages that were excluded. `cite_min_confidence` emits the drop count and threshold. Never includes paths with query strings, credentials, or raw media. |
 | `citations` | `tuple[Citation, ...]` | Per-field source spans when `cite=True`; empty otherwise. |
 
 `as_dict()` is the JSON-stable dump for logging and pipeline gates:

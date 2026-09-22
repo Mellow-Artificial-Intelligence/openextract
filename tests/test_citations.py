@@ -454,7 +454,7 @@ class TestCitationConfidence:
         assert score_citation_match("value", parsed=False) == MATCH_SCORES["value"]
 
     def test_split_stamps_unparsed_quote_agreement(self):
-        output, citations = split_cited_output(
+        output, citations, warnings = split_cited_output(
             {
                 "output": {"name": "Ada", "age": 36},
                 "citations": [
@@ -470,14 +470,16 @@ class TestCitationConfidence:
         assert citations[0].confidence == 0.55
         assert citations[1].match == "quote"
         assert citations[1].confidence == 0.25
+        assert warnings == ()
 
     def test_split_stamps_unparsed_page_only(self):
-        output, citations = split_cited_output(
+        output, citations, warnings = split_cited_output(
             {"output": {"name": "Ada", "age": 36}, "citations": [{"field": "name", "page": 1}]},
             Person,
             cite=True,
         )
         assert output.name == "Ada"
+        assert warnings == ()
         assert citations[0].match == "page"
         assert citations[0].confidence == 0.30
         assert citations[0].bbox is None
@@ -497,7 +499,7 @@ class TestCiteMinConfidence:
         )
 
     def test_split_filters_after_grounding(self):
-        output, citations = split_cited_output(
+        output, citations, warnings = split_cited_output(
             {
                 "output": {"name": "Ada", "age": 36},
                 "citations": [
@@ -509,6 +511,7 @@ class TestCiteMinConfidence:
             cite=True,
             cite_min_confidence=0.5,
         )
+        assert warnings == ("cite_min_confidence=0.5 dropped 1 citation",)
         assert output == Person(name="Ada", age=36)
         assert [item.field for item in citations] == ["name"]
         assert citations[0].confidence == 0.55
@@ -532,6 +535,8 @@ class TestCiteMinConfidence:
             cite_min_confidence=0.5,
         )
         assert [item.field for item in results[0].citations] == ["name"]
+        assert results[0].warnings == ("cite_min_confidence=0.5 dropped 1 citation",)
+        assert results[0].as_dict()["warnings"] == ["cite_min_confidence=0.5 dropped 1 citation"]
         unfiltered = extract_many_with_results(
             Person,
             model,
@@ -539,6 +544,7 @@ class TestCiteMinConfidence:
             cite=True,
         )
         assert {item.field for item in unfiltered[0].citations} == {"name", "age"}
+        assert unfiltered[0].warnings == ()
 
     def test_swarm_filters_agent_and_reduced_citations(self):
         model = _cited_model(
@@ -558,6 +564,7 @@ class TestCiteMinConfidence:
         )
         assert [item.field for item in swarm.citations] == ["name"]
         assert [item.field for item in swarm.agents[0].citations] == ["name"]
+        assert swarm.agents[0].warnings == ("cite_min_confidence=0.5 dropped 1 citation",)
 
     def test_default_cite_false_is_unchanged(self):
         model = TestModel(custom_output_args={"name": "Ada", "age": 36})
@@ -611,25 +618,27 @@ class TestSchemaWrap:
 
     def test_split_default_returns_raw(self):
         person = Person(name="Ada", age=36)
-        output, citations = split_cited_output(person, Person, cite=False)
+        output, citations, warnings = split_cited_output(person, Person, cite=False)
         assert output is person
         assert citations == ()
+        assert warnings == ()
 
     def test_wrap_is_cached_and_split_accepts_dict(self):
         assert cited_output_schema(Person) is cited_output_schema(Person)
-        output, citations = split_cited_output(
+        output, citations, warnings = split_cited_output(
             {"output": {"name": "Ada", "age": 36}, "citations": [{"field": "name", "page": 1}]},
             Person,
             cite=True,
         )
         assert output == Person(name="Ada", age=36)
         assert citations[0].field == "name"
+        assert warnings == ()
 
     def test_split_aligns_citations_to_one_page_window(self):
         from openextract._parse import ParsedDocument, ParsedPage
 
         window = ParsedDocument(pages=(ParsedPage(4, "Ada", 1, 1, ()),))
-        output, citations = split_cited_output(
+        output, citations, warnings = split_cited_output(
             {
                 "output": {"name": "Ada", "age": 36},
                 "citations": [{"field": "name", "quote": "Ada"}],
@@ -638,6 +647,7 @@ class TestSchemaWrap:
             cite=True,
             window=window,
         )
+        assert warnings == ()
         assert output == Person(name="Ada", age=36)
         assert citations[0].page == 4
 
