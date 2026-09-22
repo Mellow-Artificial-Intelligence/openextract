@@ -18,13 +18,19 @@ How-to: [Guide](guide.md). Integration contract for generated code: [For agents]
 Reusable synchronous extraction session. Enter it with `with`; then call
 `extract(input_file, *, media_type=None, on_progress=None, pages=None, max_pages=None)`,
 `extract_with_usage(input_file, *, media_type=None, on_progress=None, pages=None, max_pages=None)`,
-or `extract_with_result(input_file, *, media_type=None, on_progress=None, pages=None, max_pages=None)`.
+`extract_with_result(input_file, *, media_type=None, on_progress=None, pages=None, max_pages=None)`,
+`extract_many(input_files, *, media_type=None, max_concurrency=5, return_exceptions=False, on_progress=None, pages=None, max_pages=None)`,
+or `extract_many_with_results(input_files, *, media_type=None, max_concurrency=5, return_exceptions=False, on_progress=None, pages=None, max_pages=None)`.
 The agent, model provider client, and URL-fetch client are constructed once and
 closed on context exit. `on_progress` on the constructor is the session
 default; a per-call `on_progress` overrides it. `pages` and `max_pages` on the
 constructor are session defaults; a per-call `pages` / `max_pages` overrides
 the matching constructor value. See
 [`ExtractProgress`](#extractprogress).
+Session `extract_many*` reuse that agent and the session cite/style/language/
+retry/model-settings/URL-timeout configuration. They return results in input
+order, bound in-flight work with `max_concurrency`, and honor
+`return_exceptions` like oneshot `extract_many`.
 
 `model` accepts either a known model string or a configured
 `pydantic_ai.models.Model`. `style` selects how the model inspects the input
@@ -48,7 +54,9 @@ language/script (`None` leaves instructions unchanged).
 ### `AsyncExtractor(schema, model=None, instructions=None, *, style='direct', agent=None, model_settings=None, timeout=None, instrument=False, retry_policy=None, max_input_bytes=None, url_timeout=None, cite=False, cite_min_confidence=None, pages=None, max_pages=None, language=None, on_progress=None)`
 
 Async session counterpart. Enter it with `async with`; then await `extract`,
-`extract_with_usage`, or `extract_with_result`. It shares one async HTTP client
+`extract_with_usage`, `extract_with_result`, `extract_many`, or
+`extract_many_with_results`. Method names match the other async session
+methods (`extract`, not `extract_async`). It shares one async HTTP client
 and one agent across calls, including concurrent calls made on the entering
 event loop. Close it manually with `aclose()` only when a context manager is
 impractical.
@@ -414,6 +422,7 @@ details. An empty `values` raises
 | API | Returns | Order | When to use |
 | --- | --- | --- | --- |
 | `extract_many` / `extract_many_async` | `list[T]` (or exceptions in place) | Input order | You want the full batch before continuing. |
+| Session `extract_many` / `extract_many_with_results` | `list[T]` or `list[ExtractionResult[T]]` | Input order | Same batch contract on a reusable `Extractor` / `AsyncExtractor`. |
 | `iter_extract_many_async` | `(input_index, result)` as items finish | Completion order | Large or generator inputs; start work before the last item completes. |
 | `extract_many_with_results` / `_async` | `list[ExtractionResult[T]]` | Input order | Per-item usage, attempts, duration, and sanitized source labels. |
 
@@ -466,7 +475,8 @@ payloads stay `{field_path, page, bbox, reference_text}`.
 ### `ExtractionResult`
 
 A frozen, generic dataclass returned by `extract_with_result*`, session
-`extract_with_result`, and `extract_many_with_results*`. It never
+`extract_with_result`, oneshot `extract_many_with_results*`, and session
+`extract_many_with_results`. It never
 retains raw media, credentials, query strings, fragments, or provider
 internals; `source` is sanitized.
 

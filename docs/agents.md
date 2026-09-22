@@ -46,6 +46,7 @@ Always define a real `pydantic.BaseModel` subclass, or load one with `schema_fro
 | Need token counts | `extract_with_usage` / `_async` |
 | One input, usage + timing + citations | `extract_with_result` / `_async`, or session `extract_with_result()` → `ExtractionResult` |
 | Same schema/model many times | `Extractor` / `AsyncExtractor` |
+| Many inputs on a reusable session | Session `extract_many` / `extract_many_with_results` (same names on `AsyncExtractor`) |
 | Many inputs, want a list | `extract_many` (sync, **not** from a running loop) or `extract_many_async` |
 | Many inputs, stream as done | `iter_extract_many_async` — yields `(input_index, result)` in **completion order** |
 | Per-item usage / timing | `extract_many_with_results*` + `total_usage` |

@@ -24,12 +24,24 @@ def test_agent() -> Agent:
 
 def sync_example() -> Contact:
     with Extractor(Contact, agent=test_agent()) as extractor:
-        return extractor.extract(b"Ada <ada@example.com>", media_type="text/plain")
+        first = extractor.extract(b"Ada <ada@example.com>", media_type="text/plain")
+        batch = extractor.extract_many(
+            [b"Ada <ada@example.com>", b"Ada <ada@example.com>"],
+            media_type="text/plain",
+        )
+        assert batch == [first, first]
+        return first
 
 
 async def async_example() -> Contact:
     async with AsyncExtractor(Contact, agent=test_agent()) as extractor:
-        return await extractor.extract(b"Ada <ada@example.com>", media_type="text/plain")
+        first = await extractor.extract(b"Ada <ada@example.com>", media_type="text/plain")
+        batch = await extractor.extract_many(
+            [b"Ada <ada@example.com>"],
+            media_type="text/plain",
+        )
+        assert batch == [first]
+        return first
 
 
 def main() -> None:

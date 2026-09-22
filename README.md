@@ -149,7 +149,12 @@ with Extractor(
 ) as extractor:
     first = extractor.extract("./reports/q3.pdf")
     second, usage = extractor.extract_with_usage("./reports/q4.pdf")
+    batch = extractor.extract_many(["./reports/a.pdf", "./reports/b.pdf"])
 ```
+
+`extract_many` / `extract_many_with_results` batch many inputs on the same
+session (oneshot `max_concurrency` / `return_exceptions`, plus per-call
+`pages` / `max_pages`). `AsyncExtractor` uses the same method names.
 
 The async session is bound to the event loop that enters it and supports
 concurrent calls on that loop:
