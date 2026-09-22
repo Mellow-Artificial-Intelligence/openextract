@@ -9,6 +9,13 @@ timing when that is known.
 ## [Unreleased]
 
 ### Added
+- Optional per-item `pages`, `max_pages`, and `language` on `ExtractionInput`.
+  When set they override the call-wide extract / `extract_many` /
+  `extract_many_with_results` (sync and async) values; unset fields keep those
+  defaults. Same validation as the extract APIs (`ValueError` for invalid
+  pages, an empty page set after `max_pages`, or an empty language). JSONL
+  manifests accept the same keys (pages as an int list or compact range
+  string).
 - Session `Extractor.extract_many` / `extract_many_with_results` and
   `AsyncExtractor.extract_many` / `extract_many_with_results` batch many
   inputs on a reusable session without dropping to oneshot `extract_many*`.

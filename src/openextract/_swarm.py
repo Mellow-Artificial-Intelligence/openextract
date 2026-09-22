@@ -25,7 +25,6 @@ from ._config import (
     _DEFAULT_RETRY_MAX_BACKOFF,
     _resolve_max_input_bytes,
     _resolve_url_timeout,
-    _select_pages,
     _validate_cite_min_confidence,
     _validate_max_concurrency,
     _validate_retry_options,
@@ -39,7 +38,6 @@ from ._remote import run_remote_extraction
 from ._styles import (
     ExtractionStyle,
     compose_extract_instructions,
-    normalize_language,
     normalize_style,
     prepared_style_run,
     should_parse,
@@ -54,6 +52,7 @@ from ._types import (
     Usage,
     _extraction_result,
     _resolve_item,
+    _resolve_item_options,
     total_usage,
 )
 from ._windows import emit_progress, extract_windows_async
@@ -299,8 +298,7 @@ async def _run_swarm(
     resolved_style = normalize_style(style)
     _validate_retry_options(max_retries, retry_backoff, retry_max_backoff)
     cite_min_confidence = _validate_cite_min_confidence(cite_min_confidence)
-    pages, max_pages = _select_pages(pages, max_pages)
-    language = normalize_language(language)
+    pages, max_pages, language = _resolve_item_options(input_file, pages, max_pages, language)
     run_settings = _session_model_settings(model_settings, timeout)
     resolved_url_timeout = _resolve_url_timeout(url_timeout)
     concurrency = (

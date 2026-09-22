@@ -44,7 +44,6 @@ from ._config import (
     _max_redirects,
     _resolve_max_input_bytes,
     _resolve_url_timeout,
-    _select_pages,
     _url_fetch_timeout,
     _validate_cite_min_confidence,
     _validate_retry_options,
@@ -74,7 +73,6 @@ from ._session import AsyncExtractor, Extractor
 from ._styles import (
     ExtractionStyle,
     compose_extract_instructions,
-    normalize_language,
     normalize_style,
     prepared_style_run,
     should_parse,
@@ -96,6 +94,7 @@ from ._types import (
     Usage,
     _extraction_result,
     _resolve_item,
+    _resolve_item_options,
     total_usage,
 )
 from ._windows import extract_windows_async, extract_windows_sync
@@ -412,13 +411,12 @@ def _extract_sync(
 ) -> tuple[T, Usage, tuple[Citation, ...]] | ExtractionResult[T]:
     """Shared sync oneshot path used by ``extract`` and the usage/result helpers."""
     cite_min_confidence = _validate_cite_min_confidence(cite_min_confidence)
-    pages, max_pages = _select_pages(pages, max_pages)
-    language = normalize_language(language)
     run_settings = _session_model_settings(model_settings, timeout)
     url_timeout = _resolve_url_timeout(url_timeout)
     schema, model, input_file, instructions, style, use_swarm = _resolve_oneshot(
         schema, model, input_file, instructions, style
     )
+    pages, max_pages, language = _resolve_item_options(input_file, pages, max_pages, language)
     started = time.perf_counter()
     item_media_type, source_label = _oneshot_provenance(input_file, media_type)
     need_usage = with_usage or rich
@@ -535,13 +533,12 @@ async def _extract_async(
 ) -> tuple[T, Usage, tuple[Citation, ...]] | ExtractionResult[T]:
     """Shared async oneshot path used by the async extract entry points."""
     cite_min_confidence = _validate_cite_min_confidence(cite_min_confidence)
-    pages, max_pages = _select_pages(pages, max_pages)
-    language = normalize_language(language)
     run_settings = _session_model_settings(model_settings, timeout)
     url_timeout = _resolve_url_timeout(url_timeout)
     schema, model, input_file, instructions, style, use_swarm = _resolve_oneshot(
         schema, model, input_file, instructions, style
     )
+    pages, max_pages, language = _resolve_item_options(input_file, pages, max_pages, language)
     started = time.perf_counter()
     item_media_type, source_label = _oneshot_provenance(input_file, media_type)
     need_usage = with_usage or rich
@@ -1107,6 +1104,7 @@ __all__ = [
     "_read_from_path",
     "_read_url_with_client",
     "_resolve_item",
+    "_resolve_item_options",
     "_resolve_max_input_bytes",
     "_resolve_run_inputs",
     "_retry_delay",

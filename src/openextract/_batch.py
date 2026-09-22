@@ -21,11 +21,13 @@ from ._agent import (
 from ._citations import prepare_cited_run
 from ._config import (
     _DEFAULT_RETRY_MAX_BACKOFF,
+    _apply_max_pages,
     _resolve_max_input_bytes,
     _resolve_url_timeout,
-    _select_pages,
     _validate_cite_min_confidence,
     _validate_max_concurrency,
+    _validate_max_pages,
+    _validate_pages,
     _validate_retry_options,
 )
 from ._errors import _extraction_errors
@@ -49,6 +51,7 @@ from ._types import (
     Usage,
     _extraction_result,
     _resolve_item,
+    _resolve_item_options,
 )
 from ._windows import extract_windows_async
 
@@ -113,7 +116,9 @@ class _BatchOptions:
         """Validate and normalize the public batch arguments."""
         _validate_retry_options(max_retries, retry_backoff, retry_max_backoff)
         _validate_max_concurrency(max_concurrency)
-        selected, cap = _select_pages(pages, max_pages)
+        validated_pages = _validate_pages(pages)
+        cap = _validate_max_pages(max_pages)
+        _apply_max_pages(validated_pages, cap)
         return cls(
             instructions=instructions,
             style=normalize_style(style),
@@ -128,7 +133,7 @@ class _BatchOptions:
             cite=cite,
             url_timeout=_resolve_url_timeout(url_timeout),
             cite_min_confidence=_validate_cite_min_confidence(cite_min_confidence),
-            pages=selected,
+            pages=validated_pages,
             max_pages=cap,
             language=normalize_language(language),
             model_settings=_session_model_settings(model_settings, timeout),
@@ -228,6 +233,9 @@ async def _iter_extractions(
             started = time.perf_counter()
             attempts = 0
             try:
+                item_pages, item_max_pages, item_language = _resolve_item_options(
+                    item, options.pages, options.max_pages, options.language
+                )
                 with _extraction_errors():
                     file_bytes, file_type = await _get_media_async(
                         source,
@@ -239,10 +247,10 @@ async def _iter_extractions(
                     file_bytes,
                     file_type,
                     parse=should_parse(
-                        options.cite, options.style, options.pages, options.max_pages
+                        options.cite, options.style, item_pages, item_max_pages
                     ),
-                    pages=options.pages,
-                    max_pages=options.max_pages,
+                    pages=item_pages,
+                    max_pages=item_max_pages,
                 )
                 with prepared_style_run(options.style, file_bytes, file_type) as (
                     capabilities,
@@ -253,17 +261,28 @@ async def _iter_extractions(
                         if parsed_inputs is not None and style_inputs is None
                         else _resolve_run_inputs(file_bytes, file_type, style_inputs)
                     )
-                    if shared_agent is None:
+                    if item_language == options.language and shared_agent is not None:
+                        run_agent = shared_agent
+                    else:
+                        item_schema, item_instructions = (
+                            (run_schema, run_instructions)
+                            if item_language == options.language
+                            else prepare_cited_run(
+                                schema,
+                                compose_extract_instructions(
+                                    options.instructions, options.style, item_language
+                                ),
+                                options.cite,
+                            )
+                        )
                         with _extraction_errors():
                             run_agent = _build_agent(
-                                run_schema,
+                                item_schema,
                                 model,
-                                run_instructions,
+                                item_instructions,
                                 model_settings=options.model_settings,
                                 extra_capabilities=capabilities,
                             )
-                    else:
-                        run_agent = shared_agent
 
                     async def _run(window: list) -> tuple[object, Usage]:
                         nonlocal attempts
@@ -502,7 +521,8 @@ def extract_many(
     """Run :func:`extract` over many inputs concurrently from sync code.
 
     Each item may be a raw path/URL/``bytes``/file-like ``os.PathLike`` or an
-    :class:`ExtractionInput` carrying a per-item ``media_type``.
+    :class:`ExtractionInput` carrying a per-item ``media_type``, ``pages``,
+    ``max_pages``, and ``language``.
 
     Args:
         schema: A Pydantic model class defining the expected output structure.
@@ -531,11 +551,14 @@ def extract_many(
             ``[0, 1]`` heuristic threshold after grounding. ``None`` keeps
             every citation. Invalid values raise ``ValueError`` at call time.
         pages: Optional 1-based PDF page numbers, same contract as
-            :func:`extract`.
+            :func:`extract`. Per-item ``ExtractionInput.pages`` overrides this
+            when set.
         max_pages: Optional positive page-number cap, same contract as
-            :func:`extract`.
+            :func:`extract`. Per-item ``ExtractionInput.max_pages`` overrides
+            this when set.
         language: Optional document language hint, same contract as
-            :func:`extract`.
+            :func:`extract`. Per-item ``ExtractionInput.language`` overrides
+            this when set.
         model_settings: Optional Pydantic AI ``ModelSettings``, same contract
             as :func:`extract`.
         timeout: Optional model request timeout in seconds, same contract as

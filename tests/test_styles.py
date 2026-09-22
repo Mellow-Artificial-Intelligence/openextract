@@ -869,6 +869,18 @@ class TestLanguageHint:
             )
         with pytest.raises(ValueError, match="language must be a non-empty string"):
             extract_swarm(_Person, model, b"x", media_type="text/plain", language="")
+        with pytest.raises(ValueError, match="language must be a non-empty string"):
+            extract(
+                _Person,
+                model,
+                ExtractionInput(b"x", media_type="text/plain", language=""),
+            )
+        with pytest.raises(ValueError, match="language must be a non-empty string"):
+            extract_many(
+                _Person,
+                model,
+                [ExtractionInput(b"x", media_type="text/plain", language="   ")],
+            )
 
     def test_injected_agent_rejects_language(self):
         with pytest.raises(ValueError, match="configured on an injected agent"):
@@ -896,3 +908,40 @@ class TestLanguageHint:
             media_type="text/plain",
             language="es",
         ) == _Person(name="Ada", age=36)
+
+    def test_item_language_overrides_batch_default(self, mocker):
+        seen: list[str | None] = []
+        original = compose_extract_instructions
+
+        def _capture(instructions, style, language=None):
+            seen.append(language)
+            return original(instructions, style, language)
+
+        mocker.patch("openextract._batch.compose_extract_instructions", side_effect=_capture)
+        results = extract_many(
+            _Person,
+            TestModel(custom_output_args={"name": "Ada", "age": 36}),
+            [
+                ExtractionInput(b"Ada is 36", media_type="text/plain", language="es"),
+                ExtractionInput(b"Ada is 36", media_type="text/plain"),
+            ],
+            language="fr",
+            max_concurrency=1,
+        )
+        assert results == [_Person(name="Ada", age=36), _Person(name="Ada", age=36)]
+        assert seen[0] == "fr"
+        assert "es" in seen
+
+    def test_oneshot_item_language_overrides_kwarg(self, mocker):
+        expected = _Person(name="Ada", age=36)
+        agent_cls, _ = _make_agent_mock(mocker, output=expected)
+        result = extract(
+            schema=_Person,
+            model="openai:gpt-5",
+            input_file=ExtractionInput(
+                b"Ada is 36", media_type="text/plain", language="es"
+            ),
+            language="fr",
+        )
+        assert result is expected
+        assert agent_cls.call_args.kwargs["instructions"] == language_instructions("es")
