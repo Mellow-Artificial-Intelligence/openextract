@@ -52,8 +52,10 @@ def extract[T: BaseModel](
 ) -> T:
     """Extract ``schema`` from a file path, ``http(s)://`` URL, or raw bytes.
 
-    The media type is inferred from the file name, the URL's ``Content-Type``,
-    or the content itself; pass ``media_type`` to override it.
+    A string ``source`` is always a path or URL, never the document's text;
+    pass text you already have as ``text.encode()``. The media type is
+    inferred from the file name, the URL's ``Content-Type``, or the content
+    itself; pass ``media_type`` to override it.
     """
     content = _load(source, media_type)
     with _model_errors():

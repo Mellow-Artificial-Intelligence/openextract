@@ -265,7 +265,7 @@
 invoice = extract(
     Invoice,
     "openai:gpt-5",
-    "invoice.pdf",
+    source="./invoice.pdf",  <span class="d"># path to the file</span>
 )</code></pre>
     </div>
     <div class="col">
@@ -291,7 +291,7 @@ invoice = extract(
           <dl class="spec">
             <div><dt>schema</dt><dd>The Pydantic model you want back.</dd></div>
             <div><dt>model</dt><dd>A pydantic-ai model string like "anthropic:claude-sonnet-5", or a configured Model.</dd></div>
-            <div><dt>source</dt><dd>A file path, a pathlib.Path, an https:// URL, or raw bytes.</dd></div>
+            <div><dt>source</dt><dd>Where the file is: a path like "./invoice.pdf", a pathlib.Path, or an https:// URL. Or the file's raw bytes. A string is never read as the document's text.</dd></div>
             <div><dt>instructions</dt><dd>Optional guidance, like "Amounts are in EUR."</dd></div>
             <div><dt>media_type</dt><dd>Only needed to override what openextract infers.</dd></div>
           </dl>
@@ -330,7 +330,7 @@ invoice = extract(
         <summary class="grid"><span class="key mono">extract_async()</span><span class="question">Is there an async version?</span><span class="sign" aria-hidden="true"></span></summary>
         <div class="answer grid">
           <p>Yes. It takes the same arguments. Await it.</p>
-<pre><code>invoice = <span class="d">await</span> extract_async(Invoice, "openai:gpt-5", "invoice.pdf")</code></pre>
+<pre><code>invoice = <span class="d">await</span> extract_async(Invoice, "openai:gpt-5", source="./invoice.pdf")</code></pre>
         </div>
       </details>
     </div>
