@@ -8,104 +8,33 @@ timing when that is known.
 
 ## [Unreleased]
 
-### Added
-- Optional per-item `pages`, `max_pages`, and `language` on `ExtractionInput`.
-  When set they override the call-wide extract / `extract_many` /
-  `extract_many_with_results` (sync and async) values; unset fields keep those
-  defaults. Same validation as the extract APIs (`ValueError` for invalid
-  pages, an empty page set after `max_pages`, or an empty language). JSONL
-  manifests accept the same keys (pages as an int list or compact range
-  string).
-- `ExtractionResult.warnings` now records soft degradations instead of
-  staying empty: page-filter drops (`pages` / `max_pages`, counts only) and
-  `cite_min_confidence` drops (count + threshold). Threaded through oneshot
-  `extract_with_result*`, session `extract_with_result*`, batch
-  `extract_many_with_results*`, and swarm result builders so `as_dict()`
-  includes them. Happy path remains `warnings=()`. Messages are stable,
-  secret-free, and contain no paths or raw media.
-- Session `Extractor.extract_many` / `extract_many_with_results` and
-  `AsyncExtractor.extract_many` / `extract_many_with_results` batch many
-  inputs on a reusable session without dropping to oneshot `extract_many*`.
-  Same `input_files`, `max_concurrency`, `return_exceptions`, and
-  `on_progress` contract as oneshot batch; `pages` / `max_pages` are
-  per-call overrides like session `extract()`. Reuses the session agent,
-  cite settings, style, language, URL timeout, retry policy, and model
-  settings. Naming on `AsyncExtractor` matches the other async session
-  methods (`extract`, not `extract_async`). No oneshot signature changes.
-- Optional `max_pages` on extract APIs, sessions, batch, and swarm
-  (`int | None = None`). Default `None` keeps every page (subject to
-  `pages=`). A positive int `N` considers only page numbers `<= N` after
-  any `pages` filter (`pages` unset is treated as `1..N`). Invalid values
-  raise `ValueError` at call/construct time. If no pages remain,
-  `ValueError`. Applies to local PDF parse-then-window and citation
-  grounding the same way `pages` does. Non-paginated inputs accept it
-  with no effect. CLI `--max-pages N`.
-- Session `Extractor.extract_with_result` / `AsyncExtractor.extract_with_result`
-  return `ExtractionResult` (output, usage, attempts, duration, model/media
-  metadata, sanitized source, citations) for one input. Same per-call kwargs as
-  session `extract` / `extract_with_usage` (`media_type`, `on_progress`,
-  `pages`). Citations follow the session `cite` / `cite_min_confidence`
-  settings. No new public names.
-- Optional `url_timeout` on oneshot extract APIs, batch, and swarm
-  (`float | None = None`). Same contract as session `url_timeout`: a finite
-  number of seconds greater than 0; `None` uses `OPENEXTRACT_URL_TIMEOUT` or
-  30 seconds. Invalid values raise `ValueError` before any fetch or model
-  call. CLI `--url-timeout SECONDS` (`float > 0`).
-- `ExtractionResult.as_dict()` JSON-stable dump for logging and pipeline
-  gates: `{output, usage, attempts, duration, model, media_type, source,
-  warnings, citations}`. `output` is `model_dump(mode="json")`; `citations`
-  reuse `Citation.as_dict()`. Never includes raw media, credentials, or
-  provider internals.
-- `field_confidence(citations)` maps each dotted `Citation.field` to the
-  **minimum** non-`None` heuristic confidence (conservative review gate).
-  Fields with only `None` confidences are omitted. `ExtractionResult.field_confidence()`
-  delegates to the helper on `self.citations`.
-- `citations_by_field(citations)` groups spans by dotted `Citation.field`,
-  preserving citation order within each field. `filter_citations(citations,
-  *, min_confidence=None, fields=None)` keeps citations that pass those
-  gates (`confidence is None` fails a min-confidence filter; `fields` keeps
-  only those dotted paths). `ExtractionResult.citations_by_field()` /
-  `.filter_citations(...)` delegate on `self.citations`.
-- Cookbook for openextract + OpenRouter Decisions (Jev Latest) fraud-check
-  at `examples/advanced/openrouter_jev_fraud.py`. `extract()` + TestModel
-  pulls document metadata, content, and risk signals (memo / PDF / image);
-  `--live` POSTs `{model, state, questions}` to
-  `https://openrouter.ai/api/alpha/decisions` with `~typesafe/jev-latest`.
-  Result is `result` / `confidence` / `reasoning` — `reasoning` is composed
-  from extracted signals and the selected choice label (Jev does not emit
-  prose). `--fixture` / default uses canned answers (no network).
-- Cookbook for openextract + OpenRouter Decisions (Jev Latest) at
-  `examples/advanced/openrouter_jev.py`. `extract()` + TestModel prepares
-  structured `state`; `--live` POSTs `{model, state, questions}` to
-  `https://openrouter.ai/api/alpha/decisions` with `~typesafe/jev-latest`.
-  Jev is not a chat/completions model and cannot be passed to `extract()`.
-  `--fixture` / default uses canned answers (no network). Optional live
-  smoke: `OPENEXTRACT_LIVE_SMOKE=1` + `OPENROUTER_API_KEY`.
-- Optional `model_settings` and `timeout` on oneshot extract APIs, batch, and
-  swarm (`ModelSettings | None = None`, `float | None = None`). Same merge as
-  sessions via `_session_model_settings`: `timeout` overrides a `timeout`
-  entry in `model_settings`. `None` (default) is unchanged. Invalid
-  `timeout` raises `ValueError` before any model call. CLI `--timeout SECONDS`
-  (`float > 0`).
-- `schema_from_json(source)` builds a Pydantic `BaseModel` subclass from a
-  JSON Schema file path (`str` or `Path`), a JSON object `dict`, or JSON
-  text. Same practical subset as CLI `--schema` (object schemas with
-  `properties` / `items` / nested objects). Missing files, invalid JSON,
-  and non-object schemas raise `ValueError`. The CLI `--schema` file path
-  now uses this helper. Python: `extract(schema=schema_from_json(...), ...)`.
-- `InputFileError(ExtractionError)` for local path and file-like open/read
-  failures (missing file, permission denied, is-a-directory, and other OS
-  errors). Messages use a sanitized source (`path 'basename'` or
-  `file-like input`) and do not include credentials or full paths.
-  `TypeError` still covers bad call shapes; `UrlFetchError` and
-  `InputTooLargeError` are unchanged. The CLI maps `InputFileError` to
-  exit code `5`, the existing `ExtractionError` slot.
-- `extract_with_result` / `extract_with_result_async` return an
-  `ExtractionResult` (output, usage, attempts, duration, model/media
-  metadata, sanitized source, citations) for a single input. Same
-  arguments as `extract` / `extract_async`. An agent that fans into a
-  swarm summarizes usage and citations the same way `extract_with_usage`
-  already does; use `extract_swarm_with_results*` for per-agent results.
+## [1.0.0] - 2026-09-22
+
+### Removed (breaking)
+- openextract is now a single function. The public API is `extract`,
+  `extract_async`, and four exceptions: `ExtractionError`, `ModelError`,
+  `SchemaValidationError`, and `ProviderNotInstalledError`.
+- Removed agents, remote agents, and `openextract.auth`; swarms and reducers;
+  extraction styles; `Extractor` / `AsyncExtractor` sessions; `extract_many*`
+  batching; `extract_with_usage*` / `extract_with_result*`; `RetryPolicy` and
+  built-in retries (provider SDKs retry on their own); page selection,
+  citations, confidence, and windowing; the `openextract` CLI; the `pdf`
+  extra; and the `python-dotenv` dependency.
+- Removed `ExtractionInput`, `ExtractionResult`, `ExtractProgress`, `Usage`,
+  `total_usage`, `Citation`, `citations_by_field`, `filter_citations`,
+  `field_confidence`, `schema_from_json`, `InputFileError`,
+  `InputTooLargeError`, `UrlFetchError`, and `RemoteAgentError`. A failed URL
+  fetch now raises `ExtractionError`, and a missing local file raises
+  `FileNotFoundError`.
+- Removed URL SSRF host validation, the input size limit, and every
+  `OPENEXTRACT_*` environment variable. See `SECURITY.md`.
+
+### Changed (breaking)
+- The signature is `extract(schema, model, source, instructions=None, *,
+  media_type=None)`. `input_file` is renamed to `source`, and file-like objects
+  are no longer accepted (pass `bytes` instead).
+- `media_type` is now optional for `bytes` too. It is inferred from the file
+  extension, then the URL's `Content-Type`, then the content's leading bytes.
 
 ## [0.15.0] - 2026-09-18
 

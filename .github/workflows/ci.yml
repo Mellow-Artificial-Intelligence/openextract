@@ -19,10 +19,6 @@ env:
   UV_FROZEN: "1"
   UV_NO_PROGRESS: "1"
 
-# Every job detects for itself whether the change set requires it (via the
-# .github/actions/detect-jobs composite action) and skips its own work when it
-# does not. Nothing waits on a gating job, so lint, test, and package all start
-# the moment the run is created.
 jobs:
   lint:
     runs-on: ubuntu-latest
@@ -30,79 +26,35 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
         with:
-          fetch-depth: 0
           persist-credentials: false
-      - id: filter
-        uses: ./.github/actions/detect-jobs
       - uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a  # v4.2.0
-        if: steps.filter.outputs.lint == 'true'
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
-      - if: steps.filter.outputs.lint == 'true'
-        run: uv sync --dev
-      - if: steps.filter.outputs.lint == 'true'
-        run: uv run --no-sync ruff check .
-      - if: steps.filter.outputs.lint == 'true'
-        run: uv run --no-sync ruff format --check .
-      - if: steps.filter.outputs.lint == 'true'
-        run: uv run --no-sync ty check
-      - if: steps.filter.outputs.lint == 'true'
-        run: uv run --no-sync python scripts/check_api_reference.py
+      - run: uv sync --dev
+      - run: uv run --no-sync ruff check .
+      - run: uv run --no-sync ruff format --check .
+      - run: uv run --no-sync ty check
 
   test:
     name: Test (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
-    # Healthy pytest is well under a minute; 5m is hang/eviction detection,
-    # not a budget for a slow suite. A job timeout marks the matrix cancelled
-    # (not failed); test-retry rematches that too.
     timeout-minutes: 5
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - python-version: "3.12"
-            coverage: true
-          - python-version: "3.13"
-            coverage: false
+        python-version: ["3.12", "3.13"]
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
         with:
-          fetch-depth: 0
           persist-credentials: false
-      - uses: ./.github/actions/run-test-suite
+      - uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a  # v4.2.0
         with:
           python-version: ${{ matrix.python-version }}
-          coverage: ${{ matrix.coverage }}
-
-  # Same suite and 100% coverage gate, when `test` failed or was cancelled.
-  # In-step retry cannot run after the runner agent is SIGTERM'd mid-pytest
-  # (see e.g. actions/runs/35518161988). A 5m job timeout is also cancelled
-  # (actions/runs/35522477200), so rematch on cancelled as well as failure.
-  # Skip only when the whole workflow is cancelled (`cancelled()`).
-  test-retry:
-    name: Test retry (Python ${{ matrix.python-version }})
-    needs: test
-    if: ${{ !cancelled() && (needs.test.result == 'failure' || needs.test.result == 'cancelled') }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - python-version: "3.12"
-            coverage: true
-          - python-version: "3.13"
-            coverage: false
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: ./.github/actions/run-test-suite
-        with:
-          python-version: ${{ matrix.python-version }}
-          coverage: ${{ matrix.coverage }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv sync --dev
+      - run: uv run --no-sync pytest --cov=openextract --cov-report=term-missing
 
   package:
     name: Build and install distributions
@@ -111,54 +63,33 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
         with:
-          fetch-depth: 0
           persist-credentials: false
-      - id: filter
-        uses: ./.github/actions/detect-jobs
       - uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a  # v4.2.0
-        if: steps.filter.outputs.package == 'true'
         with:
           python-version: "3.12"
           enable-cache: true
           cache-dependency-glob: uv.lock
-      - if: steps.filter.outputs.package == 'true'
-        run: uv build
+      - run: uv build
       - name: Smoke-test wheel and source distribution
-        if: steps.filter.outputs.package == 'true'
         run: |
-          uv venv .venv-wheel
-          uv venv .venv-sdist
-          uv pip install --python .venv-wheel/bin/python dist/*.whl
-          uv pip install --python .venv-sdist/bin/python dist/*.tar.gz
-          for venv in .venv-wheel .venv-sdist; do
-            "$venv/bin/python" -c "import openextract; assert callable(openextract.extract)"
-            "$venv/bin/openextract" --help
+          for dist in dist/*.whl dist/*.tar.gz; do
+            uv venv --clear .venv-smoke
+            uv pip install --python .venv-smoke/bin/python "$dist"
+            .venv-smoke/bin/python -c "import openextract; assert callable(openextract.extract)"
           done
 
   ci:
     name: CI
-    needs: [lint, test, test-retry, package]
+    needs: [lint, test, package]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
       - name: Check required jobs
         env:
-          LINT: ${{ needs.lint.result }}
-          TEST: ${{ needs.test.result }}
-          TEST_RETRY: ${{ needs.test-retry.result }}
-          PACKAGE: ${{ needs.package.result }}
+          RESULTS: ${{ join(needs.*.result, ' ') }}
         run: |
-          echo "job results: lint=$LINT test=$TEST test-retry=$TEST_RETRY package=$PACKAGE"
-          status=0
-          for entry in "lint:$LINT" "package:$PACKAGE"; do
-            if [ "${entry#*:}" != "success" ]; then
-              echo "Job did not succeed: ${entry%%:*} (${entry#*:})"
-              status=1
-            fi
+          echo "job results: $RESULTS"
+          for result in $RESULTS; do
+            [ "$result" = "success" ] || exit 1
           done
-          if [ "$TEST" != "success" ] && [ "$TEST_RETRY" != "success" ]; then
-            echo "Job did not succeed: test ($TEST) test-retry ($TEST_RETRY)"
-            status=1
-          fi
-          exit "$status"

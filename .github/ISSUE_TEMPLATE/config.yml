@@ -1,5 +1,5 @@
 blank_issues_enabled: true
 contact_links:
   - name: Documentation
-    url: https://mellow-artificial-intelligence.github.io/openextract/
-    about: Check the documentation for usage guides and examples
+    url: https://github.com/Mellow-Artificial-Intelligence/openextract#readme
+    about: Check the README for usage
