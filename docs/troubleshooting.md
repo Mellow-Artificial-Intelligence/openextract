@@ -187,6 +187,9 @@ Inspect per-item `error` / `error_type` entries. Fix the failing inputs, or omit
 
 - `extract_many` / `extract_many_async` wait for the full batch and return
   results in **input order**.
+- Session `Extractor.extract_many` / `extract_many_with_results` (same names
+  on `AsyncExtractor`) keep a reusable session agent and use the same input
+  order, `max_concurrency`, and `return_exceptions` contract.
 - `iter_extract_many_async` yields `(input_index, result)` in **completion
   order**, consumes generators lazily, and never schedules more than
   `max_concurrency` items. Use it when you want to start processing before the

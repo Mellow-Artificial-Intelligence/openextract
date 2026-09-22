@@ -158,9 +158,10 @@ with Extractor(
     q3 = extractor.extract("./invoices/q3.pdf")
     q4, usage = extractor.extract_with_usage("./invoices/q4.pdf")
     report = extractor.extract_with_result("./invoices/annual.pdf")
+    batch = extractor.extract_many(["./invoices/a.pdf", "./invoices/b.pdf"])
 ```
 
-`extract_with_result()` returns `ExtractionResult` (output, usage, attempts, duration, model/media metadata, sanitized source, and citations when the session was built with `cite=True`). `extract()` / `extract_with_usage()` still return the schema instance (and usage). Use `report.output` / `report.citations` like oneshot `extract_with_result`.
+`extract_with_result()` returns `ExtractionResult` (output, usage, attempts, duration, model/media metadata, sanitized source, and citations when the session was built with `cite=True`). `extract()` / `extract_with_usage()` still return the schema instance (and usage). Use `report.output` / `report.citations` like oneshot `extract_with_result`. `extract_many` / `extract_many_with_results` batch many inputs on the same session (oneshot `input_files` / `max_concurrency` / `return_exceptions` / `on_progress`, plus per-call `pages` / `max_pages`). `AsyncExtractor` uses the same method names.
 
 `Extractor` is thread-bound and not thread-safe. `AsyncExtractor` is bound to one event loop; concurrent awaits on that loop are fine. Pass a configured `pydantic_ai.models.Model` as `model=`, or a fully configured `Agent` as `agent=` (mutually exclusive with `model=`; not combinable with `search`/`code`/`table`/`form`).
 
@@ -300,8 +301,8 @@ extract(
 ```
 
 `Extractor` / `AsyncExtractor` accept the same callback on the constructor
-(session default) or on `extract()`. Batch and swarm APIs take it too;
-concurrent items or agents may interleave events.
+(session default) or on `extract()` / `extract_many()`. Batch and swarm APIs
+take it too; concurrent items or agents may interleave events.
 
 CLI `--progress` writes window lines to stderr for a single input
 (`progress: window 2/20 (page 2)`) and keeps per-item completion lines for
@@ -312,6 +313,7 @@ batches.
 | API | Returns | Order | Use when |
 | --- | --- | --- | --- |
 | `extract_many` / `extract_many_async` | `list[T]` | Input order | You want the full batch. |
+| Session `extract_many` / `extract_many_with_results` | `list[T]` or `list[ExtractionResult[T]]` | Input order | Same batch, but keep a reusable `Extractor` / `AsyncExtractor`. |
 | `iter_extract_many_async` | `(index, result)` as items finish | Completion order | Large/generator inputs; start work early. |
 | `extract_many_with_results*` | `list[ExtractionResult[T]]` | Input order | Per-item usage, attempts, duration, sanitized source. |
 

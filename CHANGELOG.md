@@ -9,6 +9,15 @@ timing when that is known.
 ## [Unreleased]
 
 ### Added
+- Session `Extractor.extract_many` / `extract_many_with_results` and
+  `AsyncExtractor.extract_many` / `extract_many_with_results` batch many
+  inputs on a reusable session without dropping to oneshot `extract_many*`.
+  Same `input_files`, `max_concurrency`, `return_exceptions`, and
+  `on_progress` contract as oneshot batch; `pages` / `max_pages` are
+  per-call overrides like session `extract()`. Reuses the session agent,
+  cite settings, style, language, URL timeout, retry policy, and model
+  settings. Naming on `AsyncExtractor` matches the other async session
+  methods (`extract`, not `extract_async`). No oneshot signature changes.
 - Optional `max_pages` on extract APIs, sessions, batch, and swarm
   (`int | None = None`). Default `None` keeps every page (subject to
   `pages=`). A positive int `N` considers only page numbers `<= N` after

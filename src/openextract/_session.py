@@ -7,10 +7,10 @@ import shutil
 import tempfile
 import threading
 import time
-from collections.abc import AsyncIterator, Callable, Iterator, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Iterator, Sequence
 from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Literal, cast, overload
 
 import httpx
 from pydantic import BaseModel
@@ -23,12 +23,14 @@ from ._agent import (
     _session_model_settings,
     _usage_from_result,
 )
+from ._batch import _cancel_tasks
 from ._citations import prepare_cited_run, split_cited_output
 from ._config import (
     _apply_max_pages,
     _resolve_max_input_bytes,
     _resolve_url_timeout,
     _validate_cite_min_confidence,
+    _validate_max_concurrency,
     _validate_max_pages,
     _validate_pages,
 )
@@ -74,6 +76,37 @@ def _call_provenance(
     """Requested media type and sanitized source label for a session result."""
     source, item_media_type, name = _resolve_item(input_file, media_type)
     return item_media_type, _item_source_label(source, name)
+
+
+async def _run_session_batch[R](
+    input_files: Iterable[ExtractionInputLike],
+    run_item: Callable[[ExtractionInputLike], Awaitable[R]],
+    *,
+    max_concurrency: int,
+    return_exceptions: bool,
+) -> list:
+    """Run session extractions with bounded concurrency, restoring input order.
+
+    Reuses the caller's session agent via ``run_item``. ``max_concurrency``
+    limits in-flight items; ``return_exceptions`` matches oneshot
+    ``extract_many`` (in-place errors vs fail-fast cancel).
+    """
+    _validate_max_concurrency(max_concurrency)
+    files = list(input_files)
+    if not files:
+        return []
+    semaphore = asyncio.Semaphore(max_concurrency)
+
+    async def _one(item: ExtractionInputLike) -> R:
+        async with semaphore:
+            return await run_item(item)
+
+    tasks = [asyncio.create_task(_one(item)) for item in files]
+    try:
+        return list(await asyncio.gather(*tasks, return_exceptions=return_exceptions))
+    except BaseException:
+        await _cancel_tasks(tasks)
+        raise
 
 
 class _ExtractorSession[T: BaseModel]:
@@ -283,6 +316,88 @@ class _ExtractorSession[T: BaseModel]:
         if with_usage:
             return output, usage
         return output
+
+    async def _project_run[R](
+        self,
+        agent: PydanticAgent,
+        inputs: list,
+        parsed: ParsedDocument | None,
+        project: Callable[..., R],
+        *,
+        with_usage: bool,
+        with_result: bool,
+        callback: OnProgress | None,
+        item_media_type: str | None,
+        source_label: str | None,
+        started: float,
+    ) -> R:
+        """Retrying async extraction after media and run inputs are prepared."""
+        windows = parsed_window_inputs(parsed, inputs)
+        attempts = 0
+        if len(windows) == 1:
+            emit_progress(callback, 1, 1, parsed)
+
+            async def _once() -> R:
+                nonlocal attempts
+                if with_result:
+                    attempts += 1
+                result = await _run_extraction_async(agent, windows[0])
+                if with_result:
+                    return cast(
+                        R,
+                        self._result_from_run(
+                            result,
+                            parsed,
+                            attempts=attempts,
+                            started=started,
+                            media_type=item_media_type,
+                            source=source_label,
+                            agent=agent,
+                        ),
+                    )
+                return project(result, parsed)
+
+            return await _run_with_retries_async(
+                _once,
+                max_retries=self._retry_policy.max_retries,
+                retry_backoff=self._retry_policy.backoff,
+                retry_max_backoff=self._retry_policy.max_backoff,
+            )
+
+        async def _run(window: list) -> tuple[object, Usage]:
+            nonlocal attempts
+            if with_result:
+                attempts += 1
+            result = await _run_extraction_async(agent, window)
+            return result.output, _usage_from_result(result)
+
+        output, usage, citations = await extract_windows_async(
+            _run,
+            inputs,
+            parsed,
+            self._schema,
+            self._cite,
+            cite_min_confidence=self._cite_min_confidence,
+            max_retries=self._retry_policy.max_retries,
+            retry_backoff=self._retry_policy.backoff,
+            retry_max_backoff=self._retry_policy.max_backoff,
+            on_progress=callback,
+        )
+        return cast(
+            R,
+            self._finish_projected(
+                self._validate_output(cast(Any, output)),
+                usage,
+                citations,
+                with_usage=with_usage,
+                with_result=with_result,
+                attempts=attempts,
+                started=started,
+                media_type=item_media_type,
+                source=source_label,
+                agent=agent,
+            ),
+        )
 
     # -- lifecycle bookkeeping shared by the sync and async sessions ---------
 
@@ -582,6 +697,81 @@ class Extractor(_ExtractorSession[T]):
                 ),
             )
 
+    async def _extract_projected_async[R](
+        self,
+        input_file: ExtractionInputLike,
+        media_type: str | None,
+        project: Callable[..., R],
+        *,
+        with_usage: bool = False,
+        with_result: bool = False,
+        on_progress: OnProgress | None = None,
+        pages: Sequence[int] | None = None,
+        max_pages: int | None = None,
+    ) -> R:
+        """Async session extract used by :meth:`extract_many` on the session loop."""
+        callback = self._on_progress if on_progress is None else on_progress
+        selected, cap = self._page_filter(pages, max_pages)
+        started = time.perf_counter() if with_result else 0.0
+        item_media_type, source_label = (
+            _call_provenance(input_file, media_type) if with_result else (media_type, None)
+        )
+        with self._prepare_session_extraction(input_file, media_type, selected, cap) as (
+            agent,
+            inputs,
+            parsed,
+        ):
+            return await self._project_run(
+                agent,
+                inputs,
+                parsed,
+                project,
+                with_usage=with_usage,
+                with_result=with_result,
+                callback=callback,
+                item_media_type=item_media_type,
+                source_label=source_label,
+                started=started,
+            )
+
+    def _extract_many_projected[R](
+        self,
+        input_files: Iterable[ExtractionInputLike],
+        project: Callable[..., R],
+        *,
+        media_type: str | None,
+        max_concurrency: int,
+        return_exceptions: bool,
+        with_result: bool = False,
+        on_progress: OnProgress | None = None,
+        pages: Sequence[int] | None = None,
+        max_pages: int | None = None,
+    ) -> list:
+        """Bounded concurrent extracts on the session's private event loop."""
+        _validate_max_concurrency(max_concurrency)
+        self._ensure_sync_open()
+        assert self._runner is not None
+
+        async def _one(item: ExtractionInputLike) -> R:
+            return await self._extract_projected_async(
+                item,
+                media_type,
+                project,
+                with_result=with_result,
+                on_progress=on_progress,
+                pages=pages,
+                max_pages=max_pages,
+            )
+
+        return self._runner.run(
+            _run_session_batch(
+                input_files,
+                _one,
+                max_concurrency=max_concurrency,
+                return_exceptions=return_exceptions,
+            )
+        )
+
     def extract(
         self,
         input_file: ExtractionInputLike,
@@ -645,6 +835,142 @@ class Extractor(_ExtractorSession[T]):
                 pages=pages,
                 max_pages=max_pages,
             ),
+        )
+
+    @overload
+    def extract_many(
+        self,
+        input_files: Iterable[ExtractionInputLike],
+        *,
+        media_type: str | None = None,
+        max_concurrency: int = 5,
+        return_exceptions: Literal[False] = False,
+        on_progress: Callable[[ExtractProgress], None] | None = None,
+        pages: Sequence[int] | None = None,
+        max_pages: int | None = None,
+    ) -> list[T]: ...
+
+    @overload
+    def extract_many(
+        self,
+        input_files: Iterable[ExtractionInputLike],
+        *,
+        media_type: str | None = None,
+        max_concurrency: int = 5,
+        return_exceptions: Literal[True],
+        on_progress: Callable[[ExtractProgress], None] | None = None,
+        pages: Sequence[int] | None = None,
+        max_pages: int | None = None,
+    ) -> list[T | Exception]: ...
+
+    @overload
+    def extract_many(
+        self,
+        input_files: Iterable[ExtractionInputLike],
+        *,
+        media_type: str | None = None,
+        max_concurrency: int = 5,
+        return_exceptions: bool,
+        on_progress: Callable[[ExtractProgress], None] | None = None,
+        pages: Sequence[int] | None = None,
+        max_pages: int | None = None,
+    ) -> list[T | Exception]: ...
+
+    def extract_many(
+        self,
+        input_files: Iterable[ExtractionInputLike],
+        *,
+        media_type: str | None = None,
+        max_concurrency: int = 5,
+        return_exceptions: bool = False,
+        on_progress: Callable[[ExtractProgress], None] | None = None,
+        pages: Sequence[int] | None = None,
+        max_pages: int | None = None,
+    ) -> list:
+        """Extract many inputs using this session's reusable agent and clients.
+
+        Mirrors oneshot :func:`extract_many` for ``input_files``,
+        ``max_concurrency``, ``return_exceptions``, and ``on_progress``.
+        ``pages`` / ``max_pages`` are per-call overrides, same as
+        :meth:`extract`. Session ``cite``, style, language, retry policy,
+        model settings, and URL timeout apply to every item.
+        """
+        return self._extract_many_projected(
+            input_files,
+            self._output_from_run,
+            media_type=media_type,
+            max_concurrency=max_concurrency,
+            return_exceptions=return_exceptions,
+            on_progress=on_progress,
+            pages=pages,
+            max_pages=max_pages,
+        )
+
+    @overload
+    def extract_many_with_results(
+        self,
+        input_files: Iterable[ExtractionInputLike],
+        *,
+        media_type: str | None = None,
+        max_concurrency: int = 5,
+        return_exceptions: Literal[False] = False,
+        on_progress: Callable[[ExtractProgress], None] | None = None,
+        pages: Sequence[int] | None = None,
+        max_pages: int | None = None,
+    ) -> list[ExtractionResult[T]]: ...
+
+    @overload
+    def extract_many_with_results(
+        self,
+        input_files: Iterable[ExtractionInputLike],
+        *,
+        media_type: str | None = None,
+        max_concurrency: int = 5,
+        return_exceptions: Literal[True],
+        on_progress: Callable[[ExtractProgress], None] | None = None,
+        pages: Sequence[int] | None = None,
+        max_pages: int | None = None,
+    ) -> list[ExtractionResult[T] | Exception]: ...
+
+    @overload
+    def extract_many_with_results(
+        self,
+        input_files: Iterable[ExtractionInputLike],
+        *,
+        media_type: str | None = None,
+        max_concurrency: int = 5,
+        return_exceptions: bool,
+        on_progress: Callable[[ExtractProgress], None] | None = None,
+        pages: Sequence[int] | None = None,
+        max_pages: int | None = None,
+    ) -> list[ExtractionResult[T] | Exception]: ...
+
+    def extract_many_with_results(
+        self,
+        input_files: Iterable[ExtractionInputLike],
+        *,
+        media_type: str | None = None,
+        max_concurrency: int = 5,
+        return_exceptions: bool = False,
+        on_progress: Callable[[ExtractProgress], None] | None = None,
+        pages: Sequence[int] | None = None,
+        max_pages: int | None = None,
+    ) -> list:
+        """Batch counterpart of :meth:`extract_with_result`.
+
+        Same arguments and ordering/concurrency contract as
+        :meth:`extract_many`. Each success is an :class:`ExtractionResult`.
+        """
+        return self._extract_many_projected(
+            input_files,
+            self._output_from_run,
+            media_type=media_type,
+            max_concurrency=max_concurrency,
+            return_exceptions=return_exceptions,
+            with_result=True,
+            on_progress=on_progress,
+            pages=pages,
+            max_pages=max_pages,
         )
 
 
@@ -746,7 +1072,6 @@ class AsyncExtractor(_ExtractorSession[T]):
         callback = self._on_progress if on_progress is None else on_progress
         selected, cap = self._page_filter(pages, max_pages)
         started = time.perf_counter() if with_result else 0.0
-        attempts = 0
         item_media_type, source_label = (
             _call_provenance(input_file, media_type) if with_result else (media_type, None)
         )
@@ -755,71 +1080,53 @@ class AsyncExtractor(_ExtractorSession[T]):
             inputs,
             parsed,
         ):
-            windows = parsed_window_inputs(parsed, inputs)
-            if len(windows) == 1:
-                emit_progress(callback, 1, 1, parsed)
-
-                async def _once() -> R:
-                    nonlocal attempts
-                    if with_result:
-                        attempts += 1
-                    result = await _run_extraction_async(agent, windows[0])
-                    if with_result:
-                        return cast(
-                            R,
-                            self._result_from_run(
-                                result,
-                                parsed,
-                                attempts=attempts,
-                                started=started,
-                                media_type=item_media_type,
-                                source=source_label,
-                                agent=agent,
-                            ),
-                        )
-                    return project(result, parsed)
-
-                return await _run_with_retries_async(
-                    _once,
-                    max_retries=self._retry_policy.max_retries,
-                    retry_backoff=self._retry_policy.backoff,
-                    retry_max_backoff=self._retry_policy.max_backoff,
-                )
-
-            async def _run(window: list) -> tuple[object, Usage]:
-                nonlocal attempts
-                if with_result:
-                    attempts += 1
-                result = await _run_extraction_async(agent, window)
-                return result.output, _usage_from_result(result)
-
-            output, usage, citations = await extract_windows_async(
-                _run,
+            return await self._project_run(
+                agent,
                 inputs,
                 parsed,
-                self._schema,
-                self._cite,
-                cite_min_confidence=self._cite_min_confidence,
-                max_retries=self._retry_policy.max_retries,
-                retry_backoff=self._retry_policy.backoff,
-                retry_max_backoff=self._retry_policy.max_backoff,
-                on_progress=callback,
+                project,
+                with_usage=with_usage,
+                with_result=with_result,
+                callback=callback,
+                item_media_type=item_media_type,
+                source_label=source_label,
+                started=started,
             )
-            return cast(
-                R,
-                self._finish_projected(
-                    self._validate_output(output),
-                    usage,
-                    citations,
-                    with_usage=with_usage,
-                    with_result=with_result,
-                    attempts=attempts,
-                    started=started,
-                    media_type=item_media_type,
-                    source=source_label,
-                    agent=agent,
-                ),
+
+    async def _extract_many_projected[R](
+        self,
+        input_files: Iterable[ExtractionInputLike],
+        project: Callable[..., R],
+        *,
+        media_type: str | None,
+        max_concurrency: int,
+        return_exceptions: bool,
+        with_result: bool = False,
+        on_progress: OnProgress | None = None,
+        pages: Sequence[int] | None = None,
+        max_pages: int | None = None,
+    ) -> list:
+        """Bounded concurrent extracts on the session event loop."""
+        _validate_max_concurrency(max_concurrency)
+        self._ensure_async_open()
+
+        async def _one(item: ExtractionInputLike) -> R:
+            return await self._extract_projected(
+                item,
+                media_type,
+                project,
+                with_result=with_result,
+                on_progress=on_progress,
+                pages=pages,
+                max_pages=max_pages,
             )
+
+        return await _run_session_batch(
+            input_files,
+            _one,
+            max_concurrency=max_concurrency,
+            return_exceptions=return_exceptions,
+        )
 
     async def extract(
         self,
@@ -884,4 +1191,137 @@ class AsyncExtractor(_ExtractorSession[T]):
                 pages=pages,
                 max_pages=max_pages,
             ),
+        )
+
+    @overload
+    async def extract_many(
+        self,
+        input_files: Iterable[ExtractionInputLike],
+        *,
+        media_type: str | None = None,
+        max_concurrency: int = 5,
+        return_exceptions: Literal[False] = False,
+        on_progress: Callable[[ExtractProgress], None] | None = None,
+        pages: Sequence[int] | None = None,
+        max_pages: int | None = None,
+    ) -> list[T]: ...
+
+    @overload
+    async def extract_many(
+        self,
+        input_files: Iterable[ExtractionInputLike],
+        *,
+        media_type: str | None = None,
+        max_concurrency: int = 5,
+        return_exceptions: Literal[True],
+        on_progress: Callable[[ExtractProgress], None] | None = None,
+        pages: Sequence[int] | None = None,
+        max_pages: int | None = None,
+    ) -> list[T | Exception]: ...
+
+    @overload
+    async def extract_many(
+        self,
+        input_files: Iterable[ExtractionInputLike],
+        *,
+        media_type: str | None = None,
+        max_concurrency: int = 5,
+        return_exceptions: bool,
+        on_progress: Callable[[ExtractProgress], None] | None = None,
+        pages: Sequence[int] | None = None,
+        max_pages: int | None = None,
+    ) -> list[T | Exception]: ...
+
+    async def extract_many(
+        self,
+        input_files: Iterable[ExtractionInputLike],
+        *,
+        media_type: str | None = None,
+        max_concurrency: int = 5,
+        return_exceptions: bool = False,
+        on_progress: Callable[[ExtractProgress], None] | None = None,
+        pages: Sequence[int] | None = None,
+        max_pages: int | None = None,
+    ) -> list:
+        """Extract many inputs using this session's reusable agent and clients.
+
+        Same contract as :meth:`Extractor.extract_many`. Naming matches the
+        other async session methods (``extract``, not ``extract_async``).
+        """
+        return await self._extract_many_projected(
+            input_files,
+            self._output_from_run,
+            media_type=media_type,
+            max_concurrency=max_concurrency,
+            return_exceptions=return_exceptions,
+            on_progress=on_progress,
+            pages=pages,
+            max_pages=max_pages,
+        )
+
+    @overload
+    async def extract_many_with_results(
+        self,
+        input_files: Iterable[ExtractionInputLike],
+        *,
+        media_type: str | None = None,
+        max_concurrency: int = 5,
+        return_exceptions: Literal[False] = False,
+        on_progress: Callable[[ExtractProgress], None] | None = None,
+        pages: Sequence[int] | None = None,
+        max_pages: int | None = None,
+    ) -> list[ExtractionResult[T]]: ...
+
+    @overload
+    async def extract_many_with_results(
+        self,
+        input_files: Iterable[ExtractionInputLike],
+        *,
+        media_type: str | None = None,
+        max_concurrency: int = 5,
+        return_exceptions: Literal[True],
+        on_progress: Callable[[ExtractProgress], None] | None = None,
+        pages: Sequence[int] | None = None,
+        max_pages: int | None = None,
+    ) -> list[ExtractionResult[T] | Exception]: ...
+
+    @overload
+    async def extract_many_with_results(
+        self,
+        input_files: Iterable[ExtractionInputLike],
+        *,
+        media_type: str | None = None,
+        max_concurrency: int = 5,
+        return_exceptions: bool,
+        on_progress: Callable[[ExtractProgress], None] | None = None,
+        pages: Sequence[int] | None = None,
+        max_pages: int | None = None,
+    ) -> list[ExtractionResult[T] | Exception]: ...
+
+    async def extract_many_with_results(
+        self,
+        input_files: Iterable[ExtractionInputLike],
+        *,
+        media_type: str | None = None,
+        max_concurrency: int = 5,
+        return_exceptions: bool = False,
+        on_progress: Callable[[ExtractProgress], None] | None = None,
+        pages: Sequence[int] | None = None,
+        max_pages: int | None = None,
+    ) -> list:
+        """Batch counterpart of :meth:`extract_with_result`.
+
+        Same arguments and ordering/concurrency contract as
+        :meth:`extract_many`. Each success is an :class:`ExtractionResult`.
+        """
+        return await self._extract_many_projected(
+            input_files,
+            self._output_from_run,
+            media_type=media_type,
+            max_concurrency=max_concurrency,
+            return_exceptions=return_exceptions,
+            with_result=True,
+            on_progress=on_progress,
+            pages=pages,
+            max_pages=max_pages,
         )

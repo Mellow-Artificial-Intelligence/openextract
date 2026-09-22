@@ -166,6 +166,16 @@ def _session_consumer(extractor: Extractor[Invoice]) -> None:
     _assert_session: Invoice = session_result.output
     _ = session_result.citations
     _ = session_result.usage
+    session_batch: list[Invoice] = extractor.extract_many([Path("/tmp/a.pdf"), Path("/tmp/b.pdf")])
+    session_batch_exc: list[Invoice | Exception] = extractor.extract_many(
+        [Path("/tmp/a.pdf")], return_exceptions=True
+    )
+    session_results: list[ExtractionResult[Invoice]] = extractor.extract_many_with_results(
+        [Path("/tmp/a.pdf")]
+    )
+    _ = session_batch
+    _ = session_batch_exc
+    _ = session_results
 
 
 async def async_consumer() -> None:
@@ -189,4 +199,10 @@ async def _async_session_consumer(extractor: AsyncExtractor[Invoice]) -> None:
     async_session: ExtractionResult[Invoice] = await extractor.extract_with_result(
         Path("/tmp/x.pdf")
     )
+    async_batch: list[Invoice] = await extractor.extract_many([Path("/tmp/a.pdf")])
+    async_results: list[ExtractionResult[Invoice]] = await extractor.extract_many_with_results(
+        [Path("/tmp/a.pdf")], return_exceptions=False
+    )
     _ = async_session
+    _ = async_batch
+    _ = async_results

@@ -532,3 +532,181 @@ def test_sync_extract_with_result_counts_retries(mocker):
     assert result.output == Person(name="Ada", age=36)
     assert result.attempts == 2
     assert result.usage == Usage(input_tokens=1, output_tokens=2, total_tokens=3)
+
+
+def test_sync_extract_many_reuses_agent_and_preserves_order():
+    model = TestModel(custom_output_args={"name": "Ada", "age": 36})
+    files = [
+        ExtractionInput(b"one", media_type="text/plain", name="a.txt"),
+        ExtractionInput(b"two", media_type="text/plain", name="b.txt"),
+        ExtractionInput(b"three", media_type="text/plain", name="c.txt"),
+    ]
+    with Extractor(Person, model) as extractor:
+        outputs = extractor.extract_many(files)
+        results = extractor.extract_many_with_results(files)
+
+    assert outputs == [Person(name="Ada", age=36)] * 3
+    assert [item.output for item in results] == outputs
+    assert all(isinstance(item, ExtractionResult) for item in results)
+    assert [item.source for item in results] == ["a.txt", "b.txt", "c.txt"]
+    assert all(item.attempts == 1 for item in results)
+
+
+def test_sync_extract_many_return_exceptions_and_fail_fast():
+    retryable = ModelError("boom", retryable=True)
+    mixed = FakeAgent([{"name": "Ada", "age": 36}, retryable, {"name": "Grace", "age": 85}])
+    failing = FakeAgent([{"name": "Ada", "age": 36}, retryable])
+
+    with Extractor(Person, agent=mixed) as extractor:
+        results = extractor.extract_many(
+            [b"a", b"b", b"c"],
+            media_type="text/plain",
+            return_exceptions=True,
+        )
+    assert results[0] == Person(name="Ada", age=36)
+    assert isinstance(results[1], ModelError)
+    assert results[2] == Person(name="Grace", age=85)
+
+    with Extractor(Person, agent=failing) as extractor, pytest.raises(ModelError, match="boom"):
+        extractor.extract_many([b"a", b"b"], media_type="text/plain")
+
+
+def test_sync_extract_many_validates_concurrency_and_requires_context():
+    extractor = Extractor(Person, agent=FakeAgent([]))
+    with pytest.raises(ValueError, match="max_concurrency"):
+        extractor.extract_many([b"x"], media_type="text/plain", max_concurrency=0)
+    with pytest.raises(RuntimeError, match="context manager"):
+        extractor.extract_many([b"x"], media_type="text/plain")
+    with extractor:
+        assert extractor.extract_many([]) == []
+
+
+def test_sync_extract_many_respects_max_concurrency():
+    in_flight = 0
+    peak = 0
+
+    class SlowAgent(FakeAgent):
+        async def run(self, inputs):
+            nonlocal in_flight, peak
+            in_flight += 1
+            peak = max(peak, in_flight)
+            await asyncio.sleep(0.02)
+            in_flight -= 1
+            return self._next()
+
+    outcomes = [{"name": "Ada", "age": 36}] * 6
+    with Extractor(Person, agent=SlowAgent(outcomes)) as extractor:
+        results = extractor.extract_many(
+            [b"x"] * 6,
+            media_type="text/plain",
+            max_concurrency=2,
+        )
+
+    assert results == [Person(name="Ada", age=36)] * 6
+    assert peak <= 2
+    assert peak >= 1
+
+
+def test_sync_extract_many_pages_override_and_progress(monkeypatch):
+    from tests.pdf_fixture import synthetic_pdf
+
+    monkeypatch.setattr("openextract._parse.DEFAULT_PARSE_WINDOW_CHARS", 40)
+    pdf = synthetic_pdf(pages=["AAAA " * 30, "Ada Lovelace " + "BBBB " * 30, "CCCC " * 30])
+    model = TestModel(custom_output_args={"name": "Ada", "age": 36})
+    events: list[ExtractProgress] = []
+    with Extractor(Person, model, pages=(1,)) as extractor:
+        results = extractor.extract_many_with_results(
+            [pdf, pdf],
+            media_type="application/pdf",
+            pages=(2,),
+            on_progress=events.append,
+        )
+
+    assert [item.output for item in results] == [Person(name="Ada", age=36)] * 2
+    assert {event.page for event in events} == {2}
+
+
+async def test_async_extract_many_reuses_agent_and_preserves_order():
+    model = TestModel(custom_output_args={"name": "Grace", "age": 85})
+    files = [
+        ExtractionInput(b"one", media_type="text/plain", name="a.txt"),
+        ExtractionInput(b"two", media_type="text/plain", name="b.txt"),
+    ]
+    async with AsyncExtractor(Person, model) as extractor:
+        outputs = await extractor.extract_many(files)
+        results = await extractor.extract_many_with_results(files)
+
+    assert outputs == [Person(name="Grace", age=85)] * 2
+    assert [item.output for item in results] == outputs
+    assert [item.source for item in results] == ["a.txt", "b.txt"]
+
+
+async def test_async_extract_many_return_exceptions_and_fail_fast():
+    retryable = ModelError("boom", retryable=True)
+    mixed = FakeAgent([{"name": "Ada", "age": 36}, retryable, {"name": "Grace", "age": 85}])
+    failing = FakeAgent([{"name": "Ada", "age": 36}, retryable])
+
+    async with AsyncExtractor(Person, agent=mixed) as extractor:
+        results = await extractor.extract_many(
+            [b"a", b"b", b"c"],
+            media_type="text/plain",
+            return_exceptions=True,
+        )
+    assert results[0] == Person(name="Ada", age=36)
+    assert isinstance(results[1], ModelError)
+    assert results[2] == Person(name="Grace", age=85)
+
+    async with AsyncExtractor(Person, agent=failing) as extractor:
+        with pytest.raises(ModelError, match="boom"):
+            await extractor.extract_many([b"a", b"b"], media_type="text/plain")
+
+
+async def test_async_extract_many_concurrency_empty_and_validation():
+    in_flight = 0
+    peak = 0
+
+    class SlowAgent(FakeAgent):
+        async def run(self, inputs):
+            nonlocal in_flight, peak
+            in_flight += 1
+            peak = max(peak, in_flight)
+            await asyncio.sleep(0.02)
+            in_flight -= 1
+            return self._next()
+
+    outcomes = [{"name": "Ada", "age": 36}] * 6
+    async with AsyncExtractor(Person, agent=SlowAgent(outcomes)) as extractor:
+        results = await extractor.extract_many(
+            [b"x"] * 6,
+            media_type="text/plain",
+            max_concurrency=2,
+        )
+        assert await extractor.extract_many([]) == []
+
+    assert results == [Person(name="Ada", age=36)] * 6
+    assert peak <= 2
+    assert peak >= 1
+
+    closed = AsyncExtractor(Person, agent=FakeAgent([]))
+    with pytest.raises(ValueError, match="max_concurrency"):
+        await closed.extract_many([b"x"], media_type="text/plain", max_concurrency=0)
+    with pytest.raises(RuntimeError, match="context manager"):
+        await closed.extract_many([b"x"], media_type="text/plain")
+
+
+async def test_async_extract_many_pages_override(monkeypatch):
+    from tests.pdf_fixture import synthetic_pdf
+
+    monkeypatch.setattr("openextract._parse.DEFAULT_PARSE_WINDOW_CHARS", 40)
+    pdf = synthetic_pdf(pages=["AAAA " * 30, "Ada Lovelace " + "BBBB " * 30, "CCCC " * 30])
+    model = TestModel(custom_output_args={"name": "Ada", "age": 36})
+    events: list[ExtractProgress] = []
+    async with AsyncExtractor(Person, model, pages=(1,)) as extractor:
+        results = await extractor.extract_many_with_results(
+            [pdf],
+            media_type="application/pdf",
+            pages=(2,),
+            on_progress=events.append,
+        )
+    assert results[0].output == Person(name="Ada", age=36)
+    assert [event.page for event in events] == [2]
