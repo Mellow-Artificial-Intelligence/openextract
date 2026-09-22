@@ -161,7 +161,7 @@ with Extractor(
     batch = extractor.extract_many(["./invoices/a.pdf", "./invoices/b.pdf"])
 ```
 
-`extract_with_result()` returns `ExtractionResult` (output, usage, attempts, duration, model/media metadata, sanitized source, and citations when the session was built with `cite=True`). `extract()` / `extract_with_usage()` still return the schema instance (and usage). Use `report.output` / `report.citations` like oneshot `extract_with_result`. `extract_many` / `extract_many_with_results` batch many inputs on the same session (oneshot `input_files` / `max_concurrency` / `return_exceptions` / `on_progress`, plus per-call `pages` / `max_pages`). `AsyncExtractor` uses the same method names.
+`extract_with_result()` returns `ExtractionResult` (output, usage, attempts, duration, model/media metadata, sanitized source, `warnings`, and citations when the session was built with `cite=True`). `extract()` / `extract_with_usage()` still return the schema instance (and usage). Use `report.output` / `report.citations` like oneshot `extract_with_result`. `extract_many` / `extract_many_with_results` batch many inputs on the same session (oneshot `input_files` / `max_concurrency` / `return_exceptions` / `on_progress`, plus per-call `pages` / `max_pages`). `AsyncExtractor` uses the same method names.
 
 `Extractor` is thread-bound and not thread-safe. `AsyncExtractor` is bound to one event loop; concurrent awaits on that loop are fine. Pass a configured `pydantic_ai.models.Model` as `model=`, or a fully configured `Agent` as `agent=` (mutually exclusive with `model=`; not combinable with `search`/`code`/`table`/`form`).
 
@@ -231,6 +231,12 @@ confidence, match}` dump (`bbox` is a four-float list or `null`;
 onto ExtractBench `FieldCitation` (`field` → `field_path`, `quote` →
 `reference_text`) and does **not** include `confidence` / `match`. ExtractBench requires `page >= 1`; quote-only citations
 stay on `ExtractionResult` but cannot be scored.
+
+`ExtractionResult.warnings` is empty on the default happy path. Soft
+degradations append short stable strings: a `pages` / `max_pages` filter that
+drops requested or available pages (counts only, no filenames), or
+`cite_min_confidence` dropping one or more citations (count + threshold).
+Never includes paths with query strings, credentials, or raw media.
 
 `ExtractionResult.as_dict()` dumps the whole result for JSON logs (`output`
 via `model_dump(mode="json")`, usage tokens, attempts, duration, model/media

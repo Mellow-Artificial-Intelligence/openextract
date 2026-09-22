@@ -194,7 +194,10 @@ class ExtractionResult[T]:
         source: A sanitized source label (``ExtractionInput.name``, or a
             credential/query-stripped path/URL context); ``None`` for unnamed
             bytes/file-like inputs.
-        warnings: Extensible, currently empty diagnostics channel.
+        warnings: Soft-degradation diagnostics. Empty when nothing was
+            dropped. Currently: page-filter drops (requested/available counts)
+            and ``cite_min_confidence`` drops (count + threshold). Never
+            includes paths with query strings, credentials, or raw media.
         citations: Per-field source spans when ``cite=True``; empty otherwise.
     """
 
@@ -294,6 +297,7 @@ def _extraction_result(
     media_type: str | None,
     source: str | None,
     citations: tuple[Citation, ...] = (),
+    warnings: tuple[str, ...] = (),
 ) -> ExtractionResult[T]:
     """Build the diagnostics wrapper shared by batch and swarm successes."""
     return ExtractionResult(
@@ -304,6 +308,7 @@ def _extraction_result(
         model=model,
         media_type=media_type,
         source=source,
+        warnings=warnings,
         citations=citations,
     )
 

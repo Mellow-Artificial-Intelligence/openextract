@@ -55,6 +55,7 @@ from ._types import (
     _resolve_item_options,
     total_usage,
 )
+from ._warnings import extraction_warnings
 from ._windows import emit_progress, extract_windows_async
 
 if TYPE_CHECKING:
@@ -203,7 +204,7 @@ async def _run_member(
             retry_backoff=retry_backoff,
             retry_max_backoff=retry_max_backoff,
         )
-        output, citations = split_cited_output(
+        output, citations, cite_warnings = split_cited_output(
             output,
             schema,
             cite=cite,
@@ -219,6 +220,7 @@ async def _run_member(
             media_type=media_type,
             source=source_label,
             citations=citations,
+            warnings=extraction_warnings(parsed, pages, max_pages, cite_warnings),
         )
     with prepared_style_run(member_style, file_bytes, file_type) as (capabilities, style_inputs):
         with _extraction_errors():
@@ -241,7 +243,7 @@ async def _run_member(
             result = await _run_extraction_async(agent, window)
             return result.output, _usage_from_result(result)
 
-        output, usage, citations = await extract_windows_async(
+        output, usage, citations, cite_warnings = await extract_windows_async(
             _run,
             inputs,
             parsed,
@@ -262,6 +264,7 @@ async def _run_member(
         media_type=media_type,
         source=source_label,
         citations=citations,
+        warnings=extraction_warnings(parsed, pages, max_pages, cite_warnings),
     )
 
 

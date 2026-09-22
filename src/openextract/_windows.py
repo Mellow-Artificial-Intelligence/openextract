@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Sequence
 
-from ._citations import filter_citations, split_cited_output
+from ._citations import apply_cite_min_confidence, split_cited_output
 from ._parse import ParsedDocument, ground_citations, parsed_window_pairs
 from ._reduce import reduce_outputs
 from ._retry import _run_with_retries_async, _run_with_retries_sync
@@ -46,7 +46,7 @@ def extract_windows_sync(
     retry_backoff: float,
     retry_max_backoff: float,
     on_progress: OnProgress | None = None,
-) -> tuple[T, Usage, tuple[Citation, ...]]:
+) -> tuple[T, Usage, tuple[Citation, ...], tuple[str, ...]]:
     """Extract each parse window (or the one-window fast path) and merge."""
     windows = parsed_window_pairs(parsed, inputs)
     outputs: list[T] = []
@@ -61,13 +61,12 @@ def extract_windows_sync(
             window_parse: ParsedDocument | None = window_parse,
         ) -> tuple[T, Usage, tuple[Citation, ...]]:
             raw, usage = run(window)
-            output, cites = split_cited_output(
+            output, cites, _warnings = split_cited_output(
                 raw,
                 schema,
                 cite=cite,
                 parsed=parsed,
                 window=window_parse,
-                cite_min_confidence=cite_min_confidence,
             )
             return output, usage, cites
 
@@ -97,7 +96,7 @@ async def extract_windows_async(
     retry_backoff: float,
     retry_max_backoff: float,
     on_progress: OnProgress | None = None,
-) -> tuple[T, Usage, tuple[Citation, ...]]:
+) -> tuple[T, Usage, tuple[Citation, ...], tuple[str, ...]]:
     """Async sibling of :func:`extract_windows_sync`."""
     windows = parsed_window_pairs(parsed, inputs)
     outputs: list[T] = []
@@ -112,13 +111,12 @@ async def extract_windows_async(
             window_parse: ParsedDocument | None = window_parse,
         ) -> tuple[T, Usage, tuple[Citation, ...]]:
             raw, usage = await run(window)
-            output, cites = split_cited_output(
+            output, cites, _warnings = split_cited_output(
                 raw,
                 schema,
                 cite=cite,
                 parsed=parsed,
                 window=window_parse,
-                cite_min_confidence=cite_min_confidence,
             )
             return output, usage, cites
 
@@ -143,12 +141,13 @@ def _finish_windows(
     parsed: ParsedDocument | None,
     cite: bool,
     cite_min_confidence: float | None = None,
-) -> tuple[T, Usage, tuple[Citation, ...]]:
+) -> tuple[T, Usage, tuple[Citation, ...], tuple[str, ...]]:
     """Reduce window values, then backfill cites the model omitted."""
     output, usage, merged = _fold_windows(outputs, usages, citations)
     if cite:
         merged = ground_citations(merged, parsed, output)
-    return output, usage, filter_citations(merged, min_confidence=cite_min_confidence)
+    kept, warnings = apply_cite_min_confidence(merged, cite_min_confidence)
+    return output, usage, kept, warnings
 
 
 def _fold_windows(
