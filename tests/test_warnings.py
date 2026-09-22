@@ -219,6 +219,12 @@ class TestSessionBatchSwarm:
             max_pages=2,
         )
         assert results[0].warnings == (max_pages_warning(2, 1, 3),)
+        overridden = extract_many_with_results(
+            Person,
+            _plain_model(),
+            [ExtractionInput(pdf, media_type="application/pdf", max_pages=2)],
+        )
+        assert overridden[0].warnings == (max_pages_warning(2, 1, 3),)
         swarm = extract_swarm_with_results(
             Person,
             _plain_model(),
