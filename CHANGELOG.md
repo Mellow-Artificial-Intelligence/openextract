@@ -37,6 +37,12 @@ timing when that is known.
   **minimum** non-`None` heuristic confidence (conservative review gate).
   Fields with only `None` confidences are omitted. `ExtractionResult.field_confidence()`
   delegates to the helper on `self.citations`.
+- `citations_by_field(citations)` groups spans by dotted `Citation.field`,
+  preserving citation order within each field. `filter_citations(citations,
+  *, min_confidence=None, fields=None)` keeps citations that pass those
+  gates (`confidence is None` fails a min-confidence filter; `fields` keeps
+  only those dotted paths). `ExtractionResult.citations_by_field()` /
+  `.filter_citations(...)` delegate on `self.citations`.
 - Cookbook for openextract + OpenRouter Decisions (Jev Latest) fraud-check
   at `examples/advanced/openrouter_jev_fraud.py`. `extract()` + TestModel
   pulls document metadata, content, and risk signals (memo / PDF / image);

@@ -15,6 +15,7 @@ from openextract import (
     ExtractionResult,
     Extractor,
     Usage,
+    citations_by_field,
     define_agent,
     extract,
     extract_async,
@@ -26,6 +27,7 @@ from openextract import (
     extract_with_usage,
     extract_with_usage_async,
     field_confidence,
+    filter_citations,
 )
 from openextract._citations import (
     CITATION_INSTRUCTIONS,
@@ -33,7 +35,6 @@ from openextract._citations import (
     citations_from_payload,
     cited_output_schema,
     field_citations_for_extractbench,
-    filter_citations,
     json_schema_with_citations,
     prepare_cited_run,
     sanitize_citation,
@@ -256,6 +257,118 @@ class TestFieldConfidence:
         assert result.field_confidence() == field_confidence(citations) == {"name": 0.55}
 
 
+class TestCitationsByField:
+    def test_empty_citations(self):
+        assert citations_by_field([]) == {}
+        assert citations_by_field(()) == {}
+        result = ExtractionResult(
+            output=Person(name="Ada", age=36),
+            usage=Usage(0, 0, 0),
+            attempts=1,
+            duration=0.0,
+            model=None,
+            media_type=None,
+            source=None,
+        )
+        assert result.citations_by_field() == {}
+
+    def test_groups_preserving_order(self):
+        first = Citation("vendor", "Acme", 1, confidence=0.95, match="exact")
+        second = Citation("total", "12.50", 1, confidence=0.80, match="value")
+        third = Citation("vendor", "Acme Corp", 2, confidence=0.40, match="page")
+        fourth = Citation("total", "12.5", 1)
+        grouped = citations_by_field((first, second, third, fourth))
+        assert list(grouped) == ["vendor", "total"]
+        assert grouped["vendor"] == (first, third)
+        assert grouped["total"] == (second, fourth)
+
+    def test_result_method_delegates_to_helper(self):
+        citations = (
+            Citation("name", "Ada", 1, confidence=0.95, match="exact"),
+            Citation("age", "36"),
+            Citation("name", "Ada Lovelace", 1, confidence=0.55, match="quote"),
+        )
+        result = ExtractionResult(
+            output=Person(name="Ada", age=36),
+            usage=Usage(1, 2, 3),
+            attempts=1,
+            duration=0.1,
+            model="test",
+            media_type="text/plain",
+            source="page.pdf",
+            citations=citations,
+        )
+        assert result.citations_by_field() == citations_by_field(citations)
+        assert result.citations_by_field() == {
+            "name": (citations[0], citations[2]),
+            "age": (citations[1],),
+        }
+
+
+class TestFilterCitations:
+    def test_empty_and_passthrough(self):
+        assert filter_citations([]) == ()
+        assert filter_citations(()) == ()
+        exact = Citation("vendor", "Acme", 1, confidence=0.95, match="exact")
+        unstamped = Citation("notes", "see source", 1)
+        assert filter_citations((exact, unstamped)) == (exact, unstamped)
+        result = ExtractionResult(
+            output=Person(name="Ada", age=36),
+            usage=Usage(0, 0, 0),
+            attempts=1,
+            duration=0.0,
+            model=None,
+            media_type=None,
+            source=None,
+        )
+        assert result.filter_citations() == ()
+
+    def test_min_confidence_drops_weak_and_unstamped(self):
+        exact = Citation("vendor", "Acme", 1, confidence=0.95, match="exact")
+        quote = Citation("total", "12.50", 1, confidence=0.55, match="quote")
+        weak = Citation("date", "Jan", 1, confidence=0.25, match="quote")
+        unstamped = Citation("notes", "see source", 1)
+        kept = filter_citations((exact, quote, weak, unstamped), min_confidence=0.55)
+        assert kept == (exact, quote)
+        assert filter_citations((exact, unstamped), min_confidence=None) == (
+            exact,
+            unstamped,
+        )
+
+    def test_fields_keeps_only_named_paths(self):
+        vendor = Citation("vendor", "Acme", 1, confidence=0.95, match="exact")
+        total = Citation("total", "12.50", 1, confidence=0.80, match="value")
+        notes = Citation("notes", "see source", 1)
+        assert filter_citations((vendor, total, notes), fields=("vendor", "notes")) == (
+            vendor,
+            notes,
+        )
+        assert filter_citations((vendor, total), fields=()) == ()
+        assert filter_citations((vendor, total), fields={"missing"}) == ()
+
+    def test_filters_combine_and_result_delegates(self):
+        citations = (
+            Citation("name", "Ada", 1, confidence=0.95, match="exact"),
+            Citation("name", "Ada Lovelace", 1, confidence=0.55, match="quote"),
+            Citation("age", "36", 1, confidence=0.25, match="quote"),
+            Citation("age", "36"),
+        )
+        result = ExtractionResult(
+            output=Person(name="Ada", age=36),
+            usage=Usage(1, 2, 3),
+            attempts=1,
+            duration=0.1,
+            model="test",
+            media_type="text/plain",
+            source="page.pdf",
+            citations=citations,
+        )
+        kept = filter_citations(citations, min_confidence=0.55, fields=("name", "age"))
+        assert kept == (citations[0], citations[1])
+        assert result.filter_citations(min_confidence=0.55, fields=["name"]) == kept
+        assert result.filter_citations(fields=("age",)) == (citations[2], citations[3])
+
+
 class TestSanitize:
     def test_credential_urls_and_data_uris_are_redacted(self):
         citation = sanitize_citation(
@@ -376,9 +489,12 @@ class TestCiteMinConfidence:
         quote = Citation("total", "12.50", 1, confidence=0.55, match="quote")
         weak = Citation("date", "Jan", 1, confidence=0.25, match="quote")
         unstamped = Citation("notes", "see source", 1)
-        kept = filter_citations((exact, quote, weak, unstamped), 0.55)
+        kept = filter_citations((exact, quote, weak, unstamped), min_confidence=0.55)
         assert kept == (exact, quote)
-        assert filter_citations((exact, unstamped), None) == (exact, unstamped)
+        assert filter_citations((exact, unstamped), min_confidence=None) == (
+            exact,
+            unstamped,
+        )
 
     def test_split_filters_after_grounding(self):
         output, citations = split_cited_output(

@@ -238,6 +238,11 @@ metadata, sanitized `source`, `warnings`, and `citations` as
 `result.field_confidence()` — maps each dotted field to the **minimum**
 non-`None` heuristic confidence so review workflows can gate on the weakest
 span. Fields with only `None` confidences are omitted.
+`citations_by_field(result.citations)` — or `result.citations_by_field()` —
+groups spans by dotted path (order preserved within each field).
+`filter_citations(result.citations, min_confidence=0.5, fields=("vendor",))`
+— or `result.filter_citations(...)` — drops weak / unstamped spans and, when
+`fields` is set, keeps only those paths.
 
 ```python
 from openextract import extract_many_with_results, extract_with_usage
@@ -256,6 +261,8 @@ for citation in results[0].citations:
     print(citation.as_dict())
     print(citation.as_field_citation())
 print(results[0].field_confidence())
+print(results[0].citations_by_field())
+print(results[0].filter_citations(min_confidence=0.5))
 print(results[0].as_dict()["usage"])
 ```
 

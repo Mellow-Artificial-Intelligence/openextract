@@ -173,6 +173,8 @@ def test_star_import_exposes_only_existing_names():
         "resolve_swarm_members",
         "schema_from_json",
         "field_confidence",
+        "citations_by_field",
+        "filter_citations",
         "total_usage",
         "Usage",
         "ExtractionError",

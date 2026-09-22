@@ -8,6 +8,7 @@ from typing import Any, cast
 
 from pydantic import BaseModel, Field, create_model
 
+from ._confidence import filter_citations
 from ._parse import ParsedDocument, align_citations_to_window, ground_citations
 from ._types import Citation, T
 
@@ -102,24 +103,6 @@ def prepare_cited_run(
     return cited_output_schema(schema), with_citation_instructions(instructions)
 
 
-def filter_citations(
-    citations: Iterable[Citation],
-    min_confidence: float | None,
-) -> tuple[Citation, ...]:
-    """Keep citations at or above ``min_confidence`` after grounding.
-
-    When ``min_confidence`` is set, citations with ``confidence is None``
-    (unstamped) are dropped. ``None`` leaves the list unchanged.
-    """
-    if min_confidence is None:
-        return tuple(citations)
-    return tuple(
-        citation
-        for citation in citations
-        if citation.confidence is not None and citation.confidence >= min_confidence
-    )
-
-
 def split_cited_output(
     raw: object,
     schema: type[T],
@@ -146,7 +129,7 @@ def split_cited_output(
     if window is not None:
         citations = align_citations_to_window(citations, window)
     citations = ground_citations(citations, parsed, output)
-    return output, filter_citations(citations, cite_min_confidence)
+    return output, filter_citations(citations, min_confidence=cite_min_confidence)
 
 
 def citations_from_payload(payload: object) -> tuple[Citation, ...]:

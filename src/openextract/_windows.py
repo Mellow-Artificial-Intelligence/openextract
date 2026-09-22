@@ -148,7 +148,7 @@ def _finish_windows(
     output, usage, merged = _fold_windows(outputs, usages, citations)
     if cite:
         merged = ground_citations(merged, parsed, output)
-    return output, usage, filter_citations(merged, cite_min_confidence)
+    return output, usage, filter_citations(merged, min_confidence=cite_min_confidence)
 
 
 def _fold_windows(

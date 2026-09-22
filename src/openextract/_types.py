@@ -10,7 +10,9 @@ from typing import BinaryIO, TypeVar, cast
 
 from pydantic import BaseModel
 
+from ._confidence import citations_by_field as _group_citations_by_field
 from ._confidence import field_confidence as _aggregate_field_confidence
+from ._confidence import filter_citations as _filter_citations
 from ._config import _DEFAULT_RETRY_MAX_BACKOFF, _validate_retry_options
 
 T = TypeVar("T", bound=BaseModel)
@@ -227,6 +229,25 @@ class ExtractionResult[T]:
         with only ``None`` confidences are omitted.
         """
         return _aggregate_field_confidence(self.citations)
+
+    def citations_by_field(self) -> dict[str, tuple[Citation, ...]]:
+        """Group citations by dotted field path, preserving order.
+
+        Delegates to :func:`citations_by_field` on ``self.citations``.
+        """
+        return _group_citations_by_field(self.citations)
+
+    def filter_citations(
+        self,
+        *,
+        min_confidence: float | None = None,
+        fields: Iterable[str] | None = None,
+    ) -> tuple[Citation, ...]:
+        """Keep citations that pass optional confidence and field filters.
+
+        Delegates to :func:`filter_citations` on ``self.citations``.
+        """
+        return _filter_citations(self.citations, min_confidence=min_confidence, fields=fields)
 
 
 @dataclass(frozen=True)
