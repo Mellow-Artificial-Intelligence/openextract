@@ -1,6 +1,6 @@
 [project]
 name = "openextract"
-version = "1.0.0"
+version = "1.0.1"
 description = "Extract structured data from documents, images, audio, and video using LLMs"
 readme = "README.md"
 requires-python = ">=3.12"

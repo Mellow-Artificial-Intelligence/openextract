@@ -8,6 +8,12 @@ timing when that is known.
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-09-23
+
+### Changed
+- Clarified in the README and `extract` docstring that a string `source` is
+  always a file path or URL, never document text; pass `text.encode()` for text.
+
 ## [1.0.0] - 2026-09-22
 
 ### Removed (breaking)
@@ -483,7 +489,9 @@ timing when that is known.
 ## [0.1.1] - 2025-09-10
 - Merge pull request #12 from Mellow-Artificial-Intelligence/new-release.
 
-[Unreleased]: https://github.com/Mellow-Artificial-Intelligence/openextract/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/Mellow-Artificial-Intelligence/openextract/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/Mellow-Artificial-Intelligence/openextract/compare/v1.0.0...v1.0.1
+[1.0.0]: https://github.com/Mellow-Artificial-Intelligence/openextract/compare/v0.15.0...v1.0.0
 [0.15.0]: https://github.com/Mellow-Artificial-Intelligence/openextract/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/Mellow-Artificial-Intelligence/openextract/compare/v0.13.1...v0.14.0
 [0.13.1]: https://github.com/Mellow-Artificial-Intelligence/openextract/compare/v0.13.0...v0.13.1
