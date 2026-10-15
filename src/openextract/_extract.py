@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import mimetypes
 import os
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import cast
@@ -149,7 +149,9 @@ def _sniff(data: bytes) -> str | None:
     return "text/plain"
 
 
-def _build_agent(schema: type[BaseModel], model: str | Model, instructions: str | None) -> Agent:
+def _build_agent(
+    schema: type[BaseModel], model: str | Model, instructions: str | None
+) -> Agent[None, BaseModel]:
     output_type: object = schema
     if isinstance(model, str):
         if model.startswith("ollama:"):
@@ -167,7 +169,7 @@ def _build_agent(schema: type[BaseModel], model: str | Model, instructions: str 
 
 
 @contextmanager
-def _fetch_errors() -> Iterator[None]:
+def _fetch_errors() -> Generator[None]:
     try:
         yield
     except httpx.HTTPError as exc:
@@ -175,7 +177,7 @@ def _fetch_errors() -> Iterator[None]:
 
 
 @contextmanager
-def _model_errors() -> Iterator[None]:
+def _model_errors() -> Generator[None]:
     try:
         yield
     except UnexpectedModelBehavior as exc:

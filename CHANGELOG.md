@@ -8,6 +8,10 @@ timing when that is known.
 
 ## [Unreleased]
 
+### Changed
+- `pydantic-ai-slim` is now capped below 3, so a future major release cannot
+  reach installs before openextract is tested against it.
+
 ## [1.1.0] - 2026-10-15
 
 ### Added

@@ -50,8 +50,10 @@ jobs:
         env:
           NEW_CUTOFF: ${{ steps.cutoff.outputs.value }}
 
+      # --upgrade moves every package to its newest version before the cutoff;
+      # plain `uv lock` keeps existing pins while they still satisfy it.
       - name: Re-lock dependencies
-        run: uv lock
+        run: uv lock --upgrade
 
       - name: Open or update PR
         env:
@@ -78,7 +80,7 @@ jobs:
           if [ -n "$OPEN_PR" ]; then
             gh pr edit "$OPEN_PR" --title "$TITLE" --body "Daily rolling 24h supply-chain embargo bump. Refuses any package version published after \`${NEW_CUTOFF}\`." || true
           elif ! gh pr create --head "$BRANCH" --base main --title "$TITLE" --body "Daily rolling 24h supply-chain embargo bump. Refuses any package version published after \`${NEW_CUTOFF}\`."; then
-            echo "Could not create embargo PR (GitHub Actions is not permitted to create pull requests)."
-            echo "Open one from: https://github.com/Mellow-Artificial-Intelligence/openextract/compare/main...chore/embargo-bump?expand=1"
-            exit 0
+            # Fail so the run shows red instead of silently leaving the bump unopened.
+            echo "::error::Could not create the embargo PR. Allow GitHub Actions to create pull requests, or open one from https://github.com/Mellow-Artificial-Intelligence/openextract/compare/main...chore/embargo-bump?expand=1"
+            exit 1
           fi
