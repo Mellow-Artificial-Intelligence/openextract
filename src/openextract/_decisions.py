@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import typing
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from enum import Enum
 from typing import Any, Literal, TypeGuard
@@ -116,7 +116,7 @@ def _answer(name: str, field: FieldInfo, answer: dict[str, Any]) -> object:
 
 
 @contextmanager
-def _request_errors() -> Iterator[None]:
+def _request_errors() -> Generator[None]:
     try:
         yield
     except httpx.HTTPError as exc:

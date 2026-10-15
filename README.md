@@ -53,8 +53,8 @@ await extract_async(schema, model, source, instructions=None, *, media_type=None
 ```python
 from pathlib import Path
 
-extract(Invoice, "openai:gpt-5", source="./invoices/2291.pdf")                    # file path
-extract(Invoice, "openai:gpt-5", source=Path("invoices") / "2291.pdf")            # pathlib.Path
+extract(Invoice, "openai:gpt-5", source="./invoices/2291.pdf")  # file path
+extract(Invoice, "openai:gpt-5", source=Path("invoices") / "2291.pdf")  # pathlib.Path
 extract(Invoice, "anthropic:claude-sonnet-5", source="https://example.com/2291.pdf")  # URL
 extract(Invoice, "openai:gpt-5", source=pdf_bytes, instructions="Amounts are in EUR.")  # bytes
 ```
