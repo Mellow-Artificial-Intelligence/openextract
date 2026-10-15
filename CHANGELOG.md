@@ -8,6 +8,11 @@ timing when that is known.
 
 ## [Unreleased]
 
+### Added
+- `extract` and `extract_async` accept OpenRouter decision models such as
+  `openrouter:typesafe/jev-1.14`. They fill schemas made of `bool`, `Literal`,
+  and `Enum` fields from text or images through OpenRouter's Decisions API.
+
 ## [1.0.0] - 2026-09-22
 
 ### Removed (breaking)

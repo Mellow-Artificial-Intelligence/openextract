@@ -1,8 +1,11 @@
+import json
+from enum import Enum
 from pathlib import Path
+from typing import Literal
 
 import httpx
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from pydantic_ai import BinaryContent
 from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart
@@ -51,7 +54,12 @@ def serve(monkeypatch, handler) -> None:
         with real_client(transport=transport, **kwargs) as client:
             return client.get(url)
 
+    def fake_post(url, *, headers, json, **kwargs):
+        with real_client(transport=transport, **kwargs) as client:
+            return client.post(url, headers=headers, json=json)
+
     monkeypatch.setattr(extract_module.httpx, "get", fake_get)
+    monkeypatch.setattr(extract_module.httpx, "post", fake_post)
     monkeypatch.setattr(
         extract_module.httpx,
         "AsyncClient",
@@ -199,3 +207,127 @@ def test_text_model_output_is_not_used():
 
     with pytest.raises(SchemaValidationError):
         extract(Invoice, FunctionModel(respond), PDF_BYTES)
+
+
+class Currency(Enum):
+    USD = "usd"
+    EUR = "eur"
+
+
+class Triage(BaseModel):
+    document_type: Literal["invoice", "receipt"] = Field(
+        description="What kind of document is this?"
+    )
+    currency: Currency
+    is_paid: bool
+
+
+TRIAGE_ANSWERS = {
+    "document_type": {"type": "choice", "choice": "receipt", "confidence": 0.9},
+    "currency": {"type": "choice", "choice": "eur", "confidence": 0.8},
+    "is_paid": {"type": "noul", "noul": 0.97},
+}
+
+
+def serve_decisions(monkeypatch, seen: list[httpx.Request], answers: dict = TRIAGE_ANSWERS) -> None:
+    """Answer decisions requests with ``answers`` and record each request."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={"answers": answers})
+
+    serve(monkeypatch, handler)
+
+
+def test_decisions_model_fills_choice_and_yes_no_fields(monkeypatch):
+    seen: list[httpx.Request] = []
+    serve_decisions(monkeypatch, seen)
+
+    result = extract(Triage, "openrouter:typesafe/jev-1.14", b"Receipt. Paid in EUR.", "Be strict.")
+
+    assert result == Triage(document_type="receipt", currency=Currency.EUR, is_paid=True)
+    assert seen[0].url == "https://openrouter.ai/api/alpha/decisions"
+    assert seen[0].headers["authorization"] == "Bearer sk-or-test"
+    body = json.loads(seen[0].content)
+    assert body["model"] == "typesafe/jev-1.14"
+    assert body["state"] == [extract_module._PROMPT, "Be strict.", "Receipt. Paid in EUR."]
+    assert body["questions"] == {
+        "document_type": {
+            "type": "choice",
+            "instructions": "What kind of document is this?",
+            "criteria": {"invoice": "invoice", "receipt": "receipt"},
+        },
+        "currency": {
+            "type": "choice",
+            "instructions": "currency",
+            "criteria": {"usd": "usd", "eur": "eur"},
+        },
+        "is_paid": {"type": "noul", "instructions": "is paid"},
+    }
+
+
+async def test_decisions_model_reads_images(monkeypatch):
+    seen: list[httpx.Request] = []
+    serve_decisions(monkeypatch, seen)
+
+    await extract_async(Triage, "openrouter:~typesafe/jev-latest", b"\x89PNG....")
+
+    body = json.loads(seen[0].content)
+    assert body["model"] == "~typesafe/jev-latest"
+    assert body["state"][-1] == {
+        "type": "image_url",
+        "image_url": {"url": "data:image/png;base64,iVBORy4uLi4="},
+    }
+
+
+def test_decisions_model_rejects_free_form_fields(monkeypatch):
+    serve_decisions(monkeypatch, [])
+
+    with pytest.raises(TypeError, match="'total'"):
+        extract(Invoice, "openrouter:typesafe/jev-1.14", b"Total: 42")
+
+
+def test_decisions_model_rejects_unsupported_media(monkeypatch):
+    serve_decisions(monkeypatch, [])
+
+    with pytest.raises(ValueError, match="application/pdf"):
+        extract(Triage, "openrouter:typesafe/jev-1.14", PDF_BYTES)
+
+
+def test_decisions_model_requires_api_key(monkeypatch):
+    serve_decisions(monkeypatch, [])
+    monkeypatch.delenv("OPENROUTER_API_KEY")
+
+    with pytest.raises(ExtractionError, match="OPENROUTER_API_KEY"):
+        extract(Triage, "openrouter:typesafe/jev-1.14", b"text")
+
+
+def test_decisions_error_response_raises_model_error(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
+    serve(
+        monkeypatch,
+        lambda request: httpx.Response(400, json={"error": {"message": "no such model"}}),
+    )
+
+    with pytest.raises(ModelError, match="no such model"):
+        extract(Triage, "openrouter:typesafe/nope", b"text")
+
+
+async def test_decisions_network_failure_raises_model_error(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("offline", request=request)
+
+    serve(monkeypatch, handler)
+
+    with pytest.raises(ModelError, match="offline"):
+        await extract_async(Triage, "openrouter:typesafe/jev-1.14", b"text")
+
+
+def test_decisions_missing_answer_raises_schema_validation_error(monkeypatch):
+    serve_decisions(monkeypatch, [], answers={"is_paid": {"type": "noul", "noul": 0.1}})
+
+    with pytest.raises(SchemaValidationError, match="document_type"):
+        extract(Triage, "openrouter:typesafe/jev-1.14", b"text")

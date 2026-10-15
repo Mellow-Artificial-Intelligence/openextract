@@ -59,6 +59,28 @@ extract(Invoice, "anthropic:claude-sonnet-5", source="https://example.com/2291.p
 extract(Invoice, "openai:gpt-5", source=pdf_bytes, instructions="Amounts are in EUR.")  # bytes
 ```
 
+## Decision models
+
+[Jev](https://openrouter.ai/typesafe/jev-1.14), TypeSafe's decision model on OpenRouter, answers typed questions instead of writing text. Pass `openrouter:typesafe/jev-1.14` (or `openrouter:~typesafe/jev-latest`) to fill a schema whose fields are all `bool`, `Literal`, or `Enum`:
+
+```python
+from typing import Literal
+
+from pydantic import BaseModel, Field
+
+
+class Triage(BaseModel):
+    document_type: Literal["invoice", "receipt", "contract"] = Field(
+        description="What kind of document is this?"
+    )
+    is_paid: bool = Field(description="Has the amount been paid in full?")
+
+
+triage = extract(Triage, "openrouter:typesafe/jev-1.14", source="./receipt.png")
+```
+
+Each field becomes one question, phrased by its `description`. A `bool` field is `True` when the probability of yes is at least 0.5. Set `OPENROUTER_API_KEY`; no extra is needed. Decision models read text and images only, and any other field type raises a `TypeError`.
+
 ## Errors
 
 Every error subclasses `ExtractionError` and keeps the original exception as `__cause__`.
