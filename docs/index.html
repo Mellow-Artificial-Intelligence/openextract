@@ -376,6 +376,19 @@ invoice = extract(
         </div>
       </details>
       <details>
+        <summary class="grid"><span class="key mono">decision models</span><span class="question">Can I use Jev?</span><span class="sign" aria-hidden="true"></span></summary>
+        <div class="answer grid">
+          <p>Yes, for schemas whose fields are all bool, Literal, or Enum. Jev, TypeSafe's decision model on OpenRouter, answers typed questions instead of writing text. Set OPENROUTER_API_KEY; no extra is needed.</p>
+<pre><code>triage = extract(Triage, "openrouter:typesafe/jev-1.14", source="./receipt.png")</code></pre>
+          <dl class="spec">
+            <div><dt>Fields</dt><dd>bool, Literal, or Enum. Any other type raises a TypeError.</dd></div>
+            <div><dt>Questions</dt><dd>Each field becomes one question, phrased by its description.</dd></div>
+            <div><dt>bool</dt><dd>True when the probability of yes is at least 0.5.</dd></div>
+            <div><dt>Sources</dt><dd>Text and images only.</dd></div>
+          </dl>
+        </div>
+      </details>
+      <details>
         <summary class="grid"><span class="key mono">extract_async()</span><span class="question">Is there an async version?</span><span class="sign" aria-hidden="true"></span></summary>
         <div class="answer grid">
           <p>Yes. It takes the same arguments. Await it.</p>
