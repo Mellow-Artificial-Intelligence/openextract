@@ -50,10 +50,8 @@ jobs:
         env:
           NEW_CUTOFF: ${{ steps.cutoff.outputs.value }}
 
-      # --upgrade moves every package to its newest version before the cutoff;
-      # plain `uv lock` keeps existing pins while they still satisfy it.
       - name: Re-lock dependencies
-        run: uv lock --upgrade
+        run: uv lock
 
       - name: Open or update PR
         env:
