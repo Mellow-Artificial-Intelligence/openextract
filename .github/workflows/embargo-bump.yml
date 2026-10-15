@@ -73,8 +73,10 @@ jobs:
           # Checkout has only main, so lease has no expected remote tip; this branch is workflow-owned.
           git push --force origin "$BRANCH"
           # Org settings can deny Actions create-PR even after a successful push.
-          if gh pr view "$BRANCH" --json number >/dev/null 2>&1; then
-            gh pr edit "$BRANCH" --title "$TITLE" --body "Daily rolling 24h supply-chain embargo bump. Refuses any package version published after \`${NEW_CUTOFF}\`." || true
+          # Look up open PRs only: `gh pr view <branch>` also matches merged ones.
+          OPEN_PR="$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')"
+          if [ -n "$OPEN_PR" ]; then
+            gh pr edit "$OPEN_PR" --title "$TITLE" --body "Daily rolling 24h supply-chain embargo bump. Refuses any package version published after \`${NEW_CUTOFF}\`." || true
           elif ! gh pr create --head "$BRANCH" --base main --title "$TITLE" --body "Daily rolling 24h supply-chain embargo bump. Refuses any package version published after \`${NEW_CUTOFF}\`."; then
             echo "Could not create embargo PR (GitHub Actions is not permitted to create pull requests)."
             echo "Open one from: https://github.com/Mellow-Artificial-Intelligence/openextract/compare/main...chore/embargo-bump?expand=1"
