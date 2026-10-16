@@ -24,6 +24,6 @@ release, but only when that version is new.
 ## Dependency embargo
 
 `[tool.uv] exclude-newer` in `pyproject.toml` refuses any package version
-published within the last 24 hours, which protects against short-lived
-compromised releases. `.github/workflows/embargo-bump.yml` opens a daily PR to
-move that cutoff forward. Merge those PRs rather than editing the date by hand.
+published after that date, which protects against short-lived compromised
+releases. Dependencies are never upgraded automatically. To upgrade, move the
+date to at least 24 hours ago, run `uv lock --upgrade`, and open a pull request.
