@@ -8,6 +8,8 @@ timing when that is known.
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-10-15
+
 ### Changed
 - `pydantic-ai-slim` is now capped below 3, so a future major release cannot
   reach installs before openextract is tested against it.
@@ -494,7 +496,8 @@ timing when that is known.
 ## [0.1.1] - 2025-09-10
 - Merge pull request #12 from Mellow-Artificial-Intelligence/new-release.
 
-[Unreleased]: https://github.com/Mellow-Artificial-Intelligence/openextract/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/Mellow-Artificial-Intelligence/openextract/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/Mellow-Artificial-Intelligence/openextract/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/Mellow-Artificial-Intelligence/openextract/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/Mellow-Artificial-Intelligence/openextract/compare/v0.15.0...v1.0.0
 [0.15.0]: https://github.com/Mellow-Artificial-Intelligence/openextract/compare/v0.14.0...v0.15.0
