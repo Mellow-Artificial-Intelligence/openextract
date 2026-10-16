@@ -73,10 +73,9 @@ include = ["src/openextract"]
 python-version = "3.12"
 
 [tool.uv]
-# Supply-chain embargo: refuse any package version published less than 24 hours ago.
-# This bought us protection during the Mistral package compromise. The date is
-# bumped forward daily by the `.github/workflows/embargo-bump.yml` workflow so
-# the rolling 24h window holds without manual maintenance.
+# Supply-chain embargo: refuse any package version published after this date.
+# This bought us protection during the Mistral package compromise. Upgrades are
+# manual: move the date to at least 24 hours ago, then run `uv lock --upgrade`.
 exclude-newer = "2026-10-14T00:00:00Z"
 
 [tool.ruff]
