@@ -61,7 +61,21 @@ extract(Invoice, "openai:gpt-5", source=pdf_bytes, instructions="Amounts are in 
 
 ## Decision models
 
-[Jev](https://openrouter.ai/typesafe/jev-1.14), TypeSafe's decision model on OpenRouter, answers typed questions instead of writing text. Pass `openrouter:typesafe/jev-1.14` (or `openrouter:~typesafe/jev-latest`) to fill a schema whose fields are all `bool`, `Literal`, or `Enum`:
+For schemas made of `bool`, `Literal`, and `Enum` fields, use a decision model
+instead of generating free-form text. Both `extract` and `extract_async` support
+text and images with these providers:
+
+| Model string | API key | Endpoint |
+| --- | --- | --- |
+| `openai-decisions:gpt-6-luna` | `OPENAI_API_KEY` | [OpenAI Decisions](https://developers.openai.com/api/docs/guides/decisions) |
+| `openrouter:typesafe/jev-1.14` | `OPENROUTER_API_KEY` | OpenRouter Decisions |
+
+No provider extra is needed for either decision endpoint. The explicit
+`openai-decisions:` prefix selects the Decisions API; `openai:` continues to use
+Responses for general extraction. OpenAI Decisions accepts 1–400 schema fields.
+PDFs, audio, video, and free-form fields are not supported by decision models.
+
+For example, classify a receipt and check whether it is paid. [Jev](https://openrouter.ai/typesafe/jev-1.14) is also available as `openrouter:typesafe/jev-1.14` or `openrouter:~typesafe/jev-latest`.
 
 ```python
 from typing import Literal
@@ -76,10 +90,11 @@ class Triage(BaseModel):
     is_paid: bool = Field(description="Has the amount been paid in full?")
 
 
-triage = extract(Triage, "openrouter:typesafe/jev-1.14", source="./receipt.png")
+triage = extract(Triage, "openai-decisions:gpt-6-luna", source="./receipt.png")
+# Or: extract(Triage, "openrouter:typesafe/jev-1.14", source="./receipt.png")
 ```
 
-Each field becomes one question, phrased by its `description`. A `bool` field is `True` when the probability of yes is at least 0.5. Set `OPENROUTER_API_KEY`; no extra is needed. Decision models read text and images only, and any other field type raises a `TypeError`.
+Each field becomes one question, phrased by its `description`. A `bool` field is `True` when the probability of yes is at least 0.5. Other field types raise a `TypeError`. Missing, invalid, or refused OpenAI answers raise `SchemaValidationError`.
 
 ## Errors
 
