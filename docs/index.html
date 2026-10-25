@@ -7,336 +7,188 @@
 <meta name="description" content="Extract structured data from documents, images, audio, and video using LLMs. One function, any file, a validated Pydantic model.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
 <style>
   :root {
-    --light: #E8E8E8;
-    --paper: #FFFFFF;
-    --ink: #0D0D0D;
-    --gray: #737373;
-    --rule: #BFBFBF;
-    --dark: #0D0D0D;
-    --on-dark: #F5F5F5;
-    --on-dark-gray: #8A8A8A;
-    --dark-rule: #2B2B2B;
-    --sans: "Inter Tight", "Helvetica Neue", Helvetica, Arial, sans-serif;
-    --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
-    --gutter: clamp(16px, 4vw, 64px);
+    --paper: #faf9f6;
+    --panel: #f0efeb;
+    --ink: #242724;
+    --gray: #686b64;
+    --rule: rgb(36 39 36 / 18%);
+    --lavender: #d2d1e3;
+    --sage: #d4ddbd;
+    --forest: #354030;
+    --sans: "DM Sans", "Helvetica Neue", Arial, sans-serif;
+    --mono: "Geist Mono", ui-monospace, monospace;
+    --gutter: clamp(22px, 4.5vw, 80px);
   }
-
   * { box-sizing: border-box; }
-  html { -webkit-text-size-adjust: 100%; background: var(--dark); }
-  body {
-    margin: 0;
-    background: var(--light);
-    color: var(--ink);
-    font: 400 17px/1.45 var(--sans);
-  }
-  a { color: inherit; text-decoration: none; }
-  a:hover { text-decoration: underline; text-underline-offset: 3px; }
-  :focus-visible { outline: 1px solid currentColor; outline-offset: 3px; }
-  ::selection { background: var(--ink); color: var(--paper); }
-
-  .wrap { max-width: 1440px; margin: 0 auto; padding-inline: var(--gutter); }
-  .band-dark { background: var(--dark); color: var(--on-dark); }
-  .band-dark ::selection { background: var(--on-dark); color: var(--dark); }
-
-  .mono { font: 400 13px/1.5 var(--mono); letter-spacing: 0.01em; }
-  .grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: 24px; }
-
-  /* Label row that opens every section */
-  .section-head {
-    display: flex; justify-content: space-between; gap: 16px;
-    border-top: 1px solid currentColor; padding-top: 10px;
-  }
-  .section-head .dim { color: var(--gray); }
-  .band-dark .section-head .dim { color: var(--on-dark-gray); }
-
-  /* Top bar */
-  .topbar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px 24px; padding-block: 20px 28px; }
-  .topbar .mark { display: inline-flex; align-items: center; gap: 10px; }
-  .topbar .mark::before { content: "{ }"; font-weight: 500; }
-  .topbar nav { display: flex; gap: 28px; }
-
-  /* Headlines */
-  .headline {
-    font: 500 clamp(52px, 9.2vw, 148px)/0.9 var(--sans);
-    letter-spacing: -0.052em; margin: 0; text-wrap: balance;
-  }
+  html { -webkit-text-size-adjust: 100%; background: var(--paper); }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 400 15px/1.6 var(--sans); }
+  a { color: inherit; text-underline-offset: 4px; }
+  a:hover { text-decoration-thickness: 2px; }
+  :focus-visible { outline: 2px solid currentColor; outline-offset: 5px; }
+  ::selection { background: var(--lavender); color: var(--ink); }
+  .wrap { max-width: 1600px; margin: 0 auto; padding-inline: var(--gutter); }
+  .mono { font: 400 12px/1.5 var(--mono); letter-spacing: .02em; }
+  .grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 24px; }
+  .section-head { display: flex; justify-content: space-between; gap: 16px; border-top: 1px solid var(--rule); padding-top: 14px; }
+  .dim { color: var(--gray); }
+  .topbar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px 24px; padding-block: 24px; }
+  .topbar .mark { display: inline-flex; align-items: center; gap: 12px; font: 500 24px/1 var(--sans); letter-spacing: -.04em; text-decoration: none; }
+  .mark::before { content: "✳"; font-size: 32px; }
+  nav { display: flex; flex-wrap: wrap; gap: 8px 28px; }
+  nav a { display: inline-flex; align-items: center; min-height: 44px; text-decoration: none; }
+  nav a:hover { text-decoration: underline; }
+  .skip-link { position: absolute; top: 12px; left: 22px; padding: 12px; background: var(--paper); transform: translateY(-160%); z-index: 1; }
+  .skip-link:focus { transform: none; }
+  .headline { margin: 0; font: 400 clamp(46px, 5.8vw, 88px)/.98 var(--sans); letter-spacing: -.065em; text-wrap: balance; }
   .headline .quiet { color: var(--gray); }
-  .headline.small { font-size: clamp(40px, 5.6vw, 84px); letter-spacing: -0.045em; }
-
-  /* Columns hanging off a rule */
-  .col { border-left: 1px solid currentColor; padding-left: 14px; display: flex; flex-direction: column; gap: 44px; min-width: 0; }
-  .lead { font: 400 clamp(21px, 2vw, 27px)/1.22 var(--sans); letter-spacing: -0.015em; margin: 0; }
-  .lead code { font: 400 0.8em var(--mono); letter-spacing: 0; }
-
-  /* Hero */
-  .hero { padding-block: 0 104px; }
-  .hero .headline { margin-top: clamp(40px, 6vw, 88px); }
-  .hero .cols { margin-top: clamp(56px, 7vw, 104px); row-gap: 56px; }
-  .hero .c1 { grid-column: 1 / span 4; }
-  .hero .c2 { grid-column: 5 / span 4; }
-  .hero .c3 { grid-column: 9 / span 4; }
-
-  .install { display: grid; grid-template-columns: minmax(0, 1fr) auto; border: 1px solid var(--ink); background: var(--paper); }
-  .install code { font: 400 14px/1 var(--mono); padding: 18px 16px; overflow-x: auto; white-space: nowrap; }
-  .copy {
-    font: 500 13px/1 var(--mono);
-    min-width: 96px; padding: 0 20px; border: 0;
-    background: var(--ink); color: var(--paper); cursor: pointer;
-  }
-  .copy:hover { background: #333333; }
-
-  .hexdump { margin: 0; font: 400 12.5px/1.75 var(--mono); white-space: pre; overflow-x: auto; color: var(--gray); }
-  .hexdump b { font-weight: 500; color: var(--paper); background: var(--ink); }
-  .verdict { display: flex; justify-content: space-between; gap: 12px; border-top: 1px solid var(--rule); padding-top: 10px; }
-  .verdict span:last-child { font-weight: 500; }
-
-  /* Scan band */
-  .field { padding-block: 28px 32px; }
-  .scan-demo { margin-top: 48px; row-gap: 48px; align-items: start; }
-  .scan-demo .doc { grid-column: 1 / span 6; }
-  .scan-demo .extracted { grid-column: 8 / span 5; }
-  .band-dark .col { border-left-color: var(--dark-rule); }
-  .doc-lines {
-    position: relative; margin: 0; font: 400 13px/2.1 var(--mono);
-    color: var(--on-dark-gray); white-space: pre; overflow: hidden;
-  }
-  .tok { padding: 1px 3px; margin: 0 -3px; transition: background-color 180ms ease, color 180ms ease; }
-  .tok.on { background: var(--on-dark); color: var(--dark); }
-  .scanline {
-    position: absolute; left: 0; right: 0; top: 0; height: 1px;
-    background: var(--on-dark); opacity: 0; pointer-events: none;
-  }
-  .scanline::before {
-    content: ""; position: absolute; left: 0; right: 0; bottom: 1px; height: 36px;
-    background: linear-gradient(to bottom, rgba(245, 245, 245, 0), rgba(245, 245, 245, 0.07));
-  }
-  .scanned { margin: 0; border-top: 1px solid var(--on-dark); }
-  .scanned > div { display: grid; grid-template-columns: 1.75rem 6.5rem minmax(0, 1fr); align-items: baseline; padding-block: 14px; border-bottom: 1px solid var(--dark-rule); }
-  .scanned .n { font: 500 11px/1 var(--mono); color: var(--on-dark-gray); }
-  .scanned dt { font: 400 13px/1 var(--mono); color: var(--on-dark-gray); }
-  .scanned dd { margin: 0; font: 400 22px/1.2 var(--sans); letter-spacing: -0.015em; opacity: 0.18; transform: translateX(-6px); transition: opacity 260ms ease, transform 260ms ease; overflow-wrap: anywhere; }
-  .scanned > div.on dd { opacity: 1; transform: none; }
-  .scan-status { display: flex; justify-content: space-between; gap: 12px; margin-top: 14px; color: var(--on-dark-gray); }
-  .scan-status [data-state="done"] { color: var(--on-dark); }
-  .field-foot { display: flex; justify-content: space-between; gap: 16px; margin-top: 56px; color: var(--on-dark-gray); }
-
-  /* Example */
-  .example { padding-block: 104px 120px; }
-  .example .headline { margin-top: 40px; }
-  .example .cols { margin-top: 72px; row-gap: 56px; }
-  .example .col { grid-column: span 4; gap: 24px; }
-
-  .sheet { background: var(--paper); border: 1px solid var(--rule); padding: 28px 24px; font-size: 15px; }
-  .sheet .from { font: 500 22px/1.15 var(--sans); letter-spacing: -0.02em; margin: 0 0 4px; }
-  .sheet .addr { color: var(--gray); margin: 0 0 22px; font-size: 13px; }
-  .sheet dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 20px; margin: 0 0 20px; font-size: 13px; }
-  .sheet dt { color: var(--gray); }
-  .sheet dd { margin: 0; font-variant-numeric: tabular-nums; }
-  .lines { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
-  .lines td { padding: 8px 0; border-top: 1px solid #DDDDDD; }
-  .lines td:last-child { text-align: right; }
-  .lines tr.total td { border-top: 1px solid var(--ink); font-size: 16px; font-weight: 500; padding-top: 12px; }
-  .hit { background: var(--ink); color: var(--paper); padding: 0 3px; }
-  .hit sup { font: 500 10px/1 var(--mono); margin-left: 3px; }
-
+  .headline.small { font-size: clamp(36px, 4.5vw, 64px); letter-spacing: -.045em; }
+  .hero { padding-block: 12px 0; }
+  .hero-feature { display: grid; grid-template-columns: 1.05fr .95fr; margin-top: 40px; background: var(--lavender); }
+  .hero-copy { padding: clamp(28px, 4vw, 64px); align-self: center; }
+  .hero-copy .quiet { color: var(--forest); }
+  .hero-copy p { max-width: 32ch; margin: 28px 0; font-size: 18px; line-height: 1.5; }
+  .hero-art { display: flex; flex-direction: column; justify-content: center; padding: 32px; min-width: 0; }
+  .hero-art svg { width: 100%; height: auto; }
+  .cols { margin-top: 48px; row-gap: 40px; }
+  .col { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
+  .col > .mono { border-top: 1px solid var(--rule); padding-top: 14px; }
+  .install { max-width: 400px; background: var(--paper); display: grid; grid-template-columns: minmax(0, 1fr) auto; border: 1px solid var(--ink); }
+  .install code { padding: 16px 12px; font: 400 12px/1.5 var(--mono); overflow-x: auto; white-space: nowrap; }
+  .copy { min-width: 80px; min-height: 44px; border: 0; border-left: 1px solid var(--ink); background: var(--lavender); color: var(--ink); cursor: pointer; font: 400 12px/1.5 var(--mono); }
+  .copy:hover { background: var(--sage); }
+  dd { margin: 0; }
+  .example { padding-block: 88px 96px; }
+  .example .headline, .reference .headline { margin-top: 0; }
   pre { margin: 0; }
-  .code { font: 400 13px/1.75 var(--mono); background: var(--paper); border: 1px solid var(--rule); padding: 20px; overflow-x: auto; }
+  .code { font: 400 12px/1.8 var(--mono); background: var(--panel); padding: 24px; overflow-x: auto; }
   .code .d { color: var(--gray); }
-
-  .readout { margin: 0; border-top: 1px solid var(--ink); }
-  .readout > div { display: grid; grid-template-columns: 1.75rem 6.5rem minmax(0, 1fr); align-items: baseline; padding-block: 16px; border-bottom: 1px solid var(--rule); }
-  .readout .n { font: 500 11px/1 var(--mono); }
-  .readout dt { font: 400 13px/1 var(--mono); color: var(--gray); }
-  .readout dd { margin: 0; font: 400 22px/1.2 var(--sans); letter-spacing: -0.015em; overflow-wrap: anywhere; }
-
-  /* Reference */
-  .reference { padding-block: 104px 96px; }
-  .reference .headline { margin-top: 40px; }
-  .ref-list { margin-top: 72px; border-top: 1px solid var(--on-dark); }
-  details { border-bottom: 1px solid var(--dark-rule); }
-  summary { list-style: none; cursor: pointer; padding-block: 22px; align-items: baseline; }
+  .reference-band { background: var(--sage); }
+  .reference { padding-block: 64px 80px; }
+  .ref-list { margin-top: 48px; border-top: 1px solid var(--ink); }
+  details { border-bottom: 1px solid var(--rule); }
+  summary { list-style: none; cursor: pointer; padding-block: 24px; align-items: baseline; }
   summary::-webkit-details-marker { display: none; }
-  summary .key { grid-column: 1 / span 3; color: var(--on-dark-gray); }
-  summary .question { grid-column: 4 / span 8; font: 400 clamp(20px, 2vw, 26px)/1.25 var(--sans); letter-spacing: -0.015em; }
-  summary .sign { grid-column: 12; justify-self: end; font: 400 22px/1 var(--mono); }
-  summary .sign::before { content: "+"; }
-  details[open] summary .sign::before { content: "\2212"; }
-  details[open] summary .key { color: var(--on-dark); }
+  summary .question { grid-column: 1 / span 11; font-size: clamp(20px, 2vw, 28px); line-height: 1.25; letter-spacing: -.025em; }
+  summary .sign { grid-column: 12; justify-self: end; font-size: 24px; line-height: 1; transition: transform 180ms ease; }
+  summary .sign::before { content: "✳"; }
+  details[open] summary .sign { transform: rotate(45deg); }
   summary:hover .question { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 5px; }
   .answer { padding-block: 0 32px; }
-  .answer > * { grid-column: 4 / span 8; }
-  .answer > * + * { margin-top: 22px; }
-  .answer p { margin: 0; color: var(--on-dark-gray); max-width: 60ch; }
-  .answer pre { font: 400 13px/1.75 var(--mono); overflow-x: auto; border-left: 1px solid var(--on-dark); padding: 4px 0 4px 16px; }
-  .answer .d { color: var(--on-dark-gray); }
+  .answer > * { grid-column: 1 / span 10; min-width: 0; }
+  .answer p { margin: 0; max-width: 60ch; }
+  .answer pre { font: 400 12px/1.8 var(--mono); overflow-x: auto; border-left: 1px solid var(--ink); padding: 4px 0 4px 16px; }
   .spec { margin: 0; }
-  .spec > div { display: grid; grid-template-columns: minmax(0, 14rem) minmax(0, 1fr); gap: 20px; padding-block: 10px; border-top: 1px solid var(--dark-rule); }
-  .spec dt { font: 400 13px/1.6 var(--mono); }
-  .spec dd { margin: 0; color: var(--on-dark-gray); }
-
-  /* Footer */
-  footer { padding-block: 0 24px; }
-  .footer-row { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px 28px; border-top: 1px solid var(--dark-rule); padding-top: 18px; color: var(--on-dark-gray); }
-  .footer-row nav { display: flex; gap: 24px; }
-  .footer-row a:hover { color: var(--on-dark); }
-  .footer-mark {
-    margin: 40px 0 0; font: 500 clamp(64px, 21.2vw, 318px)/0.78 var(--sans);
-    letter-spacing: -0.065em; white-space: nowrap; overflow: hidden; color: var(--on-dark);
-  }
-
-  @media (max-width: 1000px) {
-    .hero .c1, .hero .c2 { grid-column: span 6; }
-    .hero .c3 { grid-column: 1 / -1; }
-    .example .col { grid-column: 1 / -1; }
-    .scan-demo .doc, .scan-demo .extracted { grid-column: 1 / -1; }
-    summary .key { grid-column: 1 / -1; }
+  .spec > div { display: grid; grid-template-columns: minmax(0, 12rem) minmax(0, 1fr); gap: 20px; padding-block: 12px; border-top: 1px solid var(--rule); }
+  .spec dd { overflow-wrap: anywhere; }
+  footer { padding-block: 32px; }
+  .footer-row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 16px 28px; }
+  .example-link { display: inline-flex; align-items: center; gap: 20px; min-height: 44px; margin-top: 16px; }
+  .example-note { color: var(--gray); margin: 20px 0 0; font-size: 17px; }
+  .example .cols { grid-template-columns: 1.2fr 1fr; gap: 48px; margin-top: 32px; }
+  .readout { margin: 0; border-top: 1px solid var(--rule); }
+  .readout > div { display: grid; grid-template-columns: 6rem minmax(0, 1fr); gap: 12px; padding-block: 20px; border-bottom: 1px solid var(--rule); }
+  .readout dt { font: 400 13px/1.5 var(--mono); color: var(--gray); }
+  .readout dd { font-size: 22px; line-height: 1.3; overflow-wrap: anywhere; }
+  @media (max-width: 900px) {
+    .hero-feature { grid-template-columns: 1fr; }
+    .example .cols { grid-template-columns: 1fr; gap: 32px; }
+    .hero-art { display: none; }
     summary .question { grid-column: 1 / span 11; }
     .answer > * { grid-column: 1 / -1; }
   }
-  @media (max-width: 640px) {
-    .hero .c1, .hero .c2 { grid-column: 1 / -1; }
-    .col { gap: 28px; }
-    .section-head .dim { display: none; }
-    .spec > div, .readout > div { grid-template-columns: 1fr; gap: 4px; }
-    .readout .n { display: none; }
-    .field-foot span:last-child { display: none; }
-    .doc-lines { font-size: 11.5px; overflow-x: auto; }
+  @media (max-width: 600px) {
+    .topbar { gap: 16px; }
+    .topbar nav { gap: 20px; }
+    .hero-copy { padding: 36px 22px 24px; }
+    .headline { font-size: clamp(36px, 10vw, 46px); }
+    .example-note { font-size: 16px; }
+    .code { padding: 20px 16px; }
+    .section-head { flex-wrap: wrap; gap: 8px; }
+    .example { padding-block: 56px; }
+    .spec > div { grid-template-columns: 1fr; gap: 8px; }
+    .footer-row nav { gap: 20px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { transition: none !important; }
   }
 </style>
 </head>
 <body>
+<a class="skip-link" href="#main">Skip to content</a>
 
 <header class="wrap topbar mono">
   <a class="mark" href="https://github.com/Mellow-Artificial-Intelligence/openextract">openextract</a>
   <nav aria-label="Project">
     <a href="https://github.com/Mellow-Artificial-Intelligence/openextract">GitHub</a>
     <a href="https://pypi.org/project/openextract/">PyPI</a>
-    <a href="https://github.com/Mellow-Artificial-Intelligence/openextract/blob/main/CHANGELOG.md">Changelog</a>
+    <a href="#reference">Reference</a>
   </nav>
 </header>
 
+<main id="main">
 <section class="wrap hero">
-  <div class="section-head mono"><span>Structured extraction for Python</span><span class="dim">v1.0 · MIT</span></div>
-  <h1 class="headline">Any file in.<br><span class="quiet">A validated model out.</span></h1>
-  <div class="grid cols">
-    <div class="col c1">
-      <span class="mono">One function</span>
-      <p class="lead">openextract reads documents, images, audio, and video with the LLM of your choice and hands back a typed Pydantic object. Not a string. Not a dict. The model you asked for, already validated.</p>
-    </div>
-    <div class="col c2">
-      <span class="mono">Install</span>
-      <p class="lead">Installs every provider SDK. For just one, use its extra, like <code>[anthropic]</code>. Set its API key and call <code>extract</code>.</p>
+  <div class="section-head mono"><span>Structured extraction for Python</span><span class="dim">Python 3.12+ · MIT</span></div>
+  <div class="hero-feature">
+    <div class="hero-copy">
+      <h1 class="headline">Any file.<br><span class="quiet">Structured data.</span></h1>
+      <p>Turn documents, images, audio, and video into validated Pydantic models.</p>
       <div class="install">
         <code id="install-cmd">pip install 'openextract[all]'</code>
-        <button class="copy" id="copy-install" type="button">Copy</button>
+        <button class="copy" id="copy-install" type="button" aria-live="polite">Copy</button>
       </div>
+      <a class="example-link" href="#example">See how it works <span aria-hidden="true">↓</span></a>
     </div>
-    <div class="col c3">
-      <span class="mono">No media type needed</span>
-<pre class="hexdump" aria-label="The first 48 bytes of a PDF">0000  <b>25 50 44 46</b> 2d 31 2e 35  <b>%PDF</b>-1.5
-0008  0a 25 8f 0a 31 30 30 20  .%..100
-0010  30 20 6f 62 6a 0a 3c 3c  0 obj.&lt;&lt;
-0018  20 2f 46 69 6c 74 65 72   /Filter
-0020  20 2f 46 6c 61 74 65 44   /FlateD
-0028  65 63 6f 64 65 20 2f 4c  ecode /L</pre>
-      <div class="verdict mono"><span>leading bytes →</span><span>application/pdf</span></div>
+    <div class="hero-art">
+      <svg viewBox="0 0 480 380" fill="none" aria-hidden="true">
+        <path d="M54 304C23 288 22 249 45 230C67 212 99 220 105 241C113 272 79 298 61 275C44 252 71 217 92 195L158 124L158 62L247 62L287 102L287 239L158 239L158 124M247 62L247 102L287 102M181 131L261 131M181 151L248 151M181 171L257 171M181 191L226 191C196 191 204 218 232 220C284 224 334 157 371 175C407 193 389 232 360 224C331 215 354 174 387 181C420 188 437 230 421 258C410 278 385 286 354 282L314 277L314 324L433 324L433 250L314 250L314 277M332 272L343 281L360 261M374 274L414 274M332 299L343 308L360 288M374 301L414 301" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M336 89L336 117M322 103L350 103M326 93L346 113M326 113L346 93" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+      </svg>
     </div>
   </div>
 </section>
 
-<section class="band-dark" aria-label="A scan of invoice.pdf filling in the Invoice fields">
-  <div class="wrap field">
-    <div class="section-head mono"><span>invoice.pdf → Invoice</span><span class="dim">3 fields · validated</span></div>
-    <div class="grid scan-demo">
-      <div class="col doc">
-        <span class="mono">Source</span>
-<pre class="doc-lines" id="doc-lines">INVOICE                              No. 2291
-<span class="tok on" data-field="0">Halvorsen Print Co.</span>
-Kanalgata 14, 5003 Bergen, Norway
-Issued 12 Sep 2026          Due 12 Oct 2026
-
-Letterpress run, 500 cards ........... 860.00
-Cotton stock, 600 gsm ................ 380.00
-Total due ...................... <span class="tok on" data-field="1">1,240.00</span> <span class="tok on" data-field="2">EUR</span><span class="scanline" id="scanline" aria-hidden="true"></span></pre>
-      </div>
-      <div class="col extracted">
-        <span class="mono">Invoice</span>
-        <div>
-          <dl class="scanned" id="scanned">
-            <div class="on"><span class="n">1</span><dt>vendor</dt><dd>Halvorsen Print Co.</dd></div>
-            <div class="on"><span class="n">2</span><dt>total</dt><dd>1240.0</dd></div>
-            <div class="on"><span class="n">3</span><dt>currency</dt><dd>EUR</dd></div>
-          </dl>
-          <div class="scan-status mono"><span id="scan-count">3 / 3 fields</span><span id="scan-state" data-state="done">validated</span></div>
-        </div>
-      </div>
-    </div>
-    <div class="field-foot mono"><span>Reads the file, finds the fields, returns them typed.</span><span>str · float · str</span></div>
-  </div>
-</section>
-
-<section class="wrap example">
-  <div class="section-head mono"><span>Example</span><span class="dim">extract.py</span></div>
-  <h2 class="headline small">Name the shape.<br><span class="quiet">Get the facts.</span></h2>
+<section class="wrap example" id="example">
+  <h2 class="headline small">Define it. Extract it.</h2>
+  <p class="example-note">Set your provider’s API key, then pass a schema and a file.</p>
   <div class="grid cols">
-    <figure class="col" style="margin:0">
-      <span class="mono">Source — invoice.pdf</span>
-      <div class="sheet">
-        <p class="from"><span class="hit">Halvorsen Print Co.<sup>1</sup></span></p>
-        <p class="addr">Kanalgata 14, 5003 Bergen, Norway</p>
-        <dl>
-          <dt>Invoice</dt><dd>No. 2291</dd>
-          <dt>Issued</dt><dd>12 Sep 2026</dd>
-          <dt>Due</dt><dd>12 Oct 2026</dd>
-        </dl>
-        <table class="lines">
-          <tr><td>Letterpress run, 500 cards</td><td>860.00</td></tr>
-          <tr><td>Cotton stock, 600 gsm</td><td>380.00</td></tr>
-          <tr class="total"><td>Total due</td><td><span class="hit">1,240.00<sup>2</sup></span> <span class="hit">EUR<sup>3</sup></span></td></tr>
-        </table>
-      </div>
-    </figure>
     <div class="col">
-      <span class="mono">Call — extract.py</span>
-<pre class="code"><code><span class="d">from</span> pydantic <span class="d">import</span> BaseModel
+      <span class="mono">Your code</span>
+<pre class="code" tabindex="0" role="region" aria-label="Python extraction example"><code><span class="d">from</span> pydantic <span class="d">import</span> BaseModel
 <span class="d">from</span> openextract <span class="d">import</span> extract
-
 
 <span class="d">class</span> Invoice(BaseModel):
     vendor: str
     total: float
     currency: str
 
-
 invoice = extract(
     Invoice,
     "openai:gpt-5",
-    source="./invoice.pdf",  <span class="d"># path to the file</span>
+    source="./invoice.pdf",
 )</code></pre>
     </div>
     <div class="col">
-      <span class="mono">Output — Invoice</span>
+      <span class="mono">Validated result</span>
       <dl class="readout">
-        <div><span class="n">1</span><dt>vendor</dt><dd>Halvorsen Print Co.</dd></div>
-        <div><span class="n">2</span><dt>total</dt><dd>1240.0</dd></div>
-        <div><span class="n">3</span><dt>currency</dt><dd>EUR</dd></div>
+        <div><dt>vendor</dt><dd>Halvorsen Print Co.</dd></div>
+        <div><dt>total</dt><dd>1240.0</dd></div>
+        <div><dt>currency</dt><dd>EUR</dd></div>
       </dl>
     </div>
   </div>
 </section>
 
-<section class="band-dark" id="reference">
+<section class="reference-band" id="reference">
   <div class="wrap reference">
-    <div class="section-head mono"><span>Reference</span><span class="dim">2 functions · 4 exceptions</span></div>
-    <h2 class="headline small">Everything else<br><span class="quiet">is inferred.</span></h2>
+    <h2 class="headline small">A few details.</h2>
     <div class="ref-list">
-      <details open>
-        <summary class="grid"><span class="key mono">extract()</span><span class="question">What do I pass in?</span><span class="sign" aria-hidden="true"></span></summary>
+      <details>
+        <summary class="grid"><span class="question">What do I pass in?</span><span class="sign" aria-hidden="true"></span></summary>
         <div class="answer grid">
-<pre><code>extract(schema, model, source, instructions=<span class="d">None</span>, *, media_type=<span class="d">None</span>)</code></pre>
+<pre tabindex="0" role="region" aria-label="Code example"><code>extract(schema, model, source, instructions=<span class="d">None</span>, *, media_type=<span class="d">None</span>)</code></pre>
           <dl class="spec">
             <div><dt>schema</dt><dd>The Pydantic model you want back.</dd></div>
             <div><dt>model</dt><dd>A pydantic-ai model string like "anthropic:claude-sonnet-5", or a configured Model.</dd></div>
@@ -347,7 +199,7 @@ invoice = extract(
         </div>
       </details>
       <details>
-        <summary class="grid"><span class="key mono">media_type</span><span class="question">How does it know the file type?</span><span class="sign" aria-hidden="true"></span></summary>
+        <summary class="grid"><span class="question">How does it know the file type?</span><span class="sign" aria-hidden="true"></span></summary>
         <div class="answer grid">
           <p>It takes the first answer it finds: the media_type you passed, the file extension, the URL's Content-Type header, then the file's leading bytes.</p>
           <dl class="spec">
@@ -356,7 +208,7 @@ invoice = extract(
         </div>
       </details>
       <details>
-        <summary class="grid"><span class="key mono">exceptions</span><span class="question">What happens when it fails?</span><span class="sign" aria-hidden="true"></span></summary>
+        <summary class="grid"><span class="question">What happens when it fails?</span><span class="sign" aria-hidden="true"></span></summary>
         <div class="answer grid">
           <p>Every error subclasses ExtractionError and keeps the original exception as its cause.</p>
           <dl class="spec">
@@ -368,35 +220,42 @@ invoice = extract(
         </div>
       </details>
       <details>
-        <summary class="grid"><span class="key mono">providers</span><span class="question">Which models can I use?</span><span class="sign" aria-hidden="true"></span></summary>
+        <summary class="grid"><span class="question">Which models can I use?</span><span class="sign" aria-hidden="true"></span></summary>
         <div class="answer grid">
           <p>Any model pydantic-ai supports. Install the matching extra and set its API key.</p>
-<pre><code>pip install 'openextract[anthropic]'   <span class="d"># openai, google, bedrock, groq, mistral,</span>
+<pre tabindex="0" role="region" aria-label="Code example"><code>pip install 'openextract[anthropic]'   <span class="d"># openai, google, bedrock, groq, mistral,</span>
                                        <span class="d"># cohere, huggingface, openrouter, xai, all</span></code></pre>
         </div>
       </details>
       <details>
-        <summary class="grid"><span class="key mono">decision models</span><span class="question">Can I use Jev?</span><span class="sign" aria-hidden="true"></span></summary>
+        <summary class="grid"><span class="question">Can I use decision models?</span><span class="sign" aria-hidden="true"></span></summary>
         <div class="answer grid">
-          <p>Yes, for schemas whose fields are all bool, Literal, or Enum. Jev, TypeSafe's decision model on OpenRouter, answers typed questions instead of writing text. Set OPENROUTER_API_KEY; no extra is needed.</p>
-<pre><code>triage = extract(Triage, "openrouter:typesafe/jev-1.14", source="./receipt.png")</code></pre>
+          <p>Yes. Use OpenAI Decisions with OPENAI_API_KEY, or Jev with OPENROUTER_API_KEY. Both read text and images into bool, Literal, or Enum fields. No provider extra is needed.</p>
+<pre tabindex="0" role="region" aria-label="Code example"><code>triage = extract(
+    Triage, "openai-decisions:gpt-6-luna",
+    source="./receipt.png",
+)</code></pre>
           <dl class="spec">
             <div><dt>Fields</dt><dd>bool, Literal, or Enum. Any other type raises a TypeError.</dd></div>
             <div><dt>Questions</dt><dd>Each field becomes one question, phrased by its description.</dd></div>
             <div><dt>bool</dt><dd>True when the probability of yes is at least 0.5.</dd></div>
+            <div><dt>OpenAI</dt><dd>Use openai-decisions: for Decisions; openai: keeps general extraction. Supports 1–400 fields.</dd></div>
             <div><dt>Sources</dt><dd>Text and images only.</dd></div>
           </dl>
         </div>
       </details>
       <details>
-        <summary class="grid"><span class="key mono">extract_async()</span><span class="question">Is there an async version?</span><span class="sign" aria-hidden="true"></span></summary>
+        <summary class="grid"><span class="question">Is there an async version?</span><span class="sign" aria-hidden="true"></span></summary>
         <div class="answer grid">
           <p>Yes. It takes the same arguments. Await it.</p>
-<pre><code>invoice = <span class="d">await</span> extract_async(Invoice, "openai:gpt-5", source="./invoice.pdf")</code></pre>
+<pre tabindex="0" role="region" aria-label="Code example"><code>invoice = <span class="d">await</span> extract_async(Invoice, "openai:gpt-5", source="./invoice.pdf")</code></pre>
         </div>
       </details>
     </div>
   </div>
+
+</section>
+</main>
 
   <footer class="wrap">
     <div class="footer-row mono">
@@ -407,9 +266,7 @@ invoice = extract(
         <a href="https://github.com/Mellow-Artificial-Intelligence/openextract/issues">Issues</a>
       </nav>
     </div>
-    <p class="footer-mark" aria-hidden="true">openextract</p>
   </footer>
-</section>
 
 <script>
   document.getElementById("copy-install").addEventListener("click", async (event) => {
@@ -428,59 +285,6 @@ invoice = extract(
     setTimeout(() => { button.textContent = "Copy"; }, 1600);
   });
 
-  // A scan line reads the invoice; each field it passes lights up and fills its row.
-  (() => {
-    const lines = document.getElementById("doc-lines");
-    const scanline = document.getElementById("scanline");
-    const tokens = [...lines.querySelectorAll(".tok")];
-    const rows = [...document.getElementById("scanned").children];
-    const count = document.getElementById("scan-count");
-    const state = document.getElementById("scan-state");
-    const scanMs = 3200, holdMs = 3400, resetMs = 700;
-    const cycleMs = scanMs + holdMs + resetMs;
-    // Start inside the hold so the first frame shows the finished result.
-    const startOffsetMs = scanMs + 400;
-    let shown = -1;
-
-    function show(found, scanY) {
-      if (found !== shown) {
-        shown = found;
-        tokens.forEach(token => token.classList.toggle("on", Number(token.dataset.field) < found));
-        rows.forEach((row, index) => row.classList.toggle("on", index < found));
-        count.textContent = `${found} / ${rows.length} fields`;
-        state.textContent = found === rows.length ? "validated" : "scanning";
-        state.dataset.state = found === rows.length ? "done" : "scanning";
-      }
-      scanline.style.opacity = scanY === null ? "0" : "1";
-      if (scanY !== null) scanline.style.transform = `translateY(${scanY}px)`;
-    }
-
-    function fieldsAbove(scanY) {
-      const found = new Set();
-      for (const token of tokens) {
-        if (token.offsetTop + token.offsetHeight / 2 <= scanY) found.add(token.dataset.field);
-      }
-      return found.size;
-    }
-
-    function frame(time) {
-      const t = (time + startOffsetMs) % cycleMs;
-      const height = lines.scrollHeight;
-      if (t < scanMs) {
-        const scanY = (t / scanMs) * height;
-        show(fieldsAbove(scanY), scanY);
-      } else if (t < scanMs + holdMs) {
-        show(rows.length, null);
-      } else {
-        show(0, null);
-      }
-      requestAnimationFrame(frame);
-    }
-
-    if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      requestAnimationFrame(frame);
-    }
-  })();
 </script>
 </body>
 </html>
