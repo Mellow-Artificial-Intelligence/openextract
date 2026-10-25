@@ -331,3 +331,158 @@ def test_decisions_missing_answer_raises_schema_validation_error(monkeypatch):
 
     with pytest.raises(SchemaValidationError, match="document_type"):
         extract(Triage, "openrouter:typesafe/jev-1.14", b"text")
+
+
+OPENAI_TRIAGE_ANSWERS = [
+    {"type": "choice", "name": "currency", "choice": "eur"},
+    {"type": "predicate", "name": "is_paid", "probability": 0.97},
+    {"type": "choice", "name": "document_type", "choice": "receipt"},
+]
+
+
+def serve_openai_decisions(monkeypatch, seen, payload=None):
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(
+            200, json=payload if payload is not None else {"answers": OPENAI_TRIAGE_ANSWERS}
+        )
+
+    serve(monkeypatch, handler)
+
+
+def test_openai_decisions_fills_schema_and_uses_named_answers(monkeypatch):
+    seen = []
+    serve_openai_decisions(monkeypatch, seen)
+    result = extract(Triage, "openai-decisions:gpt-6-luna", b"Paid receipt in EUR.", "Be strict.")
+
+    assert result == Triage(document_type="receipt", currency=Currency.EUR, is_paid=True)
+    assert seen[0].url == "https://api.openai.com/v1/decisions"
+    assert seen[0].headers["authorization"] == "Bearer sk-test"
+    assert json.loads(seen[0].content) == {
+        "model": "gpt-6-luna",
+        "input": [
+            {"role": "developer", "content": "Be strict."},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "input_text", "text": extract_module._PROMPT},
+                    {"type": "input_text", "text": "Paid receipt in EUR."},
+                ],
+            },
+        ],
+        "questions": [
+            {
+                "name": "document_type",
+                "type": "choice",
+                "instructions": "What kind of document is this?",
+                "choices": [
+                    {"value": "invoice", "description": "invoice"},
+                    {"value": "receipt", "description": "receipt"},
+                ],
+            },
+            {
+                "name": "currency",
+                "type": "choice",
+                "instructions": "currency",
+                "choices": [
+                    {"value": "usd", "description": "usd"},
+                    {"value": "eur", "description": "eur"},
+                ],
+            },
+            {"name": "is_paid", "type": "predicate", "instructions": "is paid"},
+        ],
+    }
+
+
+async def test_openai_decisions_async_reads_images(monkeypatch):
+    seen = []
+    serve_openai_decisions(monkeypatch, seen)
+    result = await extract_async(Triage, "openai-decisions:gpt-6-luna", b"\x89PNG....")
+    assert result.is_paid is True
+    body = json.loads(seen[0].content)
+    assert body["input"][0] == {"role": "developer", "content": extract_module._PROMPT}
+    assert body["input"][1]["content"][-1] == {
+        "type": "input_image",
+        "image_url": "data:image/png;base64,iVBORy4uLi4=",
+    }
+
+
+@pytest.mark.parametrize("probability,expected", [(0.49, False), (0.5, True)])
+def test_openai_decisions_boolean_threshold(monkeypatch, probability, expected):
+    answers = [dict(answer) for answer in OPENAI_TRIAGE_ANSWERS]
+    answers[1]["probability"] = probability
+    serve_openai_decisions(monkeypatch, [], {"answers": answers})
+    assert extract(Triage, "openai-decisions:gpt-6-luna", b"text").is_paid is expected
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {},
+        {"answers": {}},
+        {"answers": []},
+        {"answers": OPENAI_TRIAGE_ANSWERS * 2},
+        {"answers": [{"type": "refusal", "name": "is_paid"}]},
+        {"answers": [{"type": "predicate", "name": "is_paid", "probability": 1.2}]},
+        {"answers": [{"type": "predicate", "name": "is_paid", "probability": "yes"}]},
+        {"answers": [{"type": "predicate", "name": "is_paid", "probability": True}]},
+        {"answers": [{"type": "choice", "name": "is_paid", "probability": 0.5}]},
+        {"answers": [{"type": "predicate", "name": "currency", "probability": 0.5}]},
+        {"answers": [{"type": "choice", "name": "currency", "choice": "unknown"}]},
+        {"answers": [{"type": "choice", "name": "unknown", "choice": "eur"}]},
+        {"answers": [None]},
+    ],
+)
+def test_openai_decisions_invalid_answers(monkeypatch, payload):
+    serve_openai_decisions(monkeypatch, [], payload)
+    with pytest.raises(SchemaValidationError):
+        extract(Triage, "openai-decisions:gpt-6-luna", b"text")
+
+
+def test_openai_decisions_invalid_json(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    serve(monkeypatch, lambda request: httpx.Response(200, content=b"not JSON"))
+    with pytest.raises(SchemaValidationError):
+        extract(Triage, "openai-decisions:gpt-6-luna", b"text")
+
+
+def test_openai_decisions_validates_inputs_before_request(monkeypatch):
+    seen = []
+    serve_openai_decisions(monkeypatch, seen)
+    with pytest.raises(TypeError, match="total"):
+        extract(Invoice, "openai-decisions:gpt-6-luna", b"text")
+    with pytest.raises(ValueError, match="application/pdf"):
+        extract(Triage, "openai-decisions:gpt-6-luna", PDF_BYTES)
+    with pytest.raises(ValueError, match="1 and 400"):
+        extract(BaseModel, "openai-decisions:gpt-6-luna", b"text")
+    assert seen == []
+
+
+def test_openai_decisions_requires_own_api_key(monkeypatch):
+    seen = []
+    serve_openai_decisions(monkeypatch, seen)
+    monkeypatch.delenv("OPENAI_API_KEY")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
+    with pytest.raises(ExtractionError, match="OPENAI_API_KEY"):
+        extract(Triage, "openai-decisions:gpt-6-luna", b"text")
+    assert seen == []
+
+
+def test_openai_decisions_provider_error(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    serve(monkeypatch, lambda request: httpx.Response(429, json={"error": "rate limited"}))
+    with pytest.raises(ModelError, match="OpenAI returned 429"):
+        extract(Triage, "openai-decisions:gpt-6-luna", b"text")
+
+
+async def test_openai_decisions_network_error(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+
+    def handler(request):
+        raise httpx.ConnectError("offline", request=request)
+
+    serve(monkeypatch, handler)
+    with pytest.raises(ModelError, match="offline"):
+        await extract_async(Triage, "openai-decisions:gpt-6-luna", b"text")

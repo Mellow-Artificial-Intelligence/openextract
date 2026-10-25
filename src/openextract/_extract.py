@@ -16,6 +16,7 @@ from pydantic_ai.exceptions import ModelAPIError, UnexpectedModelBehavior
 from pydantic_ai.models import Model
 from pydantic_ai.output import NativeOutput
 
+from . import _openai_decisions
 from ._decisions import decide, decide_async, is_decisions_model
 from .exceptions import (
     ExtractionError,
@@ -59,6 +60,8 @@ def extract[T: BaseModel](
     itself; pass ``media_type`` to override it.
     """
     content = _load(source, media_type)
+    if _openai_decisions.is_openai_decisions_model(model):
+        return _openai_decisions.decide(schema, model, content, _PROMPT, instructions)
     if is_decisions_model(model):
         return decide(schema, model, content, _PROMPT, instructions)
     with _model_errors():
@@ -76,6 +79,8 @@ async def extract_async[T: BaseModel](
 ) -> T:
     """Async version of :func:`extract`."""
     content = await _load_async(source, media_type)
+    if _openai_decisions.is_openai_decisions_model(model):
+        return await _openai_decisions.decide_async(schema, model, content, _PROMPT, instructions)
     if is_decisions_model(model):
         return await decide_async(schema, model, content, _PROMPT, instructions)
     with _model_errors():

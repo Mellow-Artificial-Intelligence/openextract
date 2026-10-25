@@ -8,6 +8,17 @@ timing when that is known.
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-25
+
+### Added
+- OpenAI Decisions support through `openai-decisions:gpt-6-luna` in `extract`
+  and `extract_async`, for `bool`, `Literal`, and `Enum` schemas over text and
+  images. Uses `OPENAI_API_KEY` without an additional provider SDK.
+
+### Changed
+- Restyled the GitHub Pages site using Mellow's palette, typography, and line
+  artwork, with a shorter introduction, one code example, and collapsible reference.
+
 ## [1.1.1] - 2026-10-15
 
 ### Changed
