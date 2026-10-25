@@ -8,6 +8,8 @@ timing when that is known.
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-25
+
 ### Added
 - OpenAI Decisions support through `openai-decisions:gpt-6-luna` in `extract`
   and `extract_async`, for `bool`, `Literal`, and `Enum` schemas over text and
