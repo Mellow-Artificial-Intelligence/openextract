@@ -24,8 +24,8 @@ All names and amounts in the fixture are fictional. The expected fields are
 `vendor="Acme Paper Co."` (seller, not the buyer Northwind Studio),
 `total=Decimal("120.00")` (final amount including tax, not the 100.00 subtotal),
 and `currency="USD"`. The schema permits `None` for unclear currency.
-The same field meanings can be reused in fine-detail examples from the
-[roadmap](https://github.com/Mellow-Artificial-Intelligence/openextract/wiki/Roadmap).
+Continue with [fine-detail controls](fine_details.md) to tailor these field
+meanings, validate currency, guide interpretation, and override media detection.
 
 ## Offline checks
 
