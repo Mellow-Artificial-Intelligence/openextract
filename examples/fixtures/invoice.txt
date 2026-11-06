@@ -1,0 +1,7 @@
+INVOICE DEMO-001 (fictional sample)
+Seller: Acme Paper Co.
+Bill to: Northwind Studio
+Paper supplies: 100.00 USD
+Subtotal: 100.00 USD
+Tax: 20.00 USD
+Total due: 120.00 USD

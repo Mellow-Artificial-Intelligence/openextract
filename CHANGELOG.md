@@ -8,6 +8,11 @@ timing when that is known.
 
 ## [Unreleased]
 
+### Changed
+- Made the first extraction self-contained with an inline fictional invoice, a
+  supplied text fixture, single-provider setup, and matching README and landing
+  page examples checked offline.
+
 ## [1.2.0] - 2026-10-25
 
 ### Added

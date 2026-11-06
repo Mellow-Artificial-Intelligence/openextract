@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>openextract</title>
-<meta name="description" content="Extract structured data from documents, images, audio, and video using LLMs. One function, any file, a validated Pydantic model.">
+<meta name="description" content="Extract structured data from documents, images, audio, and video using LLMs. One function, a source your model supports, a validated Pydantic model.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
@@ -125,6 +125,7 @@
     <a href="https://github.com/Mellow-Artificial-Intelligence/openextract">GitHub</a>
     <a href="https://pypi.org/project/openextract/">PyPI</a>
     <a href="#reference">Reference</a>
+    <a href="https://github.com/Mellow-Artificial-Intelligence/openextract/wiki/Roadmap">Roadmap</a>
   </nav>
 </header>
 
@@ -133,10 +134,10 @@
   <div class="section-head mono"><span>Structured extraction for Python</span><span class="dim">Python 3.12+ · MIT</span></div>
   <div class="hero-feature">
     <div class="hero-copy">
-      <h1 class="headline">Any file.<br><span class="quiet">Structured data.</span></h1>
-      <p>Turn documents, images, audio, and video into validated Pydantic models.</p>
+      <h1 class="headline">Your source.<br><span class="quiet">Structured data.</span></h1>
+      <p>Turn sources your chosen model supports into validated Pydantic models.</p>
       <div class="install">
-        <code id="install-cmd">pip install 'openextract[all]'</code>
+        <code id="install-cmd">pip install 'openextract[openai]'</code>
         <button class="copy" id="copy-install" type="button" aria-live="polite">Copy</button>
       </div>
       <a class="example-link" href="#example">See how it works <span aria-hidden="true">↓</span></a>
@@ -152,31 +153,49 @@
 
 <section class="wrap example" id="example">
   <h2 class="headline small">Define it. Extract it.</h2>
-  <p class="example-note">Set your provider’s API key, then pass a schema and a file.</p>
+  <p class="example-note">Install the OpenAI extra above with Python 3.12+, then set your OpenAI API key in the same terminal. Your account needs access to <code>gpt-5</code>; this example makes a paid provider request.</p>
+  <pre class="code" tabindex="0" role="region" aria-label="Set credentials"><code>export OPENAI_API_KEY='your-api-key'  # macOS / Linux</code></pre>
+  <p>On PowerShell, use <code>$env:OPENAI_API_KEY = 'your-api-key'</code> instead. Save the code below as <code>first_extraction.py</code>, then run <code>python first_extraction.py</code>. The fictional invoice is included as text bytes; no download is needed.</p>
   <div class="grid cols">
     <div class="col">
       <span class="mono">Your code</span>
-<pre class="code" tabindex="0" role="region" aria-label="Python extraction example"><code><span class="d">from</span> pydantic <span class="d">import</span> BaseModel
-<span class="d">from</span> openextract <span class="d">import</span> extract
+<pre class="code" tabindex="0" role="region" aria-label="Python extraction example"><code>from decimal import Decimal
 
-<span class="d">class</span> Invoice(BaseModel):
-    vendor: str
-    total: float
-    currency: str
+from pydantic import BaseModel, Field
 
-invoice = extract(
-    Invoice,
-    "openai:gpt-5",
-    source="./invoice.pdf",
-)</code></pre>
+from openextract import extract
+
+
+class Invoice(BaseModel):
+    vendor: str = Field(description=&quot;Seller, not buyer.&quot;)
+    total: Decimal = Field(description=&quot;Final amount due, including tax.&quot;)
+    currency: str | None = Field(description=&quot;Three-letter currency code, or null if unclear.&quot;)
+
+
+source = b&quot;&quot;&quot;INVOICE DEMO-001 (fictional sample)
+Seller: Acme Paper Co.
+Bill to: Northwind Studio
+Paper supplies: 100.00 USD
+Subtotal: 100.00 USD
+Tax: 20.00 USD
+Total due: 120.00 USD
+&quot;&quot;&quot;
+
+invoice = extract(Invoice, &quot;openai:gpt-5&quot;, source)
+print(invoice.vendor)  # str: Acme Paper Co.
+print(invoice.total)  # Decimal: 120.00
+print(invoice.currency)  # str | None: USD</code></pre>
     </div>
     <div class="col">
-      <span class="mono">Validated result</span>
+      <span class="mono">Expected fields for this fixture</span>
       <dl class="readout">
-        <div><dt>vendor</dt><dd>Halvorsen Print Co.</dd></div>
-        <div><dt>total</dt><dd>1240.0</dd></div>
-        <div><dt>currency</dt><dd>EUR</dd></div>
+        <div><dt>vendor</dt><dd>Acme Paper Co.</dd></div>
+        <div><dt>total</dt><dd>120.00 (Decimal)</dd></div>
+        <div><dt>currency</dt><dd>USD</dd></div>
       </dl>
+      <p>The vendor is the seller, not the buyer. The total is the final amount due including tax, not the subtotal. Currency is a three-letter code, or <code>None</code> when unclear.</p>
+      <p>Schema validation checks structure and types; it does not guarantee factual accuracy. Check extracted values against your source before relying on them.</p>
+      <p><a href="https://github.com/Mellow-Artificial-Intelligence/openextract/blob/main/examples/fixtures/invoice.txt">Supplied invoice fixture</a> · <a href="https://github.com/Mellow-Artificial-Intelligence/openextract/blob/main/examples/README.md">Example checks and live-check record</a></p>
     </div>
   </div>
 </section>
@@ -201,7 +220,7 @@ invoice = extract(
       <details>
         <summary class="grid"><span class="question">How does it know the file type?</span><span class="sign" aria-hidden="true"></span></summary>
         <div class="answer grid">
-          <p>It takes the first answer it finds: the media_type you passed, the file extension, the URL's Content-Type header, then the file's leading bytes.</p>
+          <p>It takes the first answer it finds: the media_type you passed, the file extension, the URL's Content-Type header, then the file's leading bytes. Detecting a media type does not mean the chosen model can read it; input and schema support depend on the model.</p>
           <dl class="spec">
             <div><dt>Recognized by content</dt><dd>PDF, PNG, JPEG, GIF, WebP, MP3, WAV, FLAC, OGG, MP4, and UTF-8 text.</dd></div>
           </dl>
