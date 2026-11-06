@@ -87,6 +87,10 @@ it finds the fixture automatically. An optional path or URL argument lets you us
 your own document. See [example checks](examples/README.md) for offline validation
 and the live-check record.
 
+Continue with [fine-detail controls](examples/fine_details.md): field descriptions,
+`Decimal` totals, nullable currency, validators, interpretation instructions, and
+media-type overrides, using the same `Invoice` result type.
+
 ## Usage
 
 ```python
