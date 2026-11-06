@@ -1,20 +1,28 @@
-"""Extract an invoice from a file path or URL.
+"""Extract the supplied fictional invoice, or a file path / URL of your own.
 
-uv run --extra openai python examples/basic.py invoice.pdf
+From the repository root, after setting OPENAI_API_KEY:
+    uv run --extra openai python examples/basic.py
+    uv run --extra openai python examples/basic.py examples/fixtures/invoice.txt
 """
 
 import sys
+from decimal import Decimal
+from pathlib import Path
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from openextract import extract
 
 
 class Invoice(BaseModel):
-    vendor: str
-    total: float
-    currency: str
+    vendor: str = Field(description="Seller, not buyer.")
+    total: Decimal = Field(description="Final amount due, including tax.")
+    currency: str | None = Field(description="Three-letter currency code, or null if unclear.")
 
 
-invoice = extract(Invoice, "openai:gpt-5", sys.argv[1])
-print(invoice.model_dump_json(indent=2))
+if __name__ == "__main__":
+    source = sys.argv[1] if len(sys.argv) > 1 else Path(__file__).parent / "fixtures/invoice.txt"
+    invoice = extract(Invoice, "openai:gpt-5", source)
+    print(invoice.vendor)
+    print(invoice.total)
+    print(invoice.currency)

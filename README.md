@@ -9,34 +9,83 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![CI](https://github.com/Mellow-Artificial-Intelligence/openextract/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Mellow-Artificial-Intelligence/openextract/actions/workflows/ci.yml)
 
-[Website](https://mellow-artificial-intelligence.github.io/openextract/) &middot; [PyPI](https://pypi.org/project/openextract/) &middot; [Changelog](CHANGELOG.md)
+[Website](https://mellow-artificial-intelligence.github.io/openextract/) &middot; [PyPI](https://pypi.org/project/openextract/) &middot; [Changelog](CHANGELOG.md) &middot; [Roadmap](https://github.com/Mellow-Artificial-Intelligence/openextract/wiki/Roadmap)
 
 </div>
 
-One function: give it a Pydantic schema, a model, and a file. You get back a validated instance.
+One function: give it a Pydantic schema, a model, and a source. You get back a validated instance.
+Supported input formats depend on the chosen model.
+
+## First extraction
+
+Requires Python 3.12+. Install just the OpenAI provider for this example:
+
+```bash
+pip install 'openextract[openai]'
+```
+
+Set `OPENAI_API_KEY` to your OpenAI API key in the same terminal. Your account
+needs access to `gpt-5`; running the example makes a paid provider request.
+
+```bash
+export OPENAI_API_KEY='your-api-key'  # macOS / Linux
+```
+
+On PowerShell, use `$env:OPENAI_API_KEY = 'your-api-key'` instead.
+
+Save the following as `first_extraction.py`. The fictional invoice is included
+as text bytes, so there is no document to download or missing file to create.
 
 ```python
-from pydantic import BaseModel
+from decimal import Decimal
+
+from pydantic import BaseModel, Field
+
 from openextract import extract
 
 
 class Invoice(BaseModel):
-    vendor: str
-    total: float
-    currency: str
+    vendor: str = Field(description="Seller, not buyer.")
+    total: Decimal = Field(description="Final amount due, including tax.")
+    currency: str | None = Field(description="Three-letter currency code, or null if unclear.")
 
 
-invoice = extract(Invoice, "openai:gpt-5", source="./invoice.pdf")  # path to a file on disk
-print(invoice.total)
+source = b"""INVOICE DEMO-001 (fictional sample)
+Seller: Acme Paper Co.
+Bill to: Northwind Studio
+Paper supplies: 100.00 USD
+Subtotal: 100.00 USD
+Tax: 20.00 USD
+Total due: 120.00 USD
+"""
+
+invoice = extract(Invoice, "openai:gpt-5", source)
+print(invoice.vendor)  # str: Acme Paper Co.
+print(invoice.total)  # Decimal: 120.00
+print(invoice.currency)  # str | None: USD
 ```
-
-## Install
 
 ```bash
-pip install 'openextract[all]'   # or just your provider: [openai], [anthropic], [google], ...
+python first_extraction.py
 ```
 
-Requires Python 3.12+. Set the API key your provider expects, such as `OPENAI_API_KEY`.
+Expected fields for this fixture:
+
+| Field | Python type | Expected value |
+| --- | --- | --- |
+| `vendor` | `str` | `"Acme Paper Co."` (seller, not Northwind Studio) |
+| `total` | `Decimal` | `Decimal("120.00")` (final amount including tax, not the subtotal) |
+| `currency` | `str \| None` | `"USD"` (or `None` when the source is unclear) |
+
+Schema validation checks structure and types; it does **not** guarantee factual
+accuracy. Check extracted values against your source before relying on them.
+
+The same non-sensitive invoice is supplied in
+[`examples/fixtures/invoice.txt`](examples/fixtures/invoice.txt). In a repository
+checkout, after setting the key, run `uv run --extra openai python examples/basic.py`;
+it finds the fixture automatically. An optional path or URL argument lets you use
+your own document. See [example checks](examples/README.md) for offline validation
+and the live-check record.
 
 ## Usage
 
@@ -49,6 +98,9 @@ await extract_async(schema, model, source, instructions=None, *, media_type=None
 - **`model`** is any [pydantic-ai](https://ai.pydantic.dev/models/) model string (`"anthropic:claude-sonnet-5"`, `"google-gla:gemini-2.5-pro"`, `"ollama:llama3"`, ...) or a configured pydantic-ai `Model`.
 - **`instructions`** are optional extra guidance for the model.
 - **`media_type`** is inferred for you. openextract checks the file extension, then the URL's `Content-Type`, then the file's leading bytes (PDF, PNG, JPEG, GIF, WebP, MP3, WAV, FLAC, OGG, MP4, UTF-8 text). Pass it only to override the result.
+
+Media detection does not mean every model accepts every format. Choose a model
+that supports your input and schema.
 
 ```python
 from pathlib import Path
