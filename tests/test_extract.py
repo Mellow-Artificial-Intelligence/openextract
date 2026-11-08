@@ -1,3 +1,4 @@
+import asyncio
 import json
 from enum import Enum
 from pathlib import Path
@@ -6,7 +7,7 @@ from typing import Literal
 import httpx
 import pytest
 from pydantic import BaseModel, Field
-from pydantic_ai import BinaryContent
+from pydantic_ai import BinaryContent, models
 from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
@@ -88,6 +89,36 @@ async def test_extract_async_from_bytes():
     assert seen[0].media_type == "image/png"
 
 
+@pytest.mark.parametrize("use_async", [False, True], ids=["sync", "async"])
+@pytest.mark.parametrize("customized", [False, True], ids=["simple", "customized"])
+def test_simple_and_customized_calls_preserve_contract(monkeypatch, use_async, customized):
+    monkeypatch.setattr(models, "ALLOW_MODEL_REQUESTS", False)
+    source = b"Total: 42"
+    instructions = "Use the final total." if customized else None
+    media_type = "text/markdown" if customized else None
+    seen = []
+
+    def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        seen.append((messages[0].parts[-1].content, info.instructions))
+        return ModelResponse(parts=[output_call(info, {"total": 42.0})])
+
+    model = FunctionModel(respond)
+    kwargs = {"instructions": instructions, "media_type": media_type} if customized else {}
+    if use_async:
+        result = asyncio.run(extract_async(Invoice, model, source, **kwargs))
+    else:
+        result = extract(Invoice, model, source, **kwargs)
+
+    assert type(result) is Invoice
+    assert result.total == 42.0
+    assert len(seen) == 1
+    content, received_instructions = seen[0]
+    assert received_instructions == instructions
+    document = next(item for item in content if isinstance(item, BinaryContent))
+    assert document.data == source
+    assert document.media_type == (media_type or "text/plain")
+
+
 @pytest.mark.parametrize(
     ("data", "media_type"),
     [
@@ -158,12 +189,16 @@ def test_url_failure_raises_extraction_error(monkeypatch):
         extract(Invoice, TestModel(), "https://example.com/missing.pdf")
 
 
-def test_invalid_output_raises_schema_validation_error():
+@pytest.mark.parametrize("use_async", [False, True], ids=["sync", "async"])
+def test_invalid_output_raises_schema_validation_error(use_async):
     def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
         return ModelResponse(parts=[output_call(info, {"total": "lots"})])
 
     with pytest.raises(SchemaValidationError):
-        extract(Invoice, FunctionModel(respond), PDF_BYTES)
+        if use_async:
+            asyncio.run(extract_async(Invoice, FunctionModel(respond), PDF_BYTES))
+        else:
+            extract(Invoice, FunctionModel(respond), PDF_BYTES)
 
 
 async def test_provider_error_raises_model_error():
