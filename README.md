@@ -115,6 +115,9 @@ extract(Invoice, "anthropic:claude-sonnet-5", source="https://example.com/2291.p
 extract(Invoice, "openai:gpt-5", source=pdf_bytes, instructions="Amounts are in EUR.")  # bytes
 ```
 
+For provider generation settings, see [configured models](examples/configured_models.md)
+for a typed example, sync/async checks, and dependency compatibility limits.
+
 ## Decision models
 
 For schemas made of `bool`, `Literal`, and `Enum` fields, use a decision model

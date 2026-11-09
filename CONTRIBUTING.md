@@ -26,8 +26,8 @@ Use existing hooks first: Pydantic fields and validators express output meaning
 and constraints, `instructions` guide interpretation, and `media_type` overrides
 input detection. See the [fine-detail examples](examples/fine_details.md).
 Configured Pydantic AI models are accepted, but settings support depends on the
-dependency version and provider; [#273](https://github.com/Mellow-Artificial-Intelligence/openextract/issues/273)
-tracks that compatibility work. Guidance and type validation do not guarantee
+dependency version and provider; see the [verified example](examples/configured_models.md)
+and [compatibility findings](examples/model_compatibility.md). Guidance and type validation do not guarantee
 factual extraction accuracy.
 
 ### Follow the current call paths
