@@ -27,6 +27,9 @@ and `currency="USD"`. The schema permits `None` for unclear currency.
 Continue with [fine-detail controls](fine_details.md) to tailor these field
 meanings, validate currency, guide interpretation, and override media detection.
 
+For generation behavior, see [configured models](configured_models.md) and the
+[dependency compatibility record](model_compatibility.md).
+
 ## Offline checks
 
 ```bash
