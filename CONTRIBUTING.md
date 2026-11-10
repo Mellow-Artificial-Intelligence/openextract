@@ -42,8 +42,9 @@ or a media override does not change the result type or introduce a result wrappe
   `openai:` select Responses; `ollama:` selects native structured output.
   `Model(api=...)` explicitly overrides the default API.
 - Loading shares media detection: explicit override, file/URL extension, URL
-  content type, then byte sniffing. Inline text must be encoded to bytes; strings
-  are paths or URLs. Async URL fetching uses an async HTTP client, but local file
+  content type, then byte sniffing. Plain strings are UTF-8 text with a default
+  `text/plain` media type; HTTP(S) strings are URLs, and path objects identify
+  local files. Async URL fetching uses an async HTTP client, but local file
   reads inside `extract_async` are synchronous. Callers can preload bytes or
   offload file reads when needed.
 - Explicit decision-model strings select their dedicated request builders. The

@@ -19,12 +19,16 @@ LANDING_SOURCE = "Total due: 120.00"
 EXPECTED = {"vendor": "Acme Paper Co.", "total": "120.00", "currency": "USD"}
 
 
-@pytest.mark.parametrize("entry", ["readme", "landing", "script", "script_path"])
+@pytest.mark.parametrize("entry", ["readme", "landing", "script", "script_path", "script_url"])
 def test_first_extraction(entry, monkeypatch, tmp_path, capsys):
     monkeypatch.setenv("OPENAI_API_KEY", "offline-test-key")
     seen = []
 
     def respond(request):
+        if request.method == "GET":
+            assert request.url == "https://example.com/invoice.txt"
+            assert "authorization" not in request.headers
+            return httpx.Response(200, content=FIXTURE.read_bytes())
         assert request.url == "https://api.openai.com/v1/responses"
         seen.append(json.loads(request.content))
         value = {"total": EXPECTED["total"]} if entry == "landing" else EXPECTED
@@ -39,6 +43,8 @@ def test_first_extraction(entry, monkeypatch, tmp_path, capsys):
             source = tmp_path / "invoice.txt"
             source.write_bytes(FIXTURE.read_bytes())
             argv.append(str(source))
+        elif entry == "script_url":
+            argv.append("https://example.com/invoice.txt")
         monkeypatch.setattr(sys, "argv", argv)
         namespace = runpy.run_path(argv[0], run_name="__main__")
     else:

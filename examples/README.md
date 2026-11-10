@@ -1,8 +1,9 @@
 # First extraction example
 
 The [README quickstart](../README.md#first-extraction) includes the whole fictional
-invoice as text bytes. The [landing page](../docs/index.html) uses the same source,
-schema, model, and typed field access. Neither requires downloading a document.
+invoice as plain text. The [landing page](../docs/index.html) uses a smaller
+plain text example with one Decimal field and the same model. Neither requires
+downloading a document or manually encoding text.
 
 For the checked-in file example, from the repository root:
 
@@ -38,7 +39,7 @@ uv run --no-sync pytest tests/test_quickstart.py
 ```
 
 These tests execute the README and landing-page snippets and the file example,
-including its optional path argument. They use the real extraction function,
+including its optional path and URL arguments. They use the real extraction function,
 source loading, media inference, and Pydantic validation with a local
 `httpx.MockTransport` returning canned expected fields. They check the selected model
 identifier, fixture bytes, typed fields, and printed output. Provider requests

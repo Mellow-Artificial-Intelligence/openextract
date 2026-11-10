@@ -65,8 +65,8 @@ def test_published_controls(guide):
     assert overrides == [None, None, "text/plain"]
     assert [content.data for content in contents] == [
         (ROOT / "examples/fixtures/invoice.txt").read_bytes(),
-        namespace["ambiguous_source"],
-        namespace["source"],
+        namespace["ambiguous_source"].encode(),
+        namespace["source"].encode(),
     ]
     assert all(content.media_type == "text/plain" for content in contents)
     for name in ("invoice", "customized", "explicit_media"):

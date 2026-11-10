@@ -36,7 +36,7 @@ export OPENAI_API_KEY='your-api-key'  # macOS / Linux
 On PowerShell, use `$env:OPENAI_API_KEY = 'your-api-key'` instead.
 
 Save the following as `first_extraction.py`. The fictional invoice is included
-as text bytes, so there is no document to download or missing file to create.
+as plain text, so there is no document to download or missing file to create.
 
 ```python
 from decimal import Decimal
@@ -52,7 +52,7 @@ class Invoice(BaseModel):
     currency: str | None = Field(description="Three-letter currency code, or null if unclear.")
 
 
-source = b"""INVOICE DEMO-001 (fictional sample)
+source = """INVOICE DEMO-001 (fictional sample)
 Seller: Acme Paper Co.
 Bill to: Northwind Studio
 Paper supplies: 100.00 USD
@@ -100,10 +100,10 @@ extract(schema, model, source, instructions=None, *, media_type=None, client=Non
 await extract_async(schema, model, source, instructions=None, *, media_type=None, client=None)
 ```
 
-- **`source`** is where the file is: a path on disk, a `pathlib.Path`, or an `http(s)://` URL. openextract opens it for you. You can also pass the file's raw `bytes`. A string is always treated as a path or URL, never as the document's text; to extract from text you already have, pass `text.encode()`.
+- **`source`** accepts plain text, a `pathlib.Path` (or another `os.PathLike`) for a local file, an `http(s)://` URL, or raw `bytes`. Strings are text unless they start with `http://` or `https://`. Text is encoded as UTF-8 automatically; use `Path("invoice.pdf")` to read a local file.
 - **`model`** is a supported `"provider:model"` string (`"anthropic:claude-sonnet-5"`, `"google-gla:gemini-2.5-pro"`, `"ollama:llama3"`, ...) or an `openextract.Model` configuration.
 - **`instructions`** are optional extra guidance for the model.
-- **`media_type`** is inferred for you. openextract checks the file extension, then the URL's `Content-Type`, then the file's leading bytes (PDF, PNG, JPEG, GIF, WebP, MP3, WAV, FLAC, OGG, MP4, UTF-8 text). Pass it only to override the result.
+- **`media_type`** defaults to `text/plain` for plain strings. For files, URLs, and bytes, openextract checks the file extension, then the URL's `Content-Type`, then the leading bytes (PDF, PNG, JPEG, GIF, WebP, MP3, WAV, FLAC, OGG, MP4, UTF-8 text). Pass it to override the result.
 - **`client`** is an optional `httpx.Client` for `extract`, or `httpx.AsyncClient` for `extract_async`. It is used only for model requests and remains open. Without it, openextract creates and closes a client for each extraction. Source URLs are fetched separately without model credentials.
 
 Media detection does not mean every model accepts every format. Choose a model
@@ -112,7 +112,7 @@ that supports your input and schema.
 ```python
 from pathlib import Path
 
-extract(Invoice, "openai:gpt-5", source="./invoices/2291.pdf")  # file path
+extract(Invoice, "openai:gpt-5", source="Total due: 120.00")  # plain text
 extract(Invoice, "openai:gpt-5", source=Path("invoices") / "2291.pdf")  # pathlib.Path
 extract(Invoice, "anthropic:claude-sonnet-5", source="https://example.com/2291.pdf")  # URL
 extract(Invoice, "openai:gpt-5", source=pdf_bytes, instructions="Amounts are in EUR.")  # bytes
@@ -261,6 +261,7 @@ PDFs, audio, video, and free-form fields are not supported by decision models.
 For example, classify a receipt and check whether it is paid. [Jev](https://openrouter.ai/typesafe/jev-1.14) is also available as `openrouter:typesafe/jev-1.14` or `openrouter:~typesafe/jev-latest`.
 
 ```python
+from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -273,8 +274,8 @@ class Triage(BaseModel):
     is_paid: bool = Field(description="Has the amount been paid in full?")
 
 
-triage = extract(Triage, "openai-decisions:gpt-6-luna", source="./receipt.png")
-# Or: extract(Triage, "openrouter:typesafe/jev-1.14", source="./receipt.png")
+triage = extract(Triage, "openai-decisions:gpt-6-luna", source=Path("receipt.png"))
+# Or: extract(Triage, "openrouter:typesafe/jev-1.14", source=Path("receipt.png"))
 ```
 
 Each field becomes one question, phrased by its `description`. A `bool` field is `True` when the probability of yes is at least 0.5. Other field types raise a `TypeError`. Missing, invalid, or refused OpenAI answers raise `SchemaValidationError`.
@@ -330,6 +331,11 @@ the Pydantic schema/validated-result interface remain available. Provider suppor
 is defined by the adapters above rather than by Pydantic AI's model registry.
 Vertex AI credential handling, SDK-specific configuration, and Logfire integration
 are not bundled. HTTPX clients provide the transport customization boundary.
+
+Plain string sources are now document text, with HTTP(S) URLs still fetched.
+Wrap local file names in `Path(...)`: replace `source="invoice.pdf"` with
+`source=Path("invoice.pdf")`. Missing `Path` inputs still raise `FileNotFoundError`.
+Raw bytes remain supported.
 
 ## Tests
 

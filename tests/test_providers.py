@@ -54,10 +54,10 @@ async def test_adapter_contract(prefix, api, path, auth_header, instructions, as
     transport = httpx.MockTransport(handler)
     if asynchronous:
         async with httpx.AsyncClient(transport=transport) as client:
-            result = await extract_async(Invoice, model, b"Total: 42", instructions, client=client)
+            result = await extract_async(Invoice, model, "Total: 42", instructions, client=client)
     else:
         with httpx.Client(transport=transport) as client:
-            result = extract(Invoice, model, b"Total: 42", instructions, client=client)
+            result = extract(Invoice, model, "Total: 42", instructions, client=client)
     assert result == Invoice(total=42)
     request = seen[0]
     assert request.url.path == path

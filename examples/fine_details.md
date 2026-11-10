@@ -25,7 +25,7 @@ class Invoice(BaseModel):
     currency: str | None = Field(description="Three-letter currency code, or null if unclear.")
 
 
-source = b"""INVOICE DEMO-001 (fictional sample)
+source = """INVOICE DEMO-001 (fictional sample)
 Seller: Acme Paper Co.
 Bill to: Northwind Studio
 Paper supplies: 100.00 USD
@@ -125,7 +125,7 @@ specific to this extraction. Here the source has a dollar sign but no country or
 currency code. The intended currency is `None`, not a guessed USD:
 
 ```python
-ambiguous_source = b"""INVOICE DEMO-002 (fictional sample)
+ambiguous_source = """INVOICE DEMO-002 (fictional sample)
 Seller: Acme Paper Co.
 Bill to: Northwind Studio
 Total due: $120.00

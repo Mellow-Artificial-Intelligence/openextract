@@ -34,11 +34,16 @@ def record(monkeypatch, *, payload=None):
     return seen
 
 
-def test_extracts_from_path(monkeypatch, tmp_path: Path):
+@pytest.mark.parametrize("asynchronous", [False, True])
+async def test_extracts_from_path(monkeypatch, tmp_path: Path, asynchronous):
     path = tmp_path / "invoice.pdf"
     path.write_bytes(PDF_BYTES)
     seen = record(monkeypatch)
-    result = extract(Invoice, configured(), path, "Find the total.")
+    result = (
+        await extract_async(Invoice, configured(), path, "Find the total.")
+        if asynchronous
+        else extract(Invoice, configured(), path, "Find the total.")
+    )
     assert result == Invoice(total=42.0)
     body = json.loads(seen[0].content)
     assert seen[0].url == "https://api.openai.com/v1/responses"
@@ -59,6 +64,33 @@ async def test_extract_async_from_bytes(monkeypatch):
     assert json.loads(seen[0].content)["input"][0]["content"][-1] == {
         "type": "input_image",
         "image_url": "data:image/png;base64,iVBORy4uLi4=",
+    }
+
+
+@pytest.mark.parametrize("asynchronous", [False, True], ids=["sync", "async"])
+@pytest.mark.parametrize(
+    "source",
+    [
+        "Total due: 120.00",
+        "Vendor: Café 東京\nTotal due: 120.00\n",
+        "%PDF is literal text here",
+        '{"total": 120.00}',
+        "x" * 10000,
+        "",
+    ],
+    ids=["plain", "unicode", "signature", "json", "long", "empty"],
+)
+async def test_extracts_plain_text_strings(monkeypatch, asynchronous, source):
+    seen = record(monkeypatch)
+    result = (
+        await extract_async(Invoice, configured(), source)
+        if asynchronous
+        else extract(Invoice, configured(), source)
+    )
+    assert result == Invoice(total=42)
+    assert json.loads(seen[0].content)["input"][0]["content"][-1] == {
+        "type": "input_text",
+        "text": source,
     }
 
 
@@ -256,9 +288,45 @@ def test_aliases_defaults_and_nested_validation(monkeypatch):
     assert result.currency == "EUR"
 
 
-def test_missing_local_file():
+@pytest.mark.parametrize("asynchronous", [False, True])
+async def test_missing_local_file(asynchronous):
     with pytest.raises(FileNotFoundError):
-        extract(Invoice, configured(), "/missing/invoice.pdf")
+        if asynchronous:
+            await extract_async(Invoice, configured(), Path("/missing/invoice.pdf"))
+        else:
+            extract(Invoice, configured(), Path("/missing/invoice.pdf"))
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+async def test_text_can_override_media_type(monkeypatch, asynchronous):
+    seen = record(monkeypatch)
+    source = PDF_BYTES.decode()
+    if asynchronous:
+        result = await extract_async(Invoice, configured(), source, media_type="application/pdf")
+    else:
+        result = extract(Invoice, configured(), source, media_type="application/pdf")
+    assert result.total == 42
+    assert json.loads(seen[0].content)["input"][0]["content"][-1] == {
+        "type": "input_file",
+        "filename": "document.pdf",
+        "file_data": "data:application/pdf;base64,JVBERi0xLjcgZmFrZQ==",
+    }
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+async def test_string_text_never_reads_matching_local_file(monkeypatch, tmp_path, asynchronous):
+    monkeypatch.chdir(tmp_path)
+    Path("invoice.txt").write_text("Private local document")
+    seen = record(monkeypatch)
+    source = "invoice.txt"
+    if asynchronous:
+        await extract_async(Invoice, configured(), source)
+    else:
+        extract(Invoice, configured(), source)
+    assert json.loads(seen[0].content)["input"][0]["content"][-1] == {
+        "type": "input_text",
+        "text": "invoice.txt",
+    }
 
 
 @pytest.mark.parametrize("asynchronous", [False, True])

@@ -16,6 +16,10 @@ timing when that is known.
   page examples checked offline.
 
 ### Changed (breaking)
+- Plain string sources are now document text, encoded to UTF-8 automatically.
+  HTTP(S) strings remain URLs; use `pathlib.Path` or another `os.PathLike` for
+  local files. Raw bytes remain supported. This applies to sync and async calls
+  across general and Decisions adapters.
 - Replaced Pydantic AI and every provider SDK dependency with direct HTTPX
   adapters. Pydantic remains the schema and validation interface. Install plain
   `openextract`; provider extras have been removed.

@@ -59,7 +59,7 @@ def test_decisions_model_fills_choice_and_yes_no_fields(monkeypatch):
     seen: list[httpx.Request] = []
     serve_decisions(monkeypatch, seen)
 
-    result = extract(Triage, "openrouter:typesafe/jev-1.14", b"Receipt. Paid in EUR.", "Be strict.")
+    result = extract(Triage, "openrouter:typesafe/jev-1.14", "Receipt. Paid in EUR.", "Be strict.")
 
     assert result == Triage(document_type="receipt", currency=Currency.EUR, is_paid=True)
     assert seen[0].url == "https://openrouter.ai/api/alpha/decisions"
@@ -170,7 +170,7 @@ def serve_openai_decisions(monkeypatch, seen, payload=None):
 def test_openai_decisions_fills_schema_and_uses_named_answers(monkeypatch):
     seen = []
     serve_openai_decisions(monkeypatch, seen)
-    result = extract(Triage, "openai-decisions:gpt-6-luna", b"Paid receipt in EUR.", "Be strict.")
+    result = extract(Triage, "openai-decisions:gpt-6-luna", "Paid receipt in EUR.", "Be strict.")
 
     assert result == Triage(document_type="receipt", currency=Currency.EUR, is_paid=True)
     assert seen[0].url == "https://api.openai.com/v1/decisions"

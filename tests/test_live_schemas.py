@@ -45,7 +45,7 @@ class Invoice(BaseModel):
 @pytest.mark.parametrize("asynchronous", [False, True], ids=["sync", "async"])
 async def test_live_strict_types_and_discriminated_union(model, asynchronous):
     model = replace(model, max_retries=0, validation_retries=0, timeout=90)
-    source = b"Invoice issued 2026-11-10. Total: 12.50 USD. Paid by card ending in 1234."
+    source = "Invoice issued 2026-11-10. Total: 12.50 USD. Paid by card ending in 1234."
     result = (
         await extract_async(Invoice, model, source)
         if asynchronous

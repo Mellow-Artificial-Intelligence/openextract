@@ -110,7 +110,7 @@ class Invoice(BaseModel):
 invoice = extract(
     Invoice,
     "openai:gpt-5",
-    "Total due: 120.00".encode(),
+    "Total due: 120.00",
 )
 print(invoice.total)</code></pre>
       <p class="result">Expected total: <samp>Decimal("120.00")</samp>.</p>

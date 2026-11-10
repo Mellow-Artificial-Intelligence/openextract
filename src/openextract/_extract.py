@@ -50,12 +50,12 @@ def extract[T: BaseModel](
     media_type: str | None = None,
     client: httpx.Client | None = None,
 ) -> T:
-    """Extract ``schema`` from a file path, ``http(s)://`` URL, or raw bytes.
+    """Extract ``schema`` from plain text, a path object, a URL, or raw bytes.
 
-    A string ``source`` is always a path or URL, never the document's text;
-    pass text you already have as ``text.encode()``. The media type is
-    inferred from the file name, the URL's ``Content-Type``, or the content
-    itself; pass ``media_type`` to override it.
+    Strings are UTF-8 text unless they start with ``http://`` or ``https://``.
+    Use ``pathlib.Path`` or another ``os.PathLike`` object for local files.
+    Text defaults to ``text/plain``. For files, URLs, and bytes, the media type
+    is inferred from the name, URL headers, or content; ``media_type`` overrides it.
     """
     resolved = resolve(model)
     content = _load(source, media_type)
@@ -148,6 +148,8 @@ def _load(source: Source, media_type: str | None) -> Content:
             return _from_response(response, media_type)
     if isinstance(source, bytes):
         return _to_content(source, media_type)
+    if isinstance(source, str):
+        return _to_content(source.encode("utf-8"), media_type or "text/plain")
     path = os.fspath(source)
     return _to_content(Path(path).read_bytes(), media_type, name=path)
 

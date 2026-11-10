@@ -34,7 +34,7 @@ class Invoice(BaseModel):
 
 
 model = Model("anthropic:claude-sonnet-4-5", settings={"max_tokens": 1024})
-source = b"Seller: Acme Paper Co.\nTotal due: 120.00 USD"
+source = "Seller: Acme Paper Co.\nTotal due: 120.00 USD"
 
 invoice = extract(Invoice, model, source)
 print(invoice.total)
