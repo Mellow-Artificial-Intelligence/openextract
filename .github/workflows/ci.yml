@@ -54,7 +54,7 @@ jobs:
           enable-cache: true
           cache-dependency-glob: uv.lock
       - run: uv sync --dev
-      - run: uv run --no-sync pytest --cov=openextract --cov-report=term-missing
+      - run: uv run --no-sync pytest -m "not live" --cov=openextract --cov-report=term-missing
 
   package:
     name: Build and install distributions
@@ -75,7 +75,37 @@ jobs:
           for dist in dist/*.whl dist/*.tar.gz; do
             uv venv --clear .venv-smoke
             uv pip install --python .venv-smoke/bin/python "$dist"
-            .venv-smoke/bin/python -c "import openextract; assert callable(openextract.extract)"
+            .venv-smoke/bin/python - <<'PY'
+          import importlib.metadata
+          import httpx
+          from pydantic import BaseModel
+          from openextract import Model, extract
+
+          installed = {
+              dist.metadata["Name"].lower().replace("_", "-")
+              for dist in importlib.metadata.distributions()
+          }
+          sdks = {
+              "pydantic-ai", "pydantic-ai-slim", "pydantic-graph", "openai",
+              "anthropic", "google-genai", "boto3", "botocore", "cohere", "groq",
+              "huggingface-hub", "mistralai", "xai-sdk",
+          }
+          assert not installed & sdks, installed & sdks
+
+          class Invoice(BaseModel):
+              total: float
+
+          payload = {
+              "status": "completed",
+              "output": [{"type": "message", "content": [
+                  {"type": "output_text", "text": '{"total": 42}'}
+              ]}],
+          }
+          transport = httpx.MockTransport(lambda request: httpx.Response(200, json=payload))
+          with httpx.Client(transport=transport) as client:
+              result = extract(Invoice, Model("openai:test", api_key="test"), b"text", client=client)
+          assert result.total == 42
+          PY
           done
 
   ci:

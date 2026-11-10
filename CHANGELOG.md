@@ -8,10 +8,70 @@ timing when that is known.
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-11-10
+
 ### Changed
+- Simplified the GitHub Pages site to a compact, responsive layout with
+  installation, one self-contained extraction example, and documentation links.
 - Made the first extraction self-contained with an inline fictional invoice, a
   supplied text fixture, single-provider setup, and matching README and landing
   page examples checked offline.
+
+### Changed (breaking)
+- Plain string sources are now document text, encoded to UTF-8 automatically.
+  HTTP(S) strings remain URLs; use `pathlib.Path` or another `os.PathLike` for
+  local files. Raw bytes remain supported. This applies to sync and async calls
+  across general and Decisions adapters.
+- Replaced Pydantic AI and every provider SDK dependency with direct HTTPX
+  adapters. Pydantic remains the schema and validation interface. Install plain
+  `openextract`; provider extras have been removed.
+- Configured Pydantic AI model objects are no longer accepted. Use
+  `openextract.Model` for API selection, custom endpoints, keys, headers,
+  generation settings, timeouts, and retry budgets.
+- Provider support is explicit: Responses, Chat Completions, Anthropic Messages,
+  Gemini, local Ollama, Cohere V2 Chat, Bedrock Converse, and the existing OpenAI
+  and OpenRouter Decisions APIs. Bedrock uses bearer tokens or caller-supplied
+  HTTPX authentication; AWS SDK credential discovery and signing are not bundled.
+- Model HTTP requests retry transient errors twice by default; general extraction
+  retries Pydantic validation once. Refusals and incomplete output fail immediately.
+
+### Added
+- Saved seven synthetic invoice fixtures and expected results, with offline
+  checksum/data checks and a 56-case opt-in provider matrix over OpenAI, Gemini,
+  Anthropic, and Gemini through OpenRouter. `pytest --live` enables actual API
+  calls; normal tests block unmocked HTTPX transports and CI excludes live tests.
+- Optional `Model(output_mode="json_schema")` for compatible Chat Completions
+  endpoints, including Gemini through OpenRouter. Uses a strict `response_format`
+  schema instead of a forced extraction tool; tool calling remains the default.
+- Provider details on `ModelError`: HTTP status, error code, provider name, and
+  normalized/native finish reasons when available. Error messages include selected
+  upstream messages with known credentials redacted.
+- Optional `client` argument on `extract` and `extract_async`, supporting reusable
+  caller-owned HTTPX clients without closing them or using them for source URLs.
+- HTTP request/response contract tests covering all adapters, retries, errors,
+  schema validation, and custom configuration without live provider requests.
+
+### Deprecated
+- `ProviderNotInstalledError` remains importable for compatibility, but HTTP
+  adapters never raise it.
+
+### Fixed
+- Convert nested tagged unions to supported strict JSON Schema for OpenAI
+  Responses and Chat Completions JSON Schema output, preserving Pydantic's final
+  discriminator validation.
+- Validate decoded tool inputs as JSON so strict dates, decimals, and other
+  JSON-representable types work consistently across general adapters. Add six
+  opt-in live schema regression cases alongside the 56 invoice checks.
+- Make operational errors readable and actionable with labeled provider details,
+  field validation summaries, attempt counts, and recovery suggestions. Preserve
+  structured error attributes and chained diagnostics, redact known credentials,
+  and omit raw values from validation summaries and retry feedback.
+- Surface provider error envelopes and Chat Completions generation failures in
+  HTTP 200 responses as `ModelError`, preserving reasons such as
+  `MALFORMED_FUNCTION_CALL` rather than reporting a generic schema failure.
+- Accept complete forced Chat Completions tool calls with `finish_reason="stop"`,
+  as observed with direct OpenAI calls. Refusals, truncated output, and responses
+  without the expected extraction tool call remain rejected.
 
 ## [1.2.0] - 2026-10-25
 
@@ -512,7 +572,9 @@ timing when that is known.
 ## [0.1.1] - 2025-09-10
 - Merge pull request #12 from Mellow-Artificial-Intelligence/new-release.
 
-[Unreleased]: https://github.com/Mellow-Artificial-Intelligence/openextract/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/Mellow-Artificial-Intelligence/openextract/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/Mellow-Artificial-Intelligence/openextract/compare/v1.2.0...v2.0.0
+[1.2.0]: https://github.com/Mellow-Artificial-Intelligence/openextract/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/Mellow-Artificial-Intelligence/openextract/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/Mellow-Artificial-Intelligence/openextract/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/Mellow-Artificial-Intelligence/openextract/compare/v0.15.0...v1.0.0

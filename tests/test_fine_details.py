@@ -1,56 +1,48 @@
 """Check published controls offline, without claiming extraction quality."""
 
+import json
 import re
 from decimal import Decimal
 from pathlib import Path
 
+import httpx
 import pytest
 from pydantic import ValidationError
-from pydantic_ai import BinaryContent, models
-from pydantic_ai.messages import ModelResponse, ToolCallPart
-from pydantic_ai.models.function import FunctionModel
 
 import openextract._extract as extract_module
+from tests.helpers import output, serve
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.fixture
 def guide(monkeypatch):
-    monkeypatch.setattr(models, "ALLOW_MODEL_REQUESTS", False)
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "offline-test-key")
     calls = []
     contents = []
     overrides = []
 
-    def respond(messages, info):
-        content = next(
-            item for item in messages[0].parts[-1].content if isinstance(item, BinaryContent)
-        )
-        contents.append(content)
+    def respond(request):
+        assert request.url == "https://api.openai.com/v1/responses"
+        calls.append(json.loads(request.content))
         # Canned data exercises nullable results; it is not an extraction algorithm.
-        currency = None if len(contents) == 2 else "USD"
-        return ModelResponse(
-            parts=[
-                ToolCallPart(
-                    info.output_tools[0].name,
-                    {"vendor": "Acme Paper Co.", "total": "120.00", "currency": currency},
-                )
-            ]
+        currency = None if len(calls) == 2 else "USD"
+        return httpx.Response(
+            200,
+            json=output(
+                value={"vendor": "Acme Paper Co.", "total": "120.00", "currency": currency}
+            ),
         )
 
-    build_agent = extract_module._build_agent
     load = extract_module._load
-
-    def offline_agent(schema, model, instructions):
-        calls.append((schema, model, instructions))
-        return build_agent(schema, FunctionModel(respond), instructions)
 
     def record_load(source, media_type):
         overrides.append(media_type)
-        return load(source, media_type)
+        content = load(source, media_type)
+        contents.append(content)
+        return content
 
-    monkeypatch.setattr(extract_module, "_build_agent", offline_agent)
+    serve(monkeypatch, respond)
     monkeypatch.setattr(extract_module, "_load", record_load)
     namespace = {}
     blocks = re.findall(
@@ -66,16 +58,15 @@ def test_published_controls(guide):
     namespace, calls, contents, overrides = guide
     invoice_type = namespace["Invoice"]
     instructions = "Preserve names exactly. Do not guess missing or ambiguous currency."
-    assert calls == [
-        (invoice_type, "openai:gpt-5", None),
-        (invoice_type, "openai:gpt-5", instructions),
-        (invoice_type, "openai:gpt-5", None),
-    ]
+    assert len(calls) == 3
+    assert [call.get("instructions") for call in calls] == [None, instructions, None]
+    assert all(call["model"] == "gpt-5" for call in calls)
+    assert all(call["text"]["format"]["schema"]["title"] == "Invoice" for call in calls)
     assert overrides == [None, None, "text/plain"]
     assert [content.data for content in contents] == [
         (ROOT / "examples/fixtures/invoice.txt").read_bytes(),
-        namespace["ambiguous_source"],
-        namespace["source"],
+        namespace["ambiguous_source"].encode(),
+        namespace["source"].encode(),
     ]
     assert all(content.media_type == "text/plain" for content in contents)
     for name in ("invoice", "customized", "explicit_media"):

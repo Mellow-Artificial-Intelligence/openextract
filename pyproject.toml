@@ -1,6 +1,6 @@
 [project]
 name = "openextract"
-version = "1.2.0"
+version = "2.0.0"
 description = "Extract structured data from documents, images, audio, and video using LLMs"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -21,23 +21,6 @@ classifiers = [
 dependencies = [
     "httpx>=0.28.1",
     "pydantic>=2.12.5",
-    "pydantic-ai-slim>=1.37.0,<3",
-]
-
-[project.optional-dependencies]
-openai = ["pydantic-ai-slim[openai]>=1.37.0,<3"]
-anthropic = ["pydantic-ai-slim[anthropic]>=1.37.0,<3"]
-google = ["pydantic-ai-slim[google]>=1.37.0,<3"]
-bedrock = ["pydantic-ai-slim[bedrock]>=1.37.0,<3"]
-cohere = ["pydantic-ai-slim[cohere]>=1.37.0,<3"]
-groq = ["pydantic-ai-slim[groq]>=1.37.0,<3"]
-huggingface = ["pydantic-ai-slim[huggingface]>=1.37.0,<3"]
-mistral = ["pydantic-ai-slim[mistral]>=1.37.0,<3"]
-openrouter = ["pydantic-ai-slim[openrouter]>=1.37.0,<3"]
-xai = ["pydantic-ai-slim[xai]>=1.37.0,<3"]
-logfire = ["pydantic-ai-slim[logfire]>=1.37.0,<3"]
-all = [
-    "pydantic-ai-slim[anthropic,bedrock,cohere,google,groq,huggingface,logfire,mistral,openai,openrouter,xai]>=1.37.0,<3",
 ]
 
 [project.urls]
@@ -61,7 +44,6 @@ dev = [
     "pytest-cov>=7.1.0",
     "ruff>=0.14.10",
     "ty>=0.0.35",
-    "pydantic-ai-slim[anthropic,bedrock,cohere,google,groq,huggingface,logfire,mistral,openai,openrouter,xai]>=1.37.0,<3",
 ]
 
 [tool.ty]
@@ -90,6 +72,7 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 testpaths = ["tests"]
 pythonpath = ["src"]
 asyncio_mode = "auto"
+markers = ["live: opt-in provider API calls (requires --live and provider credentials)"]
 
 [tool.coverage.run]
 branch = true

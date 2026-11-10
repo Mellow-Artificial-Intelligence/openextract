@@ -1,0 +1,19 @@
+{
+  "vendor": "Cedar Office Supplies",
+  "invoice_number": "INV-1042",
+  "total": 42.5,
+  "currency": "USD",
+  "is_paid": true,
+  "items": [
+    {
+      "description": "Notebook",
+      "quantity": 2,
+      "unit_price": 12.5
+    },
+    {
+      "description": "Desk lamp",
+      "quantity": 1,
+      "unit_price": 17.5
+    }
+  ]
+}

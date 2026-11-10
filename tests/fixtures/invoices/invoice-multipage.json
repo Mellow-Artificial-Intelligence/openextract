@@ -1,0 +1,54 @@
+{
+  "vendor": "Cedar Office Supplies",
+  "invoice_number": "INV-1043",
+  "total": 108.5,
+  "currency": "USD",
+  "is_paid": true,
+  "items": [
+    {
+      "description": "Notebook",
+      "quantity": 2,
+      "unit_price": 12.5
+    },
+    {
+      "description": "Desk lamp",
+      "quantity": 1,
+      "unit_price": 17.5
+    },
+    {
+      "description": "Stapler",
+      "quantity": 1,
+      "unit_price": 8.0
+    },
+    {
+      "description": "Pens",
+      "quantity": 3,
+      "unit_price": 2.5
+    },
+    {
+      "description": "Binder",
+      "quantity": 4,
+      "unit_price": 3.25
+    },
+    {
+      "description": "Paper ream",
+      "quantity": 2,
+      "unit_price": 6.0
+    },
+    {
+      "description": "Mouse pad",
+      "quantity": 1,
+      "unit_price": 9.0
+    },
+    {
+      "description": "USB cable",
+      "quantity": 2,
+      "unit_price": 4.75
+    },
+    {
+      "description": "Label roll",
+      "quantity": 2,
+      "unit_price": 3.5
+    }
+  ]
+}

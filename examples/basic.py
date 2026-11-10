@@ -1,8 +1,8 @@
 """Extract the supplied fictional invoice, or a file path / URL of your own.
 
 From the repository root, after setting OPENAI_API_KEY:
-    uv run --extra openai python examples/basic.py
-    uv run --extra openai python examples/basic.py examples/fixtures/invoice.txt
+    uv run python examples/basic.py
+    uv run python examples/basic.py examples/fixtures/invoice.txt
 """
 
 import sys
@@ -21,7 +21,11 @@ class Invoice(BaseModel):
 
 
 if __name__ == "__main__":
-    source = sys.argv[1] if len(sys.argv) > 1 else Path(__file__).parent / "fixtures/invoice.txt"
+    if len(sys.argv) > 1:
+        argument = sys.argv[1]
+        source = argument if argument.startswith(("http://", "https://")) else Path(argument)
+    else:
+        source = Path(__file__).parent / "fixtures/invoice.txt"
     invoice = extract(Invoice, "openai:gpt-5", source)
     print(invoice.vendor)
     print(invoice.total)

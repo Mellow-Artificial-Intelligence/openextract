@@ -1,0 +1,122 @@
+{
+  "files": [
+    {
+      "id": "digital_pdf",
+      "file": "invoice.pdf",
+      "expected": "invoice.json",
+      "media_type": "application/pdf",
+      "sha256": "ab2b320cdcfbb19585941360926ade1885c07dcfe60c027518e3c8de06a25583"
+    },
+    {
+      "id": "png",
+      "file": "invoice.png",
+      "expected": "invoice.json",
+      "media_type": "image/png",
+      "sha256": "f5dc6fc5b9111d7d98c89eb871f9f3fe6b903e06bc2947bfeb73706219c09474"
+    },
+    {
+      "id": "jpeg",
+      "file": "invoice.jpg",
+      "expected": "invoice.json",
+      "media_type": "image/jpeg",
+      "sha256": "65a4d6d3430f234acf9237ab798a0a0ad2df501d7037e43ce99fae61e254552b"
+    },
+    {
+      "id": "multipage_pdf",
+      "file": "invoice-multipage.pdf",
+      "expected": "invoice-multipage.json",
+      "media_type": "application/pdf",
+      "sha256": "403e0fc535108547e83fe8369ff3d32cb6cf28394a2ee725b335b17ad1232ae7"
+    },
+    {
+      "id": "scanned_pdf",
+      "file": "invoice-single-scanned.pdf",
+      "expected": "invoice.json",
+      "media_type": "application/pdf",
+      "sha256": "f4091f5009b3b05b80421c5672ad3a9a01333566b468461a6bf92a77e1c21544"
+    },
+    {
+      "id": "scanned_multipage_pdf",
+      "file": "invoice-multipage-scanned.pdf",
+      "expected": "invoice-multipage.json",
+      "media_type": "application/pdf",
+      "sha256": "9b168c8eae055087ab1325c3f68820d5101ffae8cbad076d007ac2ab4fd63b70"
+    },
+    {
+      "id": "degraded_scanned_pdf",
+      "file": "invoice-multipage-scanned-degraded.pdf",
+      "expected": "invoice-multipage.json",
+      "media_type": "application/pdf",
+      "sha256": "a845c61abbf156b0cd4033aedc3c6f289d4911882e27c6d722522d2d3c24086a"
+    }
+  ],
+  "pdf_metadata": {
+    "invoice-multipage.pdf": {
+      "pages": 3,
+      "scanned": false,
+      "text_characters_per_page": [
+        332,
+        326,
+        339
+      ],
+      "embedded_images_per_page": [
+        0,
+        0,
+        0
+      ]
+    },
+    "invoice-single-scanned.pdf": {
+      "pages": 1,
+      "scanned": true,
+      "text_characters_per_page": [
+        0
+      ],
+      "embedded_images_per_page": [
+        1
+      ]
+    },
+    "invoice-multipage-scanned.pdf": {
+      "pages": 3,
+      "scanned": true,
+      "text_characters_per_page": [
+        0,
+        0,
+        0
+      ],
+      "embedded_images_per_page": [
+        1,
+        1,
+        1
+      ]
+    },
+    "invoice-multipage-scanned-degraded.pdf": {
+      "pages": 3,
+      "scanned": true,
+      "text_characters_per_page": [
+        0,
+        0,
+        0
+      ],
+      "embedded_images_per_page": [
+        1,
+        1,
+        1
+      ]
+    },
+    "invoice.pdf": {
+      "pages": 1,
+      "scanned": false
+    }
+  },
+  "degraded_scan": {
+    "dpi": 110,
+    "color": "grayscale",
+    "rotation_degrees": [
+      0.8,
+      -0.6,
+      0.7
+    ],
+    "jpeg_quality": 65,
+    "blur_radius": 0.25
+  }
+}

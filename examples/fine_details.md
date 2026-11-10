@@ -25,7 +25,7 @@ class Invoice(BaseModel):
     currency: str | None = Field(description="Three-letter currency code, or null if unclear.")
 
 
-source = b"""INVOICE DEMO-001 (fictional sample)
+source = """INVOICE DEMO-001 (fictional sample)
 Seller: Acme Paper Co.
 Bill to: Northwind Studio
 Paper supplies: 100.00 USD
@@ -125,7 +125,7 @@ specific to this extraction. Here the source has a dollar sign but no country or
 currency code. The intended currency is `None`, not a guessed USD:
 
 ```python
-ambiguous_source = b"""INVOICE DEMO-002 (fictional sample)
+ambiguous_source = """INVOICE DEMO-002 (fictional sample)
 Seller: Acme Paper Co.
 Bill to: Northwind Studio
 Total due: $120.00
@@ -180,7 +180,7 @@ uv run --no-sync pytest tests/test_fine_details.py
 ```
 
 The checks execute every Python block with provider requests disabled, using
-canned responses through a local `FunctionModel`. They check call wiring, typed
+canned responses through `httpx.MockTransport`. They check call wiring, typed
 results, required/null/default behavior, and validator rejection. They do **not**
 measure extraction quality. Expected values are read from the fictional sources;
 no live provider quality check was run for this guide. See the

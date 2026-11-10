@@ -1,14 +1,15 @@
 # First extraction example
 
 The [README quickstart](../README.md#first-extraction) includes the whole fictional
-invoice as text bytes. The [landing page](../docs/index.html) uses the same source,
-schema, model, and typed field access. Neither requires downloading a document.
+invoice as plain text. The [landing page](../docs/index.html) uses a smaller
+plain text example with one Decimal field and the same model. Neither requires
+downloading a document or manually encoding text.
 
 For the checked-in file example, from the repository root:
 
 ```bash
 export OPENAI_API_KEY='your-api-key'  # macOS / Linux
-uv run --extra openai python examples/basic.py
+uv run python examples/basic.py
 ```
 
 On PowerShell, set `$env:OPENAI_API_KEY = 'your-api-key'` instead. This requires
@@ -17,7 +18,7 @@ The script locates `fixtures/invoice.txt` relative to itself. You can also suppl
 a path or URL as the first argument; supported formats depend on the model:
 
 ```bash
-uv run --extra openai python examples/basic.py examples/fixtures/invoice.txt
+uv run python examples/basic.py examples/fixtures/invoice.txt
 ```
 
 All names and amounts in the fixture are fictional. The expected fields are
@@ -28,7 +29,7 @@ Continue with [fine-detail controls](fine_details.md) to tailor these field
 meanings, validate currency, guide interpretation, and override media detection.
 
 For generation behavior, see [configured models](configured_models.md) and the
-[dependency compatibility record](model_compatibility.md).
+[HTTP adapter compatibility limits](model_compatibility.md).
 
 ## Offline checks
 
@@ -38,9 +39,9 @@ uv run --no-sync pytest tests/test_quickstart.py
 ```
 
 These tests execute the README and landing-page snippets and the file example,
-including its optional path argument. They use the real extraction function,
+including its optional path and URL arguments. They use the real extraction function,
 source loading, media inference, and Pydantic validation with a local
-`FunctionModel` returning canned expected fields. They check the selected model
+`httpx.MockTransport` returning canned expected fields. They check the selected model
 identifier, fixture bytes, typed fields, and printed output. Provider requests
 are disabled, and no API key is needed. These checks run in ordinary CI.
 
