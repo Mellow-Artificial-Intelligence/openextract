@@ -9,8 +9,8 @@ timing when that is known.
 ## [Unreleased]
 
 ### Changed
-- Simplified the GitHub Pages site to installation, one self-contained extraction
-  example, and a link to the full documentation.
+- Simplified the GitHub Pages site to a compact, responsive layout with
+  installation, one self-contained extraction example, and documentation links.
 - Made the first extraction self-contained with an inline fictional invoice, a
   supplied text fixture, single-provider setup, and matching README and landing
   page examples checked offline.

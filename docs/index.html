@@ -22,42 +22,55 @@
     }
     * { box-sizing: border-box; }
     html { background: var(--paper); -webkit-text-size-adjust: 100%; }
-    body { max-width: 768px; margin: 0 auto; padding: 0 24px; color: var(--ink); font: 400 16px/1.6 var(--sans); }
+    body { display: flex; flex-direction: column; min-height: 100svh; max-width: 1120px; margin: 0 auto; padding: 0 28px; color: var(--ink); font: 400 16px/1.6 var(--sans); }
     a { color: inherit; text-underline-offset: 4px; }
     a:hover { text-decoration-thickness: 2px; }
     :focus-visible { outline: 2px solid var(--ink); outline-offset: 4px; }
     ::selection { background: var(--lavender); }
-    header { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 32px 0; }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 20px 0; }
     .mark { font: 500 20px/1.4 var(--mono); letter-spacing: -.05em; text-decoration: none; }
     nav { display: flex; gap: 24px; font-size: 14px; }
     nav a { display: inline-flex; align-items: center; min-height: 44px; }
     .skip-link { position: absolute; top: 8px; padding: 8px; background: var(--paper); transform: translateY(-160%); }
     .skip-link:focus { transform: none; }
-    .intro { margin: 44px 0 36px; }
-    h1 { margin: 0 0 20px; font-size: clamp(40px, 7vw, 60px); font-weight: 500; line-height: 1.08; letter-spacing: -.055em; }
-    .intro p { max-width: 48ch; margin: 0; color: var(--muted); font-size: 18px; }
-    .install { display: flex; align-items: stretch; justify-content: space-between; gap: 12px; padding: 6px 6px 6px 20px; background: var(--lavender); }
+    main { flex: 1; display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); align-items: center; gap: 48px; padding: 24px 0; }
+    .overview, .example { min-width: 0; }
+    .intro { margin-bottom: 28px; }
+    h1 { margin: 0 0 16px; font-size: clamp(40px, 5vw, 58px); font-weight: 500; line-height: 1.06; letter-spacing: -.055em; }
+    .intro p { max-width: 34ch; margin: 0; color: var(--muted); font-size: 18px; }
+    .install { display: flex; align-items: stretch; justify-content: space-between; gap: 12px; padding: 4px 4px 4px 16px; background: var(--lavender); }
     .install code { align-self: center; padding: 10px 0; white-space: nowrap; }
     code, samp { font-family: var(--mono); font-size: .85em; }
     button { min-width: 64px; min-height: 44px; padding: 0 12px; border: 0; background: transparent; color: var(--ink); font: 500 12px var(--mono); cursor: pointer; }
     button:hover { background: var(--sage); }
-    .setup { margin: 16px 0 36px; color: var(--muted); font-size: 14px; }
-    h2 { margin: 0 0 12px; font-size: 16px; font-weight: 500; }
-    pre { margin: 0; padding: 24px; overflow-x: auto; background: var(--panel); font: 400 13px/1.75 var(--mono); tab-size: 4; }
+    .setup { margin: 12px 0 0; color: var(--muted); font-size: 13px; }
+    h2 { margin: 0 0 10px; font-size: 15px; font-weight: 500; }
+    pre { margin: 0; padding: 24px; overflow-x: auto; background: var(--panel); font: 400 13px/1.65 var(--mono); tab-size: 4; }
     pre code { font: inherit; }
-    .result { margin: 16px 0 0; color: var(--muted); font-size: 14px; }
+    .result { margin: 10px 0 0; color: var(--muted); font-size: 13px; }
     .result samp { color: var(--ink); }
-    .more { margin: 32px 0 0; }
-    .more a { display: inline-flex; align-items: center; min-height: 44px; font-weight: 500; }
-    footer { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px 20px; margin-top: 48px; padding: 24px 0 32px; border-top: 1px solid var(--rule); color: var(--muted); font-size: 13px; }
-    @media (max-width: 480px) {
-      header { padding-top: 24px; }
+    footer { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px 20px; padding: 12px 0; border-top: 1px solid var(--rule); color: var(--muted); font-size: 12px; }
+    @media (max-width: 700px) {
+      body { max-width: 440px; padding-inline: 20px; }
+      header { padding-block: 12px; }
       nav { gap: 16px; }
-      .intro { margin-top: 28px; }
-      .intro p { font-size: 16px; }
-      .install { padding-left: 14px; gap: 4px; }
+      main { grid-template-columns: minmax(0, 1fr); align-content: center; gap: 20px; padding-block: 12px; }
+      .intro { margin-bottom: 20px; }
+      h1 { margin-bottom: 10px; font-size: 36px; line-height: 1.04; }
+      .intro p { font-size: 15px; line-height: 1.5; }
+      .install { padding-left: 12px; gap: 4px; }
       .install code { font-size: 12px; }
-      pre { padding: 20px 16px; font-size: 12px; }
+      .setup { margin-top: 10px; font-size: 12px; line-height: 1.5; }
+      h2 { margin-bottom: 8px; font-size: 14px; }
+      pre { padding: 16px; font-size: 12px; line-height: 1.5; }
+      .result { margin-top: 8px; }
+    }
+    @media (max-width: 700px) and (max-height: 700px) {
+      header { padding-block: 8px; }
+      main { gap: 12px; padding-block: 4px; }
+      .intro { margin-bottom: 16px; }
+      h1 { font-size: 32px; }
+      footer { padding-block: 8px; }
     }
   </style>
 </head>
@@ -72,47 +85,39 @@
   </header>
 
   <main id="main">
-    <div class="intro">
-      <h1>Files in.<br>Structured data out.</h1>
-      <p>Define a Pydantic schema, choose a model, and get a validated Python object from your documents, images, audio, or video.</p>
+    <div class="overview">
+      <div class="intro">
+        <h1>Files in.<br>Typed data out.</h1>
+        <p>Turn files into validated Pydantic models.</p>
+      </div>
+
+      <div class="install">
+        <code id="install-cmd">pip install openextract</code>
+        <button id="copy-install" type="button" aria-label="Copy install command" aria-live="polite" hidden>Copy</button>
+      </div>
+      <p class="setup">Set <code>OPENAI_API_KEY</code> to run the paid OpenAI example. See <a href="https://github.com/Mellow-Artificial-Intelligence/openextract#readme">the docs</a> for more models and input formats.</p>
     </div>
 
-    <div class="install">
-      <code id="install-cmd">pip install openextract</code>
-      <button id="copy-install" type="button" aria-label="Copy install command" aria-live="polite" hidden>Copy</button>
-    </div>
-    <p class="setup">Python 3.12+. Set <code>OPENAI_API_KEY</code> to your OpenAI key, then run the example below. It uses <code>gpt-5</code> and makes a paid API request.</p>
-
-    <section aria-labelledby="example-title">
+    <section class="example" aria-labelledby="example-title">
       <h2 id="example-title">Your schema. One function.</h2>
 <pre tabindex="0" role="region" aria-label="Python extraction example"><code>from decimal import Decimal
-
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from openextract import extract
 
-
 class Invoice(BaseModel):
-    vendor: str
-    total: Decimal = Field(description="Amount without currency text.")
-    currency: str
+    total: Decimal
 
-
-source = b"""Seller: Acme Paper Co.
-Total due: 120.00 USD
-"""
-
-invoice = extract(Invoice, "openai:gpt-5", source)
-print(invoice.vendor)
-print(invoice.total)
-print(invoice.currency)</code></pre>
-      <p class="result">Expected output: <samp>Acme Paper Co.</samp>, <samp>120.00</samp>, <samp>USD</samp>.</p>
+invoice = extract(
+    Invoice, "openai:gpt-5",
+    b"Total due: 120.00",
+)
+print(invoice.total)</code></pre>
+      <p class="result">Expected total: <samp>Decimal("120.00")</samp>.</p>
     </section>
-
-    <p class="more"><a href="https://github.com/Mellow-Artificial-Intelligence/openextract#readme">Read the full documentation <span aria-hidden="true">&nbsp;→</span></a></p>
   </main>
 
   <footer>
-    <span>Input support depends on your model.</span>
+    <span>Python 3.12+</span>
     <span><a href="https://pypi.org/project/openextract/">PyPI</a> · <a href="https://github.com/Mellow-Artificial-Intelligence/openextract/blob/main/LICENSE">MIT license</a></span>
   </footer>
 
