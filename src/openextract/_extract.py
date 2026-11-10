@@ -1,29 +1,24 @@
-"""Turn any file into a validated Pydantic model with one LLM call."""
+"""Turn files into validated Pydantic models over HTTP."""
 
 from __future__ import annotations
 
 import mimetypes
 import os
 from collections.abc import Generator
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
-from typing import cast
+from typing import Any
 
 import httpx
-from pydantic import BaseModel
-from pydantic_ai import Agent, BinaryContent
-from pydantic_ai.exceptions import ModelAPIError, UnexpectedModelBehavior
-from pydantic_ai.models import Model
-from pydantic_ai.output import NativeOutput
+from pydantic import BaseModel, ValidationError
 
-from . import _openai_decisions
-from ._decisions import decide, decide_async, is_decisions_model
+from . import _decisions, _openai_decisions, _providers, _transport
+from ._content import Content
 from .exceptions import (
     ExtractionError,
-    ModelError,
-    ProviderNotInstalledError,
     SchemaValidationError,
 )
+from .models import Model, ResolvedModel, resolve
 
 type Source = str | os.PathLike[str] | bytes
 
@@ -51,6 +46,7 @@ def extract[T: BaseModel](
     instructions: str | None = None,
     *,
     media_type: str | None = None,
+    client: httpx.Client | None = None,
 ) -> T:
     """Extract ``schema`` from a file path, ``http(s)://`` URL, or raw bytes.
 
@@ -59,14 +55,23 @@ def extract[T: BaseModel](
     inferred from the file name, the URL's ``Content-Type``, or the content
     itself; pass ``media_type`` to override it.
     """
+    resolved = resolve(model)
     content = _load(source, media_type)
-    if _openai_decisions.is_openai_decisions_model(model):
-        return _openai_decisions.decide(schema, model, content, _PROMPT, instructions)
-    if is_decisions_model(model):
-        return decide(schema, model, content, _PROMPT, instructions)
-    with _model_errors():
-        agent = _build_agent(schema, model, instructions)
-        return cast(T, agent.run_sync([_PROMPT, content]).output)
+    path, body = _prepare(schema, resolved, content, instructions)
+    with nullcontext(client) if client is not None else httpx.Client() as session:
+        for attempt in range(resolved.config.validation_retries + 1):
+            try:
+                payload = _transport.post(resolved, path, body, session)
+                return _validate(schema, resolved, payload)
+            except ValidationError as exc:
+                if attempt == resolved.config.validation_retries:
+                    raise SchemaValidationError(
+                        "The model output did not match the schema."
+                    ) from exc
+                path, body = _prepare(schema, resolved, content, _feedback(instructions, exc))
+            except (KeyError, IndexError, TypeError, ValueError, AttributeError) as exc:
+                raise SchemaValidationError(f"Invalid model response: {exc}") from exc
+    raise AssertionError("Unreachable")  # pragma: no cover
 
 
 async def extract_async[T: BaseModel](
@@ -76,24 +81,66 @@ async def extract_async[T: BaseModel](
     instructions: str | None = None,
     *,
     media_type: str | None = None,
+    client: httpx.AsyncClient | None = None,
 ) -> T:
     """Async version of :func:`extract`."""
+    resolved = resolve(model)
     content = await _load_async(source, media_type)
-    if _openai_decisions.is_openai_decisions_model(model):
-        return await _openai_decisions.decide_async(schema, model, content, _PROMPT, instructions)
-    if is_decisions_model(model):
-        return await decide_async(schema, model, content, _PROMPT, instructions)
-    with _model_errors():
-        agent = _build_agent(schema, model, instructions)
-        result = await agent.run([_PROMPT, content])
-        return cast(T, result.output)
+    path, body = _prepare(schema, resolved, content, instructions)
+    async with nullcontext(client) if client is not None else httpx.AsyncClient() as session:
+        for attempt in range(resolved.config.validation_retries + 1):
+            try:
+                payload = await _transport.post_async(resolved, path, body, session)
+                return _validate(schema, resolved, payload)
+            except ValidationError as exc:
+                if attempt == resolved.config.validation_retries:
+                    raise SchemaValidationError(
+                        "The model output did not match the schema."
+                    ) from exc
+                path, body = _prepare(schema, resolved, content, _feedback(instructions, exc))
+            except (KeyError, IndexError, TypeError, ValueError, AttributeError) as exc:
+                raise SchemaValidationError(f"Invalid model response: {exc}") from exc
+    raise AssertionError("Unreachable")  # pragma: no cover
+
+
+def _prepare(
+    schema: type[BaseModel], model: ResolvedModel, content: Content, instructions: str | None
+) -> tuple[str, dict[str, Any]]:
+    if model.api == "openai-decisions":
+        body = _openai_decisions._request_body(
+            schema, model.model_name, content, _PROMPT, instructions
+        )
+    elif model.api == "openrouter-decisions":
+        body = _decisions._request_body(schema, model.model_name, content, _PROMPT, instructions)
+    else:
+        return _providers.build(model, schema.model_json_schema(), content, _PROMPT, instructions)
+    if model.config.settings:
+        raise ValueError("Model settings are not supported by decisions adapters.")
+    return "/decisions", body
+
+
+def _validate[T: BaseModel](schema: type[T], model: ResolvedModel, payload: dict[str, Any]) -> T:
+    if model.api == "openai-decisions":
+        return _openai_decisions._parse(schema, payload)
+    if model.api == "openrouter-decisions":
+        return _decisions._parse(schema, payload)
+    output = _providers.parse(model, payload)
+    if isinstance(output, str):
+        return schema.model_validate_json(output)
+    return schema.model_validate(output)
+
+
+def _feedback(instructions: str | None, error: ValidationError) -> str:
+    # Do not echo the provider's raw output back in error messages or retry instructions.
+    errors = error.errors(include_input=False, include_url=False, include_context=False)
+    return f"{instructions or _PROMPT}\nCorrect these output validation errors: {errors}"
 
 
 def _is_url(source: Source) -> bool:
     return isinstance(source, str) and source.startswith(("http://", "https://"))
 
 
-def _load(source: Source, media_type: str | None) -> BinaryContent:
+def _load(source: Source, media_type: str | None) -> Content:
     if _is_url(source):
         with _fetch_errors():
             response = httpx.get(str(source), follow_redirects=True, timeout=_URL_TIMEOUT_SECONDS)
@@ -104,7 +151,7 @@ def _load(source: Source, media_type: str | None) -> BinaryContent:
     return _to_content(Path(path).read_bytes(), media_type, name=path)
 
 
-async def _load_async(source: Source, media_type: str | None) -> BinaryContent:
+async def _load_async(source: Source, media_type: str | None) -> Content:
     if not _is_url(source):
         return _load(source, media_type)
     with _fetch_errors():
@@ -113,7 +160,7 @@ async def _load_async(source: Source, media_type: str | None) -> BinaryContent:
         return _from_response(response, media_type)
 
 
-def _from_response(response: httpx.Response, media_type: str | None) -> BinaryContent:
+def _from_response(response: httpx.Response, media_type: str | None) -> Content:
     response.raise_for_status()
     header = response.headers.get("content-type", "").split(";")[0].strip().lower()
     return _to_content(
@@ -130,12 +177,12 @@ def _to_content(
     *,
     name: str | None = None,
     header: str | None = None,
-) -> BinaryContent:
+) -> Content:
     guessed = mimetypes.guess_type(name)[0] if name else None
     resolved = media_type or guessed or header or _sniff(data)
     if resolved is None:
         raise ValueError("Could not infer the media type; pass media_type explicitly.")
-    return BinaryContent(data=data, media_type=resolved)
+    return Content(data=data, media_type=resolved)
 
 
 def _sniff(data: bytes) -> str | None:
@@ -154,38 +201,9 @@ def _sniff(data: bytes) -> str | None:
     return "text/plain"
 
 
-def _build_agent(
-    schema: type[BaseModel], model: str | Model, instructions: str | None
-) -> Agent[None, BaseModel]:
-    output_type: object = schema
-    if isinstance(model, str):
-        if model.startswith("ollama:"):
-            output_type = NativeOutput(schema)
-        # Documents, audio, and video are best supported on the OpenAI Responses API.
-        if model.startswith("openai:"):
-            model = "openai-responses:" + model.removeprefix("openai:")
-    try:
-        return Agent(model, output_type=output_type, instructions=instructions)
-    except ImportError as exc:
-        raise ProviderNotInstalledError(
-            f"The provider SDK for {model!r} is not installed ({exc}). "
-            "Install its extra, e.g. pip install 'openextract[openai]', or 'openextract[all]'."
-        ) from exc
-
-
 @contextmanager
 def _fetch_errors() -> Generator[None]:
     try:
         yield
     except httpx.HTTPError as exc:
         raise ExtractionError(f"Could not fetch the URL: {exc}") from exc
-
-
-@contextmanager
-def _model_errors() -> Generator[None]:
-    try:
-        yield
-    except UnexpectedModelBehavior as exc:
-        raise SchemaValidationError(str(exc)) from exc
-    except ModelAPIError as exc:
-        raise ModelError(str(exc)) from exc

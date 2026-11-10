@@ -180,7 +180,7 @@ uv run --no-sync pytest tests/test_fine_details.py
 ```
 
 The checks execute every Python block with provider requests disabled, using
-canned responses through a local `FunctionModel`. They check call wiring, typed
+canned responses through `httpx.MockTransport`. They check call wiring, typed
 results, required/null/default behavior, and validator rejection. They do **not**
 measure extraction quality. Expected values are read from the fictional sources;
 no live provider quality check was run for this guide. See the

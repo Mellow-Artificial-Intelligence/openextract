@@ -137,7 +137,7 @@
       <h1 class="headline">Your source.<br><span class="quiet">Structured data.</span></h1>
       <p>Turn sources your chosen model supports into validated Pydantic models.</p>
       <div class="install">
-        <code id="install-cmd">pip install 'openextract[openai]'</code>
+        <code id="install-cmd">pip install openextract</code>
         <button class="copy" id="copy-install" type="button" aria-live="polite">Copy</button>
       </div>
       <a class="example-link" href="#example">See how it works <span aria-hidden="true">↓</span></a>
@@ -207,13 +207,14 @@ print(invoice.currency)  # str | None: USD</code></pre>
       <details>
         <summary class="grid"><span class="question">What do I pass in?</span><span class="sign" aria-hidden="true"></span></summary>
         <div class="answer grid">
-<pre tabindex="0" role="region" aria-label="Code example"><code>extract(schema, model, source, instructions=<span class="d">None</span>, *, media_type=<span class="d">None</span>)</code></pre>
+<pre tabindex="0" role="region" aria-label="Code example"><code>extract(schema, model, source, instructions=<span class="d">None</span>, *, media_type=<span class="d">None</span>, client=<span class="d">None</span>)</code></pre>
           <dl class="spec">
             <div><dt>schema</dt><dd>The Pydantic model you want back.</dd></div>
-            <div><dt>model</dt><dd>A pydantic-ai model string like "anthropic:claude-sonnet-5", or a configured Model.</dd></div>
+            <div><dt>model</dt><dd>A supported provider:model string like "anthropic:claude-sonnet-5", or an openextract.Model configuration. Requests use HTTPX directly.</dd></div>
             <div><dt>source</dt><dd>Where the file is: a path like "./invoice.pdf", a pathlib.Path, or an https:// URL. Or the file's raw bytes. A string is never read as the document's text.</dd></div>
             <div><dt>instructions</dt><dd>Optional guidance, like "Amounts are in EUR."</dd></div>
-            <div><dt>media_type</dt><dd>Only needed to override what openextract infers.</dd></div>
+            <div><dt>media_type</dt><dd>Only needed to override what openextract infers. Provider and model media support varies.</dd></div>
+            <div><dt>client</dt><dd>An optional HTTPX Client, or AsyncClient for extract_async. Used only for model requests and left open.</dd></div>
           </dl>
         </div>
       </details>
@@ -229,11 +230,11 @@ print(invoice.currency)  # str | None: USD</code></pre>
       <details>
         <summary class="grid"><span class="question">What happens when it fails?</span><span class="sign" aria-hidden="true"></span></summary>
         <div class="answer grid">
-          <p>Every error subclasses ExtractionError and keeps the original exception as its cause.</p>
+          <p>Operational errors subclass ExtractionError and chain underlying errors when available. Invalid configuration or unsupported media raises ValueError; local file errors keep their standard Python types.</p>
           <dl class="spec">
-            <div><dt>ModelError</dt><dd>The provider returns an error.</dd></div>
+            <div><dt>ModelError</dt><dd>A model request fails or the provider reports an HTTP or generation error. Selected upstream messages and native finish reasons are preserved.</dd></div>
             <div><dt>SchemaValidationError</dt><dd>The output doesn't match your schema.</dd></div>
-            <div><dt>ProviderNotInstalledError</dt><dd>The provider's SDK isn't installed.</dd></div>
+            <div><dt>ProviderNotInstalledError</dt><dd>Deprecated compatibility export; HTTP adapters do not raise it.</dd></div>
             <div><dt>ExtractionError</dt><dd>A URL can't be fetched.</dd></div>
           </dl>
         </div>
@@ -241,9 +242,9 @@ print(invoice.currency)  # str | None: USD</code></pre>
       <details>
         <summary class="grid"><span class="question">Which models can I use?</span><span class="sign" aria-hidden="true"></span></summary>
         <div class="answer grid">
-          <p>Any model pydantic-ai supports. Install the matching extra and set its API key.</p>
-<pre tabindex="0" role="region" aria-label="Code example"><code>pip install 'openextract[anthropic]'   <span class="d"># openai, google, bedrock, groq, mistral,</span>
-                                       <span class="d"># cohere, huggingface, openrouter, xai, all</span></code></pre>
+          <p>Built-in HTTP adapters support OpenAI Responses, OpenAI-compatible Chat Completions, Anthropic, Gemini, local Ollama, Cohere, and Bedrock. Set the matching API key; provider SDKs and extras are not needed. Pydantic handles schemas and validation.</p>
+<pre tabindex="0" role="region" aria-label="Code example"><code>pip install openextract</code></pre>
+          <p>Use openextract.Model for custom endpoints, headers, settings, and retry budgets. For compatible Chat Completions models, output_mode="json_schema" selects JSON Schema output. Text, images, PDF, audio, and video support depends on the adapter and model. Bedrock uses bearer tokens or your authenticated HTTPX client; automatic AWS signing is not bundled. See the <a href="https://github.com/Mellow-Artificial-Intelligence/openextract#providers">provider matrix and migration guide</a>.</p>
         </div>
       </details>
       <details>

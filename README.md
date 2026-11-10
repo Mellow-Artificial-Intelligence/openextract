@@ -18,10 +18,12 @@ Supported input formats depend on the chosen model.
 
 ## First extraction
 
-Requires Python 3.12+. Install just the OpenAI provider for this example:
+Requires Python 3.12+. All model requests use HTTPX directly. Pydantic is used
+for schemas and validation; Pydantic AI and provider SDKs are not dependencies.
+No provider extras are needed:
 
 ```bash
-pip install 'openextract[openai]'
+pip install openextract
 ```
 
 Set `OPENAI_API_KEY` to your OpenAI API key in the same terminal. Your account
@@ -82,7 +84,7 @@ accuracy. Check extracted values against your source before relying on them.
 
 The same non-sensitive invoice is supplied in
 [`examples/fixtures/invoice.txt`](examples/fixtures/invoice.txt). In a repository
-checkout, after setting the key, run `uv run --extra openai python examples/basic.py`;
+checkout, after setting the key, run `uv run python examples/basic.py`;
 it finds the fixture automatically. An optional path or URL argument lets you use
 your own document. See [example checks](examples/README.md) for offline validation
 and the live-check record.
@@ -94,14 +96,15 @@ media-type overrides, using the same `Invoice` result type.
 ## Usage
 
 ```python
-extract(schema, model, source, instructions=None, *, media_type=None)
-await extract_async(schema, model, source, instructions=None, *, media_type=None)
+extract(schema, model, source, instructions=None, *, media_type=None, client=None)
+await extract_async(schema, model, source, instructions=None, *, media_type=None, client=None)
 ```
 
 - **`source`** is where the file is: a path on disk, a `pathlib.Path`, or an `http(s)://` URL. openextract opens it for you. You can also pass the file's raw `bytes`. A string is always treated as a path or URL, never as the document's text; to extract from text you already have, pass `text.encode()`.
-- **`model`** is any [pydantic-ai](https://ai.pydantic.dev/models/) model string (`"anthropic:claude-sonnet-5"`, `"google-gla:gemini-2.5-pro"`, `"ollama:llama3"`, ...) or a configured pydantic-ai `Model`.
+- **`model`** is a supported `"provider:model"` string (`"anthropic:claude-sonnet-5"`, `"google-gla:gemini-2.5-pro"`, `"ollama:llama3"`, ...) or an `openextract.Model` configuration.
 - **`instructions`** are optional extra guidance for the model.
 - **`media_type`** is inferred for you. openextract checks the file extension, then the URL's `Content-Type`, then the file's leading bytes (PDF, PNG, JPEG, GIF, WebP, MP3, WAV, FLAC, OGG, MP4, UTF-8 text). Pass it only to override the result.
+- **`client`** is an optional `httpx.Client` for `extract`, or `httpx.AsyncClient` for `extract_async`. It is used only for model requests and remains open. Without it, openextract creates and closes a client for each extraction. Source URLs are fetched separately without model credentials.
 
 Media detection does not mean every model accepts every format. Choose a model
 that supports your input and schema.
@@ -116,7 +119,126 @@ extract(Invoice, "openai:gpt-5", source=pdf_bytes, instructions="Amounts are in 
 ```
 
 For provider generation settings, see [configured models](examples/configured_models.md)
-for a typed example, sync/async checks, and dependency compatibility limits.
+for a complete example, sync/async checks, and provider compatibility limits.
+
+## Providers
+
+Adapters encode requests for these APIs. The selected model must support the
+input type and structured output or tool calling used by its adapter.
+
+| Prefix | HTTP API | API key environment variable | Inputs encoded by the adapter |
+| --- | --- | --- | --- |
+| `openai`, `openai-responses` | [Responses](https://developers.openai.com/api/docs/guides/structured-outputs) | `OPENAI_API_KEY` | Text, images, PDF, Word, RTF, ODT, PowerPoint, Excel |
+| `openai-chat` | Chat Completions, tool or JSON Schema output | `OPENAI_API_KEY` | Text, images, PDF, MP3, WAV |
+| `openrouter` | Chat Completions, tool or JSON Schema output | `OPENROUTER_API_KEY` | Chat content supported by the endpoint and model |
+| `groq`, `mistral`, `xai`, `cerebras`, `huggingface` | Chat Completions, tool or JSON Schema output | `GROQ_API_KEY`, `MISTRAL_API_KEY`, `XAI_API_KEY`, `CEREBRAS_API_KEY`, `HF_TOKEN`, respectively | Chat content supported by the endpoint and model |
+| `anthropic` | Messages with a forced extraction tool | `ANTHROPIC_API_KEY` | Text, PNG, JPEG, GIF, WebP, PDF |
+| `google`, `google-gla`, `gemini` | Gemini `generateContent` with JSON Schema | `GOOGLE_API_KEY` or `GEMINI_API_KEY` | Text, images, PDF, audio, video |
+| `ollama` | Local `/api/chat` with JSON Schema | None | Text, images |
+| `cohere` | V2 Chat with JSON Schema | `CO_API_KEY` | Text, images |
+| `bedrock` | Converse with a forced extraction tool | `AWS_BEARER_TOKEN_BEDROCK` | Text, PNG, JPEG, GIF, WebP, PDF |
+
+The Chat Completions adapter encodes text, images, PDF, MP3, and WAV; compatible
+services do not necessarily accept every format. Unsupported adapter input types
+raise `ValueError` before a model request. Model-specific restrictions are reported
+by the provider as `ModelError`. Recognizing a file type does not imply every
+provider can process it. For example, Responses does not accept audio or video;
+use Gemini for those inputs, or an audio-capable Chat Completions model for MP3/WAV.
+
+Responses and Chat Completions in JSON Schema mode use strict JSON Schema:
+all declared fields, including fields with
+defaults, are requested, and fixed objects disallow additional properties.
+Open-ended dictionaries are rejected; select `Model("openai:gpt-5", api="chat")`
+for tool-based output instead. Other schema restrictions depend on the provider.
+The original Pydantic model always performs the final validation, including custom
+validators and constraints.
+
+Bedrock requires `AWS_REGION` (or `AWS_DEFAULT_REGION`) unless `base_url` is
+provided. Authentication uses a [Bedrock bearer token](https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys-use.html).
+AWS credential discovery, profiles, role assumption, and automatic SigV4 signing
+are not implemented. You can supply your own authenticated HTTPX client with
+`Model(..., api_key="")` to disable environment-key lookup and the key requirement.
+Local Ollama supports structured output; Ollama Cloud currently does not.
+
+## Custom endpoints and settings
+
+Use `Model` to configure an existing provider or any endpoint implementing a
+supported API. Custom provider names require both `api` and `base_url`.
+
+```python
+import os
+
+import httpx
+from openextract import Model, extract
+
+model = Model(
+    "custom:my-model",
+    api="chat",
+    base_url="https://models.example.com/v1",
+    api_key=os.environ["CUSTOM_API_KEY"],
+    headers={"X-Tenant": "accounts"},
+    settings={"temperature": 0},
+    timeout=60,
+    max_retries=2,
+    validation_retries=1,
+)
+
+with httpx.Client() as client:
+    invoice = extract(Invoice, model, "./invoice.pdf", client=client)
+```
+
+`api` selects `responses`, `chat`, `anthropic`, `gemini`, `ollama`, `cohere`,
+`bedrock`, `openai-decisions`, or `openrouter-decisions`. `base_url` includes the
+API version, but not the operation path. For Decisions, use a base ending in
+`/v1` for OpenAI or `/api/alpha` for OpenRouter. Credentials go in `api_key` or
+`headers`, not the URL. Custom headers take precedence over generated headers.
+For keyless custom services, omit `api_key`.
+
+Explicit configuration takes precedence over environment variables. Built-in
+providers also read their base URL override: `OPENAI_BASE_URL`,
+`ANTHROPIC_BASE_URL`, `GOOGLE_BASE_URL`, `OLLAMA_BASE_URL`,
+`OPENROUTER_BASE_URL`, `GROQ_BASE_URL`, `MISTRAL_BASE_URL`, `XAI_BASE_URL`,
+`CEREBRAS_BASE_URL`, `HF_BASE_URL`, `COHERE_BASE_URL`, or `BEDROCK_BASE_URL`.
+For automatic OpenRouter Decisions routing, `OPENROUTER_BASE_URL` is the regular
+base ending in `/api/v1`; openextract replaces `/v1` with `/alpha`.
+
+Chat Completions defaults to tool calling. For compatible endpoints, select
+`output_mode="json_schema"` to request JSON text using `response_format`, with
+the schema generated from your Pydantic model. For example, use Gemini through
+[OpenRouter structured outputs](https://openrouter.ai/docs/guides/features/structured-outputs):
+
+```python
+model = Model(
+    "openrouter:google/gemini-2.5-flash",
+    output_mode="json_schema",
+    settings={"provider": {"require_parameters": True}},
+)
+invoice = extract(Invoice, model, "./invoice.pdf")
+```
+
+Set `OPENROUTER_API_KEY` in the environment. `require_parameters` restricts
+OpenRouter routing to endpoints supporting the requested parameters. In this
+mode, openextract sends the JSON Schema instead of extraction tools, reads JSON
+from the response's message content, and validates it with the original Pydantic
+model. `output_mode="tool"` explicitly selects tool calling. This option is only
+configurable for Chat Completions; other adapters retain their own output formats.
+The model and endpoint must support the selected mode.
+
+`settings` uses the provider's native parameter names. Gemini settings go inside
+`generationConfig`; Ollama sampling options go inside `settings["options"]`;
+Bedrock inference options go inside `settings["inferenceConfig"]`. Anthropic's
+default `max_tokens` is 4096 and can be overridden. Request structure and output
+schema fields cannot be replaced. Decisions adapters do not accept settings.
+Extraction does not stream responses.
+
+By default, transport failures and HTTP 408, 409, 429, 500, 502, 503, and 504 are
+retried twice, using exponential backoff or `Retry-After` capped at 30 seconds.
+Other HTTP errors, redirects, and provider-reported generation failures fail
+immediately. General extraction retries a
+Pydantic validation failure once with feedback that omits raw input values.
+Refusals, incomplete generations, malformed response envelopes, and invalid
+Decisions answers fail immediately. The HTTP retry budget applies to each
+validation attempt. Set both retry counts to zero for a single model request.
 
 ## Decision models
 
@@ -157,16 +279,52 @@ Each field becomes one question, phrased by its `description`. A `bool` field is
 
 ## Errors
 
-Every error subclasses `ExtractionError` and keeps the original exception as `__cause__`.
+Operational errors subclass `ExtractionError`. The original exception is chained
+as `__cause__` when available. `ModelError` includes selected provider error
+messages and upstream details instead of dumping the entire response body.
+Known credentials are redacted from those details; provider messages may still
+contain input data. The chained `httpx.HTTPStatusError` retains the response for
+HTTP failures.
+
+`ModelError` exposes `status_code`, `code`, `provider`, `finish_reason`, and
+`native_finish_reason` when available. An HTTP 200 response with an error envelope
+or a Chat Completions `finish_reason="error"` raises `ModelError`, including the
+native reason such as `MALFORMED_FUNCTION_CALL`. Invalid generated data, refusals,
+and truncated output remain `SchemaValidationError`.
 
 | Exception | Raised when |
 | --- | --- |
-| `ModelError` | The provider returns an error. |
+| `ModelError` | A model request fails, or the provider reports an HTTP or generation error. |
 | `SchemaValidationError` | The model's output doesn't match the schema. |
-| `ProviderNotInstalledError` | The provider's SDK isn't installed. |
+| `ProviderNotInstalledError` | Deprecated compatibility export; never raised by HTTP adapters. |
 | `ExtractionError` | A URL can't be fetched. |
 
-If openextract can't infer the media type, it raises a `ValueError` and asks you to pass `media_type`.
+Invalid configuration or unsupported media raises `ValueError`; unsupported model
+objects or Decisions field types raise `TypeError`. Local file errors retain their
+standard Python exceptions. If openextract can't infer the media type, it raises a
+`ValueError` and asks you to pass `media_type`.
+
+## Migrating from Pydantic AI
+
+Install plain `openextract`; provider extras have been removed. Replace configured
+Pydantic AI `Model` objects with `openextract.Model`. Supported model strings and
+the Pydantic schema/validated-result interface remain available. Provider support
+is defined by the adapters above rather than by Pydantic AI's model registry.
+Vertex AI credential handling, SDK-specific configuration, and Logfire integration
+are not bundled. HTTPX clients provide the transport customization boundary.
+
+## Tests
+
+Default tests run offline and skip all live API calls. Saved synthetic PDF/image
+fixtures cover single-page, multi-page, and scanned invoices. Run the provider
+matrix explicitly with:
+
+```bash
+uv run --env-file .env pytest --live -m live --no-cov -v
+```
+
+See [Contributing](CONTRIBUTING.md#live-provider-checks) for credentials, provider
+filters, and the offline CI command.
 
 ## License
 

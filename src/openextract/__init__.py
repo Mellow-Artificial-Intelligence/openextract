@@ -7,10 +7,12 @@ from .exceptions import (
     ProviderNotInstalledError,
     SchemaValidationError,
 )
+from .models import Model
 
 __all__ = [
     "extract",
     "extract_async",
+    "Model",
     "ExtractionError",
     "ModelError",
     "ProviderNotInstalledError",

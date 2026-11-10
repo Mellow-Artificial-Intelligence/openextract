@@ -1,8 +1,8 @@
 """Extract the supplied fictional invoice, or a file path / URL of your own.
 
 From the repository root, after setting OPENAI_API_KEY:
-    uv run --extra openai python examples/basic.py
-    uv run --extra openai python examples/basic.py examples/fixtures/invoice.txt
+    uv run python examples/basic.py
+    uv run python examples/basic.py examples/fixtures/invoice.txt
 """
 
 import sys
