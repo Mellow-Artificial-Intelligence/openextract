@@ -8,6 +8,8 @@ timing when that is known.
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-11-10
+
 ### Changed
 - Simplified the GitHub Pages site to a compact, responsive layout with
   installation, one self-contained extraction example, and documentation links.
@@ -570,7 +572,9 @@ timing when that is known.
 ## [0.1.1] - 2025-09-10
 - Merge pull request #12 from Mellow-Artificial-Intelligence/new-release.
 
-[Unreleased]: https://github.com/Mellow-Artificial-Intelligence/openextract/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/Mellow-Artificial-Intelligence/openextract/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/Mellow-Artificial-Intelligence/openextract/compare/v1.2.0...v2.0.0
+[1.2.0]: https://github.com/Mellow-Artificial-Intelligence/openextract/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/Mellow-Artificial-Intelligence/openextract/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/Mellow-Artificial-Intelligence/openextract/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/Mellow-Artificial-Intelligence/openextract/compare/v0.15.0...v1.0.0
