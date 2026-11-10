@@ -1,310 +1,139 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>openextract</title>
-<meta name="description" content="Extract structured data from documents, images, audio, and video using LLMs. One function, a source your model supports, a validated Pydantic model.">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
-<style>
-  :root {
-    --paper: #faf9f6;
-    --panel: #f0efeb;
-    --ink: #242724;
-    --gray: #686b64;
-    --rule: rgb(36 39 36 / 18%);
-    --lavender: #d2d1e3;
-    --sage: #d4ddbd;
-    --forest: #354030;
-    --sans: "DM Sans", "Helvetica Neue", Arial, sans-serif;
-    --mono: "Geist Mono", ui-monospace, monospace;
-    --gutter: clamp(22px, 4.5vw, 80px);
-  }
-  * { box-sizing: border-box; }
-  html { -webkit-text-size-adjust: 100%; background: var(--paper); }
-  body { margin: 0; background: var(--paper); color: var(--ink); font: 400 15px/1.6 var(--sans); }
-  a { color: inherit; text-underline-offset: 4px; }
-  a:hover { text-decoration-thickness: 2px; }
-  :focus-visible { outline: 2px solid currentColor; outline-offset: 5px; }
-  ::selection { background: var(--lavender); color: var(--ink); }
-  .wrap { max-width: 1600px; margin: 0 auto; padding-inline: var(--gutter); }
-  .mono { font: 400 12px/1.5 var(--mono); letter-spacing: .02em; }
-  .grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 24px; }
-  .section-head { display: flex; justify-content: space-between; gap: 16px; border-top: 1px solid var(--rule); padding-top: 14px; }
-  .dim { color: var(--gray); }
-  .topbar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px 24px; padding-block: 24px; }
-  .topbar .mark { display: inline-flex; align-items: center; gap: 12px; font: 500 24px/1 var(--sans); letter-spacing: -.04em; text-decoration: none; }
-  .mark::before { content: "✳"; font-size: 32px; }
-  nav { display: flex; flex-wrap: wrap; gap: 8px 28px; }
-  nav a { display: inline-flex; align-items: center; min-height: 44px; text-decoration: none; }
-  nav a:hover { text-decoration: underline; }
-  .skip-link { position: absolute; top: 12px; left: 22px; padding: 12px; background: var(--paper); transform: translateY(-160%); z-index: 1; }
-  .skip-link:focus { transform: none; }
-  .headline { margin: 0; font: 400 clamp(46px, 5.8vw, 88px)/.98 var(--sans); letter-spacing: -.065em; text-wrap: balance; }
-  .headline .quiet { color: var(--gray); }
-  .headline.small { font-size: clamp(36px, 4.5vw, 64px); letter-spacing: -.045em; }
-  .hero { padding-block: 12px 0; }
-  .hero-feature { display: grid; grid-template-columns: 1.05fr .95fr; margin-top: 40px; background: var(--lavender); }
-  .hero-copy { padding: clamp(28px, 4vw, 64px); align-self: center; }
-  .hero-copy .quiet { color: var(--forest); }
-  .hero-copy p { max-width: 32ch; margin: 28px 0; font-size: 18px; line-height: 1.5; }
-  .hero-art { display: flex; flex-direction: column; justify-content: center; padding: 32px; min-width: 0; }
-  .hero-art svg { width: 100%; height: auto; }
-  .cols { margin-top: 48px; row-gap: 40px; }
-  .col { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
-  .col > .mono { border-top: 1px solid var(--rule); padding-top: 14px; }
-  .install { max-width: 400px; background: var(--paper); display: grid; grid-template-columns: minmax(0, 1fr) auto; border: 1px solid var(--ink); }
-  .install code { padding: 16px 12px; font: 400 12px/1.5 var(--mono); overflow-x: auto; white-space: nowrap; }
-  .copy { min-width: 80px; min-height: 44px; border: 0; border-left: 1px solid var(--ink); background: var(--lavender); color: var(--ink); cursor: pointer; font: 400 12px/1.5 var(--mono); }
-  .copy:hover { background: var(--sage); }
-  dd { margin: 0; }
-  .example { padding-block: 88px 96px; }
-  .example .headline, .reference .headline { margin-top: 0; }
-  pre { margin: 0; }
-  .code { font: 400 12px/1.8 var(--mono); background: var(--panel); padding: 24px; overflow-x: auto; }
-  .code .d { color: var(--gray); }
-  .reference-band { background: var(--sage); }
-  .reference { padding-block: 64px 80px; }
-  .ref-list { margin-top: 48px; border-top: 1px solid var(--ink); }
-  details { border-bottom: 1px solid var(--rule); }
-  summary { list-style: none; cursor: pointer; padding-block: 24px; align-items: baseline; }
-  summary::-webkit-details-marker { display: none; }
-  summary .question { grid-column: 1 / span 11; font-size: clamp(20px, 2vw, 28px); line-height: 1.25; letter-spacing: -.025em; }
-  summary .sign { grid-column: 12; justify-self: end; font-size: 24px; line-height: 1; transition: transform 180ms ease; }
-  summary .sign::before { content: "✳"; }
-  details[open] summary .sign { transform: rotate(45deg); }
-  summary:hover .question { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 5px; }
-  .answer { padding-block: 0 32px; }
-  .answer > * { grid-column: 1 / span 10; min-width: 0; }
-  .answer p { margin: 0; max-width: 60ch; }
-  .answer pre { font: 400 12px/1.8 var(--mono); overflow-x: auto; border-left: 1px solid var(--ink); padding: 4px 0 4px 16px; }
-  .spec { margin: 0; }
-  .spec > div { display: grid; grid-template-columns: minmax(0, 12rem) minmax(0, 1fr); gap: 20px; padding-block: 12px; border-top: 1px solid var(--rule); }
-  .spec dd { overflow-wrap: anywhere; }
-  footer { padding-block: 32px; }
-  .footer-row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 16px 28px; }
-  .example-link { display: inline-flex; align-items: center; gap: 20px; min-height: 44px; margin-top: 16px; }
-  .example-note { color: var(--gray); margin: 20px 0 0; font-size: 17px; }
-  .example .cols { grid-template-columns: 1.2fr 1fr; gap: 48px; margin-top: 32px; }
-  .readout { margin: 0; border-top: 1px solid var(--rule); }
-  .readout > div { display: grid; grid-template-columns: 6rem minmax(0, 1fr); gap: 12px; padding-block: 20px; border-bottom: 1px solid var(--rule); }
-  .readout dt { font: 400 13px/1.5 var(--mono); color: var(--gray); }
-  .readout dd { font-size: 22px; line-height: 1.3; overflow-wrap: anywhere; }
-  @media (max-width: 900px) {
-    .hero-feature { grid-template-columns: 1fr; }
-    .example .cols { grid-template-columns: 1fr; gap: 32px; }
-    .hero-art { display: none; }
-    summary .question { grid-column: 1 / span 11; }
-    .answer > * { grid-column: 1 / -1; }
-  }
-  @media (max-width: 600px) {
-    .topbar { gap: 16px; }
-    .topbar nav { gap: 20px; }
-    .hero-copy { padding: 36px 22px 24px; }
-    .headline { font-size: clamp(36px, 10vw, 46px); }
-    .example-note { font-size: 16px; }
-    .code { padding: 20px 16px; }
-    .section-head { flex-wrap: wrap; gap: 8px; }
-    .example { padding-block: 56px; }
-    .spec > div { grid-template-columns: 1fr; gap: 8px; }
-    .footer-row nav { gap: 20px; }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    *, *::before, *::after { transition: none !important; }
-  }
-</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>openextract — structured data from files</title>
+  <meta name="description" content="Extract structured data from documents, images, audio, and video. Define a Pydantic schema, choose a model, and get a validated Python object.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+  <style>
+    :root {
+      --paper: #faf9f6;
+      --panel: #f0efeb;
+      --ink: #242724;
+      --muted: #62665e;
+      --rule: #dddfd7;
+      --lavender: #d2d1e3;
+      --sage: #d4ddbd;
+      --sans: "DM Sans", "Helvetica Neue", Arial, sans-serif;
+      --mono: "Geist Mono", ui-monospace, monospace;
+    }
+    * { box-sizing: border-box; }
+    html { background: var(--paper); -webkit-text-size-adjust: 100%; }
+    body { max-width: 768px; margin: 0 auto; padding: 0 24px; color: var(--ink); font: 400 16px/1.6 var(--sans); }
+    a { color: inherit; text-underline-offset: 4px; }
+    a:hover { text-decoration-thickness: 2px; }
+    :focus-visible { outline: 2px solid var(--ink); outline-offset: 4px; }
+    ::selection { background: var(--lavender); }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 32px 0; }
+    .mark { font: 500 20px/1.4 var(--mono); letter-spacing: -.05em; text-decoration: none; }
+    nav { display: flex; gap: 24px; font-size: 14px; }
+    nav a { display: inline-flex; align-items: center; min-height: 44px; }
+    .skip-link { position: absolute; top: 8px; padding: 8px; background: var(--paper); transform: translateY(-160%); }
+    .skip-link:focus { transform: none; }
+    .intro { margin: 44px 0 36px; }
+    h1 { margin: 0 0 20px; font-size: clamp(40px, 7vw, 60px); font-weight: 500; line-height: 1.08; letter-spacing: -.055em; }
+    .intro p { max-width: 48ch; margin: 0; color: var(--muted); font-size: 18px; }
+    .install { display: flex; align-items: stretch; justify-content: space-between; gap: 12px; padding: 6px 6px 6px 20px; background: var(--lavender); }
+    .install code { align-self: center; padding: 10px 0; white-space: nowrap; }
+    code, samp { font-family: var(--mono); font-size: .85em; }
+    button { min-width: 64px; min-height: 44px; padding: 0 12px; border: 0; background: transparent; color: var(--ink); font: 500 12px var(--mono); cursor: pointer; }
+    button:hover { background: var(--sage); }
+    .setup { margin: 16px 0 36px; color: var(--muted); font-size: 14px; }
+    h2 { margin: 0 0 12px; font-size: 16px; font-weight: 500; }
+    pre { margin: 0; padding: 24px; overflow-x: auto; background: var(--panel); font: 400 13px/1.75 var(--mono); tab-size: 4; }
+    pre code { font: inherit; }
+    .result { margin: 16px 0 0; color: var(--muted); font-size: 14px; }
+    .result samp { color: var(--ink); }
+    .more { margin: 32px 0 0; }
+    .more a { display: inline-flex; align-items: center; min-height: 44px; font-weight: 500; }
+    footer { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px 20px; margin-top: 48px; padding: 24px 0 32px; border-top: 1px solid var(--rule); color: var(--muted); font-size: 13px; }
+    @media (max-width: 480px) {
+      header { padding-top: 24px; }
+      nav { gap: 16px; }
+      .intro { margin-top: 28px; }
+      .intro p { font-size: 16px; }
+      .install { padding-left: 14px; gap: 4px; }
+      .install code { font-size: 12px; }
+      pre { padding: 20px 16px; font-size: 12px; }
+    }
+  </style>
 </head>
 <body>
-<a class="skip-link" href="#main">Skip to content</a>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header>
+    <a class="mark" href="https://github.com/Mellow-Artificial-Intelligence/openextract">openextract</a>
+    <nav aria-label="Project">
+      <a href="https://github.com/Mellow-Artificial-Intelligence/openextract#readme">Docs</a>
+      <a href="https://github.com/Mellow-Artificial-Intelligence/openextract">GitHub</a>
+    </nav>
+  </header>
 
-<header class="wrap topbar mono">
-  <a class="mark" href="https://github.com/Mellow-Artificial-Intelligence/openextract">openextract</a>
-  <nav aria-label="Project">
-    <a href="https://github.com/Mellow-Artificial-Intelligence/openextract">GitHub</a>
-    <a href="https://pypi.org/project/openextract/">PyPI</a>
-    <a href="#reference">Reference</a>
-    <a href="https://github.com/Mellow-Artificial-Intelligence/openextract/wiki/Roadmap">Roadmap</a>
-  </nav>
-</header>
-
-<main id="main">
-<section class="wrap hero">
-  <div class="section-head mono"><span>Structured extraction for Python</span><span class="dim">Python 3.12+ · MIT</span></div>
-  <div class="hero-feature">
-    <div class="hero-copy">
-      <h1 class="headline">Your source.<br><span class="quiet">Structured data.</span></h1>
-      <p>Turn sources your chosen model supports into validated Pydantic models.</p>
-      <div class="install">
-        <code id="install-cmd">pip install openextract</code>
-        <button class="copy" id="copy-install" type="button" aria-live="polite">Copy</button>
-      </div>
-      <a class="example-link" href="#example">See how it works <span aria-hidden="true">↓</span></a>
+  <main id="main">
+    <div class="intro">
+      <h1>Files in.<br>Structured data out.</h1>
+      <p>Define a Pydantic schema, choose a model, and get a validated Python object from your documents, images, audio, or video.</p>
     </div>
-    <div class="hero-art">
-      <svg viewBox="0 0 480 380" fill="none" aria-hidden="true">
-        <path d="M54 304C23 288 22 249 45 230C67 212 99 220 105 241C113 272 79 298 61 275C44 252 71 217 92 195L158 124L158 62L247 62L287 102L287 239L158 239L158 124M247 62L247 102L287 102M181 131L261 131M181 151L248 151M181 171L257 171M181 191L226 191C196 191 204 218 232 220C284 224 334 157 371 175C407 193 389 232 360 224C331 215 354 174 387 181C420 188 437 230 421 258C410 278 385 286 354 282L314 277L314 324L433 324L433 250L314 250L314 277M332 272L343 281L360 261M374 274L414 274M332 299L343 308L360 288M374 301L414 301" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-        <path d="M336 89L336 117M322 103L350 103M326 93L346 113M326 113L346 93" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-      </svg>
-    </div>
-  </div>
-</section>
 
-<section class="wrap example" id="example">
-  <h2 class="headline small">Define it. Extract it.</h2>
-  <p class="example-note">Install the OpenAI extra above with Python 3.12+, then set your OpenAI API key in the same terminal. Your account needs access to <code>gpt-5</code>; this example makes a paid provider request.</p>
-  <pre class="code" tabindex="0" role="region" aria-label="Set credentials"><code>export OPENAI_API_KEY='your-api-key'  # macOS / Linux</code></pre>
-  <p>On PowerShell, use <code>$env:OPENAI_API_KEY = 'your-api-key'</code> instead. Save the code below as <code>first_extraction.py</code>, then run <code>python first_extraction.py</code>. The fictional invoice is included as text bytes; no download is needed.</p>
-  <div class="grid cols">
-    <div class="col">
-      <span class="mono">Your code</span>
-<pre class="code" tabindex="0" role="region" aria-label="Python extraction example"><code>from decimal import Decimal
+    <div class="install">
+      <code id="install-cmd">pip install openextract</code>
+      <button id="copy-install" type="button" aria-label="Copy install command" aria-live="polite" hidden>Copy</button>
+    </div>
+    <p class="setup">Python 3.12+. Set <code>OPENAI_API_KEY</code> to your OpenAI key, then run the example below. It uses <code>gpt-5</code> and makes a paid API request.</p>
+
+    <section aria-labelledby="example-title">
+      <h2 id="example-title">Your schema. One function.</h2>
+<pre tabindex="0" role="region" aria-label="Python extraction example"><code>from decimal import Decimal
 
 from pydantic import BaseModel, Field
-
 from openextract import extract
 
 
 class Invoice(BaseModel):
-    vendor: str = Field(description=&quot;Seller, not buyer.&quot;)
-    total: Decimal = Field(description=&quot;Final amount due, including tax.&quot;)
-    currency: str | None = Field(description=&quot;Three-letter currency code, or null if unclear.&quot;)
+    vendor: str
+    total: Decimal = Field(description="Amount without currency text.")
+    currency: str
 
 
-source = b&quot;&quot;&quot;INVOICE DEMO-001 (fictional sample)
-Seller: Acme Paper Co.
-Bill to: Northwind Studio
-Paper supplies: 100.00 USD
-Subtotal: 100.00 USD
-Tax: 20.00 USD
+source = b"""Seller: Acme Paper Co.
 Total due: 120.00 USD
-&quot;&quot;&quot;
+"""
 
-invoice = extract(Invoice, &quot;openai:gpt-5&quot;, source)
-print(invoice.vendor)  # str: Acme Paper Co.
-print(invoice.total)  # Decimal: 120.00
-print(invoice.currency)  # str | None: USD</code></pre>
-    </div>
-    <div class="col">
-      <span class="mono">Expected fields for this fixture</span>
-      <dl class="readout">
-        <div><dt>vendor</dt><dd>Acme Paper Co.</dd></div>
-        <div><dt>total</dt><dd>120.00 (Decimal)</dd></div>
-        <div><dt>currency</dt><dd>USD</dd></div>
-      </dl>
-      <p>The vendor is the seller, not the buyer. The total is the final amount due including tax, not the subtotal. Currency is a three-letter code, or <code>None</code> when unclear.</p>
-      <p>Schema validation checks structure and types; it does not guarantee factual accuracy. Check extracted values against your source before relying on them.</p>
-      <p><a href="https://github.com/Mellow-Artificial-Intelligence/openextract/blob/main/examples/fixtures/invoice.txt">Supplied invoice fixture</a> · <a href="https://github.com/Mellow-Artificial-Intelligence/openextract/blob/main/examples/README.md">Example checks and live-check record</a></p>
-    </div>
-  </div>
-</section>
+invoice = extract(Invoice, "openai:gpt-5", source)
+print(invoice.vendor)
+print(invoice.total)
+print(invoice.currency)</code></pre>
+      <p class="result">Expected output: <samp>Acme Paper Co.</samp>, <samp>120.00</samp>, <samp>USD</samp>.</p>
+    </section>
 
-<section class="reference-band" id="reference">
-  <div class="wrap reference">
-    <h2 class="headline small">A few details.</h2>
-    <div class="ref-list">
-      <details>
-        <summary class="grid"><span class="question">What do I pass in?</span><span class="sign" aria-hidden="true"></span></summary>
-        <div class="answer grid">
-<pre tabindex="0" role="region" aria-label="Code example"><code>extract(schema, model, source, instructions=<span class="d">None</span>, *, media_type=<span class="d">None</span>, client=<span class="d">None</span>)</code></pre>
-          <dl class="spec">
-            <div><dt>schema</dt><dd>The Pydantic model you want back.</dd></div>
-            <div><dt>model</dt><dd>A supported provider:model string like "anthropic:claude-sonnet-5", or an openextract.Model configuration. Requests use HTTPX directly.</dd></div>
-            <div><dt>source</dt><dd>Where the file is: a path like "./invoice.pdf", a pathlib.Path, or an https:// URL. Or the file's raw bytes. A string is never read as the document's text.</dd></div>
-            <div><dt>instructions</dt><dd>Optional guidance, like "Amounts are in EUR."</dd></div>
-            <div><dt>media_type</dt><dd>Only needed to override what openextract infers. Provider and model media support varies.</dd></div>
-            <div><dt>client</dt><dd>An optional HTTPX Client, or AsyncClient for extract_async. Used only for model requests and left open.</dd></div>
-          </dl>
-        </div>
-      </details>
-      <details>
-        <summary class="grid"><span class="question">How does it know the file type?</span><span class="sign" aria-hidden="true"></span></summary>
-        <div class="answer grid">
-          <p>It takes the first answer it finds: the media_type you passed, the file extension, the URL's Content-Type header, then the file's leading bytes. Detecting a media type does not mean the chosen model can read it; input and schema support depend on the model.</p>
-          <dl class="spec">
-            <div><dt>Recognized by content</dt><dd>PDF, PNG, JPEG, GIF, WebP, MP3, WAV, FLAC, OGG, MP4, and UTF-8 text.</dd></div>
-          </dl>
-        </div>
-      </details>
-      <details>
-        <summary class="grid"><span class="question">What happens when it fails?</span><span class="sign" aria-hidden="true"></span></summary>
-        <div class="answer grid">
-          <p>Operational errors subclass ExtractionError and chain underlying errors when available. Invalid configuration or unsupported media raises ValueError; local file errors keep their standard Python types.</p>
-          <dl class="spec">
-            <div><dt>ModelError</dt><dd>A model request fails or the provider reports an HTTP or generation error. Selected upstream messages and native finish reasons are preserved.</dd></div>
-            <div><dt>SchemaValidationError</dt><dd>The output doesn't match your schema.</dd></div>
-            <div><dt>ProviderNotInstalledError</dt><dd>Deprecated compatibility export; HTTP adapters do not raise it.</dd></div>
-            <div><dt>ExtractionError</dt><dd>A URL can't be fetched.</dd></div>
-          </dl>
-        </div>
-      </details>
-      <details>
-        <summary class="grid"><span class="question">Which models can I use?</span><span class="sign" aria-hidden="true"></span></summary>
-        <div class="answer grid">
-          <p>Built-in HTTP adapters support OpenAI Responses, OpenAI-compatible Chat Completions, Anthropic, Gemini, local Ollama, Cohere, and Bedrock. Set the matching API key; provider SDKs and extras are not needed. Pydantic handles schemas and validation.</p>
-<pre tabindex="0" role="region" aria-label="Code example"><code>pip install openextract</code></pre>
-          <p>Use openextract.Model for custom endpoints, headers, settings, and retry budgets. For compatible Chat Completions models, output_mode="json_schema" selects JSON Schema output. Text, images, PDF, audio, and video support depends on the adapter and model. Bedrock uses bearer tokens or your authenticated HTTPX client; automatic AWS signing is not bundled. See the <a href="https://github.com/Mellow-Artificial-Intelligence/openextract#providers">provider matrix and migration guide</a>.</p>
-        </div>
-      </details>
-      <details>
-        <summary class="grid"><span class="question">Can I use decision models?</span><span class="sign" aria-hidden="true"></span></summary>
-        <div class="answer grid">
-          <p>Yes. Use OpenAI Decisions with OPENAI_API_KEY, or Jev with OPENROUTER_API_KEY. Both read text and images into bool, Literal, or Enum fields. No provider extra is needed.</p>
-<pre tabindex="0" role="region" aria-label="Code example"><code>triage = extract(
-    Triage, "openai-decisions:gpt-6-luna",
-    source="./receipt.png",
-)</code></pre>
-          <dl class="spec">
-            <div><dt>Fields</dt><dd>bool, Literal, or Enum. Any other type raises a TypeError.</dd></div>
-            <div><dt>Questions</dt><dd>Each field becomes one question, phrased by its description.</dd></div>
-            <div><dt>bool</dt><dd>True when the probability of yes is at least 0.5.</dd></div>
-            <div><dt>OpenAI</dt><dd>Use openai-decisions: for Decisions; openai: keeps general extraction. Supports 1–400 fields.</dd></div>
-            <div><dt>Sources</dt><dd>Text and images only.</dd></div>
-          </dl>
-        </div>
-      </details>
-      <details>
-        <summary class="grid"><span class="question">Is there an async version?</span><span class="sign" aria-hidden="true"></span></summary>
-        <div class="answer grid">
-          <p>Yes. It takes the same arguments. Await it.</p>
-<pre tabindex="0" role="region" aria-label="Code example"><code>invoice = <span class="d">await</span> extract_async(Invoice, "openai:gpt-5", source="./invoice.pdf")</code></pre>
-        </div>
-      </details>
-    </div>
-  </div>
+    <p class="more"><a href="https://github.com/Mellow-Artificial-Intelligence/openextract#readme">Read the full documentation <span aria-hidden="true">&nbsp;→</span></a></p>
+  </main>
 
-</section>
-</main>
-
-  <footer class="wrap">
-    <div class="footer-row mono">
-      <span>MIT License · 2026</span>
-      <nav aria-label="Footer">
-        <a href="https://github.com/Mellow-Artificial-Intelligence/openextract">GitHub</a>
-        <a href="https://pypi.org/project/openextract/">PyPI</a>
-        <a href="https://github.com/Mellow-Artificial-Intelligence/openextract/issues">Issues</a>
-      </nav>
-    </div>
+  <footer>
+    <span>Input support depends on your model.</span>
+    <span><a href="https://pypi.org/project/openextract/">PyPI</a> · <a href="https://github.com/Mellow-Artificial-Intelligence/openextract/blob/main/LICENSE">MIT license</a></span>
   </footer>
 
-<script>
-  document.getElementById("copy-install").addEventListener("click", async (event) => {
-    const button = event.currentTarget;
-    try {
-      await navigator.clipboard.writeText(document.getElementById("install-cmd").textContent);
-      button.textContent = "Copied";
-    } catch {
-      const range = document.createRange();
-      range.selectNodeContents(document.getElementById("install-cmd"));
-      const selection = window.getSelection();
-      selection.removeAllRanges();
-      selection.addRange(range);
-      button.textContent = "Selected";
-    }
-    setTimeout(() => { button.textContent = "Copy"; }, 1600);
-  });
-
-</script>
+  <script>
+    const button = document.getElementById("copy-install");
+    button.hidden = false;
+    button.addEventListener("click", async () => {
+      const command = document.getElementById("install-cmd");
+      try {
+        await navigator.clipboard.writeText(command.textContent);
+        button.textContent = "Copied";
+      } catch {
+        const range = document.createRange();
+        range.selectNodeContents(command);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        button.textContent = "Selected";
+      }
+      setTimeout(() => { button.textContent = "Copy"; }, 1600);
+    });
+  </script>
 </body>
 </html>

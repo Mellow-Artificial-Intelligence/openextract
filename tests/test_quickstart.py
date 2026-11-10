@@ -15,6 +15,7 @@ from tests.helpers import output, serve
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "examples/fixtures/invoice.txt"
+LANDING_SOURCE = "Seller: Acme Paper Co.\nTotal due: 120.00 USD\n"
 EXPECTED = {"vendor": "Acme Paper Co.", "total": "120.00", "currency": "USD"}
 
 
@@ -60,5 +61,6 @@ def test_first_extraction(entry, monkeypatch, tmp_path, capsys):
     assert invoice.currency == EXPECTED["currency"]
     assert len(seen) == 1
     assert seen[0]["model"] == "gpt-5"
-    assert seen[0]["input"][0]["content"][-1] == {"type": "input_text", "text": FIXTURE.read_text()}
+    expected_source = LANDING_SOURCE if entry == "landing" else FIXTURE.read_text()
+    assert seen[0]["input"][0]["content"][-1] == {"type": "input_text", "text": expected_source}
     assert capsys.readouterr().out == "Acme Paper Co.\n120.00\nUSD\n"
