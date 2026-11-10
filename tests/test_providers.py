@@ -1,10 +1,12 @@
 import copy
 import json
-from typing import Literal
+from datetime import date
+from decimal import Decimal
+from typing import Annotated, Literal
 
 import httpx
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from openextract import SchemaValidationError, extract, extract_async
 from openextract._providers import _strict_schema
@@ -97,6 +99,100 @@ async def test_adapter_contract(prefix, api, path, auth_header, instructions, as
             "json": Invoice.model_json_schema()
         }
         assert body["toolConfig"]["toolChoice"] == {"tool": {"name": "extract"}}
+
+
+@pytest.mark.parametrize("api", [case[1] for case in CASES])
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("valid", [False, True])
+async def test_strict_schema_uses_json_validation_across_adapters(api, asynchronous, valid):
+    class StrictInvoice(BaseModel):
+        model_config = ConfigDict(strict=True)
+
+        issued: date
+        total: Decimal
+        quantity: int
+
+    value = {"issued": "2026-11-10", "total": "12.50", "quantity": 2 if valid else "2"}
+    transport = httpx.MockTransport(lambda r: httpx.Response(200, json=output(api, value)))
+    model = configured("custom:test", api=api, base_url="https://example.com")
+
+    async def run():
+        if asynchronous:
+            async with httpx.AsyncClient(transport=transport) as client:
+                return await extract_async(StrictInvoice, model, b"Invoice", client=client)
+        with httpx.Client(transport=transport) as client:
+            return extract(StrictInvoice, model, b"Invoice", client=client)
+
+    if valid:
+        assert await run() == StrictInvoice(
+            issued=date(2026, 11, 10), total=Decimal("12.50"), quantity=2
+        )
+    else:
+        with pytest.raises(SchemaValidationError) as error:
+            await run()
+        assert isinstance(error.value.__cause__, ValidationError)
+        assert [detail["loc"] for detail in error.value.__cause__.errors()] == [("quantity",)]
+
+
+@pytest.mark.parametrize("api", ["responses", "chat"])
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize("valid", [False, True])
+async def test_discriminated_union_in_strict_output(api, asynchronous, valid):
+    class Card(BaseModel):
+        kind: Literal["card"]
+        last_four: str
+
+    class Cash(BaseModel):
+        kind: Literal["cash"]
+        currency: str
+
+    class Receipt(BaseModel):
+        payments: list[Annotated[Card | Cash, Field(discriminator="kind")]]
+
+    original = Receipt.model_json_schema()
+    value = {"payments": [{"kind": "card" if valid else "unknown", "last_four": "1234"}]}
+
+    def handler(request):
+        body = json.loads(request.content)
+        schema = (
+            body["text"]["format"]["schema"]
+            if api == "responses"
+            else body["response_format"]["json_schema"]["schema"]
+        )
+        union = schema["properties"]["payments"]["items"]
+        assert "discriminator" not in union
+        assert "oneOf" not in union
+        assert union["anyOf"] == original["properties"]["payments"]["items"]["oneOf"]
+        assert all(child["additionalProperties"] is False for child in schema["$defs"].values())
+        payload = (
+            output(api, value)
+            if api == "responses"
+            else {"choices": [{"finish_reason": "stop", "message": {"content": json.dumps(value)}}]}
+        )
+        return httpx.Response(200, json=payload)
+
+    model = configured(
+        "custom:test",
+        api=api,
+        base_url="https://example.com",
+        output_mode="json_schema" if api == "chat" else None,
+    )
+    transport = httpx.MockTransport(handler)
+
+    async def run():
+        if asynchronous:
+            async with httpx.AsyncClient(transport=transport) as client:
+                return await extract_async(Receipt, model, b"Receipt", client=client)
+        with httpx.Client(transport=transport) as client:
+            return extract(Receipt, model, b"Receipt", client=client)
+
+    if valid:
+        assert await run() == Receipt(payments=[Card(kind="card", last_four="1234")])
+    else:
+        with pytest.raises(SchemaValidationError) as error:
+            await run()
+        assert error.value.__cause__.errors()[0]["type"] == "union_tag_invalid"
+    assert Receipt.model_json_schema() == original
 
 
 @pytest.mark.parametrize(

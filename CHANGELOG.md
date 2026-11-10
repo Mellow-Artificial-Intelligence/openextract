@@ -48,6 +48,16 @@ timing when that is known.
   adapters never raise it.
 
 ### Fixed
+- Convert nested tagged unions to supported strict JSON Schema for OpenAI
+  Responses and Chat Completions JSON Schema output, preserving Pydantic's final
+  discriminator validation.
+- Validate decoded tool inputs as JSON so strict dates, decimals, and other
+  JSON-representable types work consistently across general adapters. Add six
+  opt-in live schema regression cases alongside the 56 invoice checks.
+- Make operational errors readable and actionable with labeled provider details,
+  field validation summaries, attempt counts, and recovery suggestions. Preserve
+  structured error attributes and chained diagnostics, redact known credentials,
+  and omit raw values from validation summaries and retry feedback.
 - Surface provider error envelopes and Chat Completions generation failures in
   HTTP 200 responses as `ModelError`, preserving reasons such as
   `MALFORMED_FUNCTION_CALL` rather than reporting a generic schema failure.

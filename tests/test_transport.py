@@ -67,6 +67,8 @@ async def test_transport_error_retry_and_exhaustion(asynchronous, recover):
         with pytest.raises(ModelError, match="ConnectError") as error:
             await run()
         assert isinstance(error.value.__cause__, httpx.ConnectError)
+        assert "after 2 HTTP attempts" in str(error.value)
+        assert "Next step: Check Model(base_url=...), network connectivity" in str(error.value)
     assert len(seen) == 2
 
 
@@ -173,4 +175,27 @@ async def test_transport_error_message_does_not_echo_secrets(asynchronous):
             with httpx.Client(transport=transport) as client:
                 extract(Invoice, model, b"text", client=client)
     assert "private-key" not in str(error.value)
+    assert "after 1 HTTP attempt" in str(error.value)
+    assert "Next step: Check Model(headers=...)" in str(error.value)
     assert isinstance(error.value.__cause__, httpx.LocalProtocolError)
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+async def test_timeout_error_explains_how_to_adjust_timeout(asynchronous):
+    def handler(request):
+        raise httpx.ReadTimeout("private network details", request=request)
+
+    transport = httpx.MockTransport(handler)
+    model = Model("openai:test", api_key="private-key", max_retries=1)
+    with pytest.raises(ModelError) as error:
+        if asynchronous:
+            async with httpx.AsyncClient(transport=transport) as client:
+                await extract_async(Invoice, model, b"Invoice", client=client)
+        else:
+            with httpx.Client(transport=transport) as client:
+                extract(Invoice, model, b"Invoice", client=client)
+    message = str(error.value)
+    assert "ReadTimeout" in message and "after 2 HTTP attempts" in message
+    assert "Next step:" in message and "Model(timeout=...)" in message
+    assert "private" not in message
+    assert isinstance(error.value.__cause__, httpx.ReadTimeout)

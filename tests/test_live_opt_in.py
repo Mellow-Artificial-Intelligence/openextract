@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-LIVE_TESTS = ROOT / "tests" / "test_live_providers.py"
+LIVE_TESTS = [ROOT / "tests" / name for name in ("test_live_providers.py", "test_live_schemas.py")]
 KEY_VARIABLES = (
     "OPENAI_API_KEY",
     "ANTHROPIC_API_KEY",
@@ -23,7 +23,7 @@ def test_live_tests_stay_disabled_even_with_credentials():
             sys.executable,
             "-m",
             "pytest",
-            str(LIVE_TESTS),
+            *map(str, LIVE_TESTS),
             "-m",
             "live",
             "--no-cov",
@@ -38,7 +38,7 @@ def test_live_tests_stay_disabled_even_with_credentials():
         timeout=20,
     )
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "56 skipped" in result.stdout
+    assert "62 skipped" in result.stdout
 
 
 def test_explicit_live_run_requires_credentials():
@@ -49,7 +49,7 @@ def test_explicit_live_run_requires_credentials():
             sys.executable,
             "-m",
             "pytest",
-            str(LIVE_TESTS),
+            *map(str, LIVE_TESTS),
             "--live",
             "-m",
             "live",

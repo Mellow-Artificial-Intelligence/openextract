@@ -167,3 +167,72 @@ def test_non_json_http_error_keeps_status_without_body():
         extract(Invoice, configured(), b"Invoice", client=client)
     assert error.value.status_code == 502
     assert "private body" not in str(error.value)
+
+
+@pytest.mark.parametrize(
+    "status,code,native,hint",
+    [
+        (400, "invalid_json_schema", None, "supported JSON Schema subset"),
+        (200, None, "MALFORMED_FUNCTION_CALL", "output_mode='json_schema'"),
+        (307, None, None, "final API endpoint"),
+        (400, None, None, "Model(settings=...)"),
+        (401, None, None, "API key or authentication headers"),
+        (403, None, None, "permission"),
+        (404, None, None, "model identifier"),
+        (408, None, None, "provider or gateway timed out"),
+        (413, None, None, "document size"),
+        (429, None, None, "rate limits, quota, and billing"),
+        (500, None, None, "provider's service status"),
+        (504, None, None, "provider or gateway timed out"),
+    ],
+)
+def test_provider_errors_explain_the_failure_and_next_step(status, code, native, hint):
+    payload = {
+        "error": {"message": "Request was rejected", "code": code},
+        "provider": "Example Provider",
+        "choices": [{"finish_reason": "error", "native_finish_reason": native}],
+    }
+    with (
+        httpx.Client(
+            transport=httpx.MockTransport(lambda r: httpx.Response(status, json=payload))
+        ) as client,
+        pytest.raises(ModelError) as error,
+    ):
+        extract(Invoice, configured(), b"Invoice", client=client)
+    message = str(error.value)
+    assert "\nProvider: Example Provider\n" in message
+    assert "\nDetails: Request was rejected\n" in message
+    assert "\nNext step: " in message
+    assert hint in message
+    assert error.value.status_code == status
+    assert error.value.code == code
+    assert error.value.native_finish_reason == native
+
+
+def test_top_level_error_message_is_preserved_without_echoing_whole_body():
+    payload = {"message": "Model access is disabled", "private": "source contents"}
+    with (
+        httpx.Client(
+            transport=httpx.MockTransport(lambda r: httpx.Response(403, json=payload))
+        ) as client,
+        pytest.raises(ModelError) as error,
+    ):
+        extract(Invoice, configured(), b"Invoice", client=client)
+    assert "Details: Model access is disabled" in str(error.value)
+    assert "source contents" not in str(error.value)
+
+
+def test_large_provider_message_cannot_hide_the_next_step_or_inject_extra_lines():
+    payload = {"error": {"message": "private-key\n" * 1000}}
+    with (
+        httpx.Client(
+            transport=httpx.MockTransport(lambda r: httpx.Response(401, json=payload))
+        ) as client,
+        pytest.raises(ModelError) as error,
+    ):
+        extract(Invoice, Model("openai:test", api_key="private-key"), b"Invoice", client=client)
+    message = str(error.value)
+    assert "private-key" not in message
+    assert len(message) < 2300
+    assert len(message.splitlines()) == 3
+    assert message.splitlines()[-1].startswith("Next step:")

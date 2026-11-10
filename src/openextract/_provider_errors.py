@@ -22,6 +22,45 @@ def _redact(value: str, secrets: Iterable[str]) -> str:
     return " ".join(value.split())[:2000]
 
 
+def _next_step(status: int, code: str | int | None, native: str | None) -> str:
+    if code == "invalid_json_schema":
+        return (
+            "Simplify the schema to the provider's supported JSON Schema subset "
+            "or change output mode."
+        )
+    if native == "MALFORMED_FUNCTION_CALL":
+        return (
+            "Simplify the extraction schema or use Model(output_mode='json_schema') "
+            "with a Chat Completions model that supports it."
+        )
+    if 300 <= status < 400:
+        return (
+            "Set Model(base_url=...) to the final API endpoint; "
+            "provider redirects are not followed."
+        )
+    if status == 401:
+        return "Check the API key or authentication headers for the selected provider."
+    if status == 403:
+        return "Check that the account and credentials have permission to use the selected model."
+    if status == 404:
+        return "Check the model identifier and Model(base_url=...), including the API version."
+    if status in (408, 504):
+        return (
+            "The provider or gateway timed out. Retry later or reduce "
+            "the document size or output token budget."
+        )
+    if status == 413:
+        return "Reduce the source document size or split it into smaller inputs."
+    if status == 429:
+        return "Wait before retrying; check the provider's rate limits, quota, and billing."
+    if status >= 500:
+        return "Retry later; check the provider's service status if failures continue."
+    return (
+        "Check the provider details, model, schema, media type, "
+        "and Model(settings=...) before retrying."
+    )
+
+
 def provider_error(
     payload: dict[str, Any], status_code: int, secrets: Iterable[str] = ()
 ) -> ModelError | None:
@@ -42,7 +81,7 @@ def provider_error(
     code = fields.get("code", fields.get("type"))
     if type(code) not in (str, int):
         code = None
-    message = _text(fields.get("message")) or _text(error)
+    message = _text(fields.get("message")) or _text(error) or _text(payload.get("message"))
     # OpenRouter may place the upstream error in a JSON string under metadata.raw.
     raw = metadata.get("raw")
     if isinstance(raw, str):
@@ -56,18 +95,24 @@ def provider_error(
         if detail:
             message = f"{message}: {detail}" if message else detail
 
-    details = [
-        str(value) for value in (provider, code, native or finish, message) if value is not None
-    ]
     summary = (
         f"Model provider returned HTTP {status_code}"
         if not 200 <= status_code < 300
         else "Model provider failed"
     )
-    if details:
-        summary += ": " + "; ".join(details)
+    details = [summary + "."]
+    for label, value in (
+        ("Provider", provider),
+        ("Code", code),
+        ("Finish reason", finish),
+        ("Native finish reason", native),
+        ("Details", message),
+    ):
+        if value is not None:
+            details.append(f"{label}: {_redact(str(value), secrets)}")
+    details.append("Next step: " + _next_step(status_code, code, native))
     return ModelError(
-        _redact(summary, secrets),
+        "\n".join(details),
         status_code=status_code,
         code=_redact(code, secrets) if isinstance(code, str) else code,
         provider=_redact(provider, secrets) if provider else None,

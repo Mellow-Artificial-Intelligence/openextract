@@ -10,6 +10,7 @@ from pydantic import BaseModel, ValidationError
 from pydantic.fields import FieldInfo
 
 from ._content import Content
+from ._validation_errors import invalid_response_message, validation_message
 from .exceptions import SchemaValidationError
 
 _YES_THRESHOLD = 0.5
@@ -65,8 +66,19 @@ def _parse[T: BaseModel](schema: type[T], payload: dict[str, Any]) -> T:
             name: _answer(name, field, answers[name]) for name, field in schema.model_fields.items()
         }
         return schema.model_validate(values, by_name=True)
-    except (KeyError, TypeError, ValueError, ValidationError) as exc:
-        raise SchemaValidationError(f"The answers did not match the schema: {exc}") from exc
+    except ValidationError as exc:
+        raise SchemaValidationError(validation_message(exc, 1)) from exc
+    except (KeyError, TypeError, ValueError) as exc:
+        raise SchemaValidationError(
+            invalid_response_message(exc, context="decision answers")
+        ) from exc
+
+
+def _choice(name: str, annotation: object, value: object) -> object:
+    choices = _choices(name, annotation)
+    if not isinstance(value, str) or value not in choices:
+        raise ValueError(f"Expected one of {list(choices)!r} for field {name!r}.")
+    return choices[value]
 
 
 def _answer(name: str, field: FieldInfo, answer: dict[str, Any]) -> object:
@@ -77,8 +89,10 @@ def _answer(name: str, field: FieldInfo, answer: dict[str, Any]) -> object:
             or type(probability) not in (int, float)
             or not 0 <= probability <= 1
         ):
-            raise ValueError(f"Invalid yes/no answer for {name!r}.")
+            raise ValueError(
+                f"Expected a yes/no answer with a numeric probability from 0 to 1 for {name!r}."
+            )
         return probability >= _YES_THRESHOLD
     if answer["type"] != "choice":
         raise ValueError(f"Expected a choice answer for {name!r}.")
-    return _choices(name, field.annotation)[answer["choice"]]
+    return _choice(name, field.annotation, answer["choice"])

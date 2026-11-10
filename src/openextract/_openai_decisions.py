@@ -7,7 +7,8 @@ from typing import Any
 from pydantic import BaseModel, ValidationError
 
 from ._content import Content
-from ._decisions import _choices
+from ._decisions import _choice, _choices
+from ._validation_errors import invalid_response_message, validation_message
 from .exceptions import SchemaValidationError
 
 
@@ -56,6 +57,8 @@ def _parse[T: BaseModel](schema: type[T], payload: dict[str, Any]) -> T:
         values = {}
         for answer in answers:
             name = answer["name"]
+            if not isinstance(name, str) or name not in schema.model_fields:
+                raise ValueError("Received an answer for an unknown schema field.")
             if name in values:
                 raise ValueError(f"Duplicate answer for {name!r}.")
             field = schema.model_fields[name]
@@ -68,14 +71,21 @@ def _parse[T: BaseModel](schema: type[T], payload: dict[str, Any]) -> T:
                     or type(probability) not in (int, float)
                     or not 0 <= probability <= 1
                 ):
-                    raise ValueError(f"Invalid predicate answer for {name!r}.")
+                    raise ValueError(
+                        "Expected a predicate answer with a numeric probability "
+                        f"from 0 to 1 for {name!r}."
+                    )
                 values[name] = probability >= 0.5
             else:
                 if answer["type"] != "choice":
                     raise ValueError(f"Expected a choice answer for {name!r}.")
-                values[name] = _choices(name, field.annotation)[answer["choice"]]
+                values[name] = _choice(name, field.annotation, answer["choice"])
         if values.keys() != schema.model_fields.keys():
             raise ValueError("Not every schema field received an answer.")
         return schema.model_validate(values, by_name=True)
-    except (KeyError, TypeError, ValueError, ValidationError) as exc:
-        raise SchemaValidationError(f"The answers did not match the schema: {exc}") from exc
+    except ValidationError as exc:
+        raise SchemaValidationError(validation_message(exc, 1)) from exc
+    except (KeyError, TypeError, ValueError) as exc:
+        raise SchemaValidationError(
+            invalid_response_message(exc, context="decision answers")
+        ) from exc

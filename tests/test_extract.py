@@ -3,7 +3,7 @@ from pathlib import Path
 
 import httpx
 import pytest
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
 import openextract._extract as extract_module
 from openextract import (
@@ -173,6 +173,9 @@ async def test_invalid_output_raises_schema_validation_error(monkeypatch, asynch
             extract(Invoice, configured(), PDF_BYTES)
     assert isinstance(error.value.__cause__, ValidationError)
     assert "lots" not in str(error.value)
+    assert "after 1 validation attempt" in str(error.value)
+    assert "- total:" in str(error.value)
+    assert "Next step:" in str(error.value)
 
 
 @pytest.mark.parametrize("asynchronous", [False, True])
@@ -256,3 +259,84 @@ def test_aliases_defaults_and_nested_validation(monkeypatch):
 def test_missing_local_file():
     with pytest.raises(FileNotFoundError):
         extract(Invoice, configured(), "/missing/invoice.pdf")
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+async def test_validation_diagnostics_are_bounded_and_include_nested_field_paths(asynchronous):
+    class Item(BaseModel):
+        quantity: int
+
+    class Receipt(BaseModel):
+        items: list[Item]
+
+    value = {"items": [{"quantity": "private-invalid-value"}] * 7}
+    transport = httpx.MockTransport(lambda r: httpx.Response(200, json=output(value=value)))
+    with pytest.raises(SchemaValidationError) as error:
+        if asynchronous:
+            async with httpx.AsyncClient(transport=transport) as client:
+                await extract_async(Receipt, configured(), b"Receipt", client=client)
+        else:
+            with httpx.Client(transport=transport) as client:
+                extract(Receipt, configured(), b"Receipt", client=client)
+    message = str(error.value)
+    assert "after 1 validation attempt" in message
+    assert "items.0.quantity: Input should be a valid integer" in message
+    assert "items.4.quantity" in message and "items.5.quantity" not in message
+    assert "2 more validation errors omitted" in message
+    assert "private-invalid-value" not in message
+    assert error.value.__cause__.error_count() == 7
+
+
+def test_validator_input_is_not_echoed_in_diagnostics_or_retry_feedback(monkeypatch):
+    class Receipt(BaseModel):
+        account: str
+
+        @field_validator("account")
+        @classmethod
+        def reject_account(cls, value):
+            raise ValueError(f"Rejected private account: {value}")
+
+    seen = record(monkeypatch, payload=output(value={"account": "private-account-number"}))
+    with pytest.raises(SchemaValidationError) as error:
+        extract(Receipt, Model("openai:test", api_key="test-key"), b"Receipt")
+    message = str(error.value)
+    assert "account: Value did not satisfy a schema validator" in message
+    assert "after 2 validation attempts" in message
+    assert "private-account-number" not in message
+    assert "private-account-number" not in json.loads(seen[1].content)["instructions"]
+
+
+def test_model_validator_diagnostics_identify_root(monkeypatch):
+    class Receipt(BaseModel):
+        total: float
+
+        @model_validator(mode="after")
+        def reject_total(self):
+            assert self.total < 0, f"Invalid private total: {self.total}"
+            return self
+
+    record(monkeypatch)
+    with pytest.raises(SchemaValidationError) as error:
+        extract(Receipt, configured(), b"Receipt")
+    assert "<root>: Value did not satisfy a schema assertion" in str(error.value)
+    assert "42" not in str(error.value)
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+async def test_url_connection_error_explains_custom_fetching_without_echoing_url(
+    monkeypatch, asynchronous
+):
+    def handler(request):
+        raise httpx.ConnectError("private URL: " + str(request.url), request=request)
+
+    serve(monkeypatch, handler)
+    with pytest.raises(ExtractionError) as error:
+        if asynchronous:
+            await extract_async(Invoice, configured(), "https://example.com/?token=private-token")
+        else:
+            extract(Invoice, configured(), "https://example.com/?token=private-token")
+    message = str(error.value)
+    assert "Could not fetch the source URL (ConnectError)" in message
+    assert "Next step:" in message and "pass its bytes" in message
+    assert "private-token" not in message
+    assert isinstance(error.value.__cause__, httpx.ConnectError)

@@ -40,7 +40,10 @@ Too small a token budget can truncate output and raise `SchemaValidationError`.
 
 Strict JSON Schema output requests every declared field, including fields with
 defaults, and rejects open-ended dictionaries. The original Pydantic model still
-performs final validation. Schema validation cannot establish factual accuracy.
+performs final validation. Tagged unions are converted to the provider's strict
+schema format. All general adapters use JSON validation, including decoded
+Anthropic and Bedrock tool inputs, so strict `date` and `Decimal` fields retain
+the same behavior across providers. Schema validation cannot establish factual accuracy.
 
 See the [provider matrix](../README.md#providers) for media and authentication
 limits, including Bedrock bearer-token authentication and caller-supplied HTTPX

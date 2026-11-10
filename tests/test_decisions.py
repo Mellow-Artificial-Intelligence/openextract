@@ -4,7 +4,7 @@ from typing import Literal
 
 import httpx
 import pytest
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 import openextract._extract as extract_module
 from openextract import (
@@ -334,3 +334,68 @@ async def test_openai_decisions_network_error(monkeypatch):
     serve(monkeypatch, handler)
     with pytest.raises(ModelError, match="ConnectError"):
         await extract_async(Triage, "openai-decisions:gpt-6-luna", b"text")
+
+
+@pytest.mark.parametrize("api", ["openai-decisions", "openrouter-decisions"])
+@pytest.mark.parametrize("asynchronous", [False, True])
+async def test_decision_validator_errors_describe_field_without_echoing_input(api, asynchronous):
+    class Decision(BaseModel):
+        is_paid: bool
+
+        @field_validator("is_paid")
+        @classmethod
+        def reject_paid(cls, value):
+            raise ValueError(f"Rejected private decision: {value}")
+
+    payload = {
+        "answers": (
+            [{"name": "is_paid", "type": "predicate", "probability": 0.9}]
+            if api == "openai-decisions"
+            else {"is_paid": {"type": "noul", "noul": 0.9}}
+        )
+    }
+    model = Model("custom:test", api=api, base_url="https://example.com", max_retries=0)
+    transport = httpx.MockTransport(lambda r: httpx.Response(200, json=payload))
+    with pytest.raises(SchemaValidationError) as error:
+        if asynchronous:
+            async with httpx.AsyncClient(transport=transport) as client:
+                await extract_async(Decision, model, b"Receipt", client=client)
+        else:
+            with httpx.Client(transport=transport) as client:
+                extract(Decision, model, b"Receipt", client=client)
+    message = str(error.value)
+    assert "is_paid: Value did not satisfy a schema validator" in message
+    assert "Next step:" in message
+    assert "private decision" not in message
+    assert isinstance(error.value.__cause__, ValidationError)
+
+
+@pytest.mark.parametrize("api", ["openai-decisions", "openrouter-decisions"])
+@pytest.mark.parametrize("choice", ["private-invalid-choice", []])
+def test_invalid_decision_choice_lists_expected_options_without_echoing_answer(api, choice):
+    class Decision(BaseModel):
+        currency: Literal["USD", "EUR"]
+
+    payload = {
+        "answers": (
+            [{"name": "currency", "type": "choice", "choice": choice}]
+            if api == "openai-decisions"
+            else {"currency": {"type": "choice", "choice": choice}}
+        )
+    }
+    with (
+        httpx.Client(
+            transport=httpx.MockTransport(lambda r: httpx.Response(200, json=payload))
+        ) as client,
+        pytest.raises(SchemaValidationError) as error,
+    ):
+        extract(
+            Decision,
+            Model("custom:test", api=api, base_url="https://example.com"),
+            b"Receipt",
+            client=client,
+        )
+    message = str(error.value)
+    assert "Expected one of ['USD', 'EUR'] for field 'currency'" in message
+    assert "Next step:" in message
+    assert "private-invalid-choice" not in message

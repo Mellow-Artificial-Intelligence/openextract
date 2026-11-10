@@ -45,6 +45,10 @@ def _strict_schema(schema: dict[str, Any]) -> dict[str, Any]:
 
     def visit(node: dict[str, Any]) -> None:
         node.pop("default", None)
+        node.pop("discriminator", None)
+        if "oneOf" in node:
+            # Tagged union branches remain disjoint through their discriminator literals.
+            node["anyOf"] = node.pop("oneOf")
         if node.get("type") == "object":
             if node.get("additionalProperties") not in (None, False):
                 raise ValueError(

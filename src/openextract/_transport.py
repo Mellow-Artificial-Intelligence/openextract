@@ -62,6 +62,24 @@ def _check(response: httpx.Response, model: ResolvedModel) -> dict[str, Any]:
     return result
 
 
+def _request_error(error: httpx.RequestError, attempts: int) -> ModelError:
+    if isinstance(error, httpx.TimeoutException):
+        hint = "Check provider availability or increase Model(timeout=...) for slow requests."
+    elif isinstance(error, httpx.LocalProtocolError):
+        hint = "Check Model(headers=...) and client authentication for invalid header values."
+    elif isinstance(error, httpx.DecodingError):
+        hint = "Check the provider or proxy's response encoding and compression settings."
+    else:
+        hint = (
+            "Check Model(base_url=...), network connectivity, proxy settings, and TLS certificates."
+        )
+    unit = "attempt" if attempts == 1 else "attempts"
+    return ModelError(
+        f"The model request failed ({type(error).__name__}) after {attempts} HTTP {unit}.\n"
+        f"Next step: {hint}"
+    )
+
+
 def post(
     model: ResolvedModel, path: str, body: Mapping[str, Any], client: httpx.Client
 ) -> dict[str, Any]:
@@ -77,7 +95,7 @@ def post(
             )
         except httpx.RequestError as exc:
             if not isinstance(exc, httpx.TransportError) or attempt == model.config.max_retries:
-                raise ModelError(f"The model request failed ({type(exc).__name__}).") from exc
+                raise _request_error(exc, attempt + 1) from exc
         else:
             if response.status_code not in _RETRY_STATUSES or attempt == model.config.max_retries:
                 return _check(response, model)
@@ -100,7 +118,7 @@ async def post_async(
             )
         except httpx.RequestError as exc:
             if not isinstance(exc, httpx.TransportError) or attempt == model.config.max_retries:
-                raise ModelError(f"The model request failed ({type(exc).__name__}).") from exc
+                raise _request_error(exc, attempt + 1) from exc
         else:
             if response.status_code not in _RETRY_STATUSES or attempt == model.config.max_retries:
                 return _check(response, model)

@@ -109,9 +109,12 @@ PDFs, and clean/degraded image-only scans. Expected invoices and checksums are
 checked in with the fixtures. Generation and PDF-rendering tools are not needed
 to run the tests.
 
-The live matrix has 56 cases: seven inputs, four provider routes, and sync/path
-plus async/bytes extraction. Model IDs and token limits are declared in
-`tests/test_live_providers.py`. Each case checks exact output with HTTP and
+The live suite has 62 cases. The invoice matrix has 56 cases: seven inputs, four
+provider routes, and sync/path plus async/bytes extraction. Six schema regression
+cases cover tagged unions and strict dates/decimals through OpenAI Responses,
+OpenAI Chat JSON Schema, and Anthropic, in sync and async calls. Model IDs and
+token limits are declared in `tests/test_live_providers.py` and
+`tests/test_live_schemas.py`. Each case checks exact output with HTTP and
 validation retries disabled, so failures remain visible.
 
 | Route | Credentials |

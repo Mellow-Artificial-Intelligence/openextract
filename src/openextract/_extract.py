@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import mimetypes
 import os
 from collections.abc import Generator
@@ -14,6 +15,7 @@ from pydantic import BaseModel, ValidationError
 
 from . import _decisions, _openai_decisions, _providers, _transport
 from ._content import Content
+from ._validation_errors import invalid_response_message, validation_details, validation_message
 from .exceptions import (
     ExtractionError,
     SchemaValidationError,
@@ -65,12 +67,10 @@ def extract[T: BaseModel](
                 return _validate(schema, resolved, payload)
             except ValidationError as exc:
                 if attempt == resolved.config.validation_retries:
-                    raise SchemaValidationError(
-                        "The model output did not match the schema."
-                    ) from exc
+                    raise SchemaValidationError(validation_message(exc, attempt + 1)) from exc
                 path, body = _prepare(schema, resolved, content, _feedback(instructions, exc))
             except (KeyError, IndexError, TypeError, ValueError, AttributeError) as exc:
-                raise SchemaValidationError(f"Invalid model response: {exc}") from exc
+                raise SchemaValidationError(invalid_response_message(exc)) from exc
     raise AssertionError("Unreachable")  # pragma: no cover
 
 
@@ -94,12 +94,10 @@ async def extract_async[T: BaseModel](
                 return _validate(schema, resolved, payload)
             except ValidationError as exc:
                 if attempt == resolved.config.validation_retries:
-                    raise SchemaValidationError(
-                        "The model output did not match the schema."
-                    ) from exc
+                    raise SchemaValidationError(validation_message(exc, attempt + 1)) from exc
                 path, body = _prepare(schema, resolved, content, _feedback(instructions, exc))
             except (KeyError, IndexError, TypeError, ValueError, AttributeError) as exc:
-                raise SchemaValidationError(f"Invalid model response: {exc}") from exc
+                raise SchemaValidationError(invalid_response_message(exc)) from exc
     raise AssertionError("Unreachable")  # pragma: no cover
 
 
@@ -125,15 +123,18 @@ def _validate[T: BaseModel](schema: type[T], model: ResolvedModel, payload: dict
     if model.api == "openrouter-decisions":
         return _decisions._parse(schema, payload)
     output = _providers.parse(model, payload)
-    if isinstance(output, str):
-        return schema.model_validate_json(output)
-    return schema.model_validate(output)
+    if isinstance(output, dict):
+        # Tool inputs are decoded JSON; retain JSON validation semantics for strict types.
+        output = json.dumps(output)
+    return schema.model_validate_json(output)
 
 
 def _feedback(instructions: str | None, error: ValidationError) -> str:
     # Do not echo the provider's raw output back in error messages or retry instructions.
-    errors = error.errors(include_input=False, include_url=False, include_context=False)
-    return f"{instructions or _PROMPT}\nCorrect these output validation errors: {errors}"
+    return (
+        f"{instructions or _PROMPT}\nCorrect these output validation errors:\n"
+        f"{validation_details(error)}"
+    )
 
 
 def _is_url(source: Source) -> bool:
@@ -206,4 +207,14 @@ def _fetch_errors() -> Generator[None]:
     try:
         yield
     except httpx.HTTPError as exc:
-        raise ExtractionError(f"Could not fetch the URL: {exc}") from exc
+        detail = (
+            f"HTTP {exc.response.status_code}"
+            if isinstance(exc, httpx.HTTPStatusError)
+            else type(exc).__name__
+        )
+        raise ExtractionError(
+            f"Could not fetch the source URL ({detail}).\n"
+            "Next step: Check the URL and network access. If the source needs authentication "
+            "or a custom timeout, download it with your own HTTP client "
+            "and pass its bytes to extract()."
+        ) from exc

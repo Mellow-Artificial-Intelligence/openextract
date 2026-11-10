@@ -151,7 +151,9 @@ defaults, are requested, and fixed objects disallow additional properties.
 Open-ended dictionaries are rejected; select `Model("openai:gpt-5", api="chat")`
 for tool-based output instead. Other schema restrictions depend on the provider.
 The original Pydantic model always performs the final validation, including custom
-validators and constraints.
+validators and constraints. Tagged unions are adapted to the provider's strict
+schema format. General adapters use JSON validation consistently, so strict
+`date` and `Decimal` fields also work with decoded tool inputs.
 
 Bedrock requires `AWS_REGION` (or `AWS_DEFAULT_REGION`) unless `base_url` is
 provided. Authentication uses a [Bedrock bearer token](https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys-use.html).
@@ -291,6 +293,22 @@ HTTP failures.
 or a Chat Completions `finish_reason="error"` raises `ModelError`, including the
 native reason such as `MALFORMED_FUNCTION_CALL`. Invalid generated data, refusals,
 and truncated output remain `SchemaValidationError`.
+
+Messages explain what failed and end with a `Next step:` suggestion. For example:
+
+```text
+Model provider returned HTTP 401.
+Code: authentication_error
+Details: Invalid API key.
+Next step: Check the API key or authentication headers for the selected provider.
+```
+
+Schema errors list field paths and validation reasons, with at most five details.
+Raw invalid values are omitted; custom `ValueError`/assertion messages and invalid
+union tags are summarized because they can embed input data. Request and validation
+failures include attempt counts. Chained exceptions retain full diagnostics and
+can contain sensitive data. For programmatic handling, use exception classes and
+`ModelError` attributes rather than parsing message text.
 
 | Exception | Raised when |
 | --- | --- |
