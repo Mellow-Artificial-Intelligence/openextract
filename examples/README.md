@@ -30,6 +30,9 @@ meanings, validate currency, guide interpretation, and override media detection.
 For generation behavior, see [configured models](configured_models.md) and the
 [dependency compatibility record](model_compatibility.md).
 
+For preprocessing, reuse, and bounded async extraction, see the runnable
+[ordinary-Python composition recipes](composition.md).
+
 ## Offline checks
 
 ```bash

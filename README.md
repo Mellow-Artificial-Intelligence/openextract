@@ -118,6 +118,9 @@ extract(Invoice, "openai:gpt-5", source=pdf_bytes, instructions="Amounts are in 
 For provider generation settings, see [configured models](examples/configured_models.md)
 for a typed example, sync/async checks, and dependency compatibility limits.
 
+For caller-owned preprocessing, reusable functions, and bounded async work, see
+[ordinary-Python composition recipes](examples/composition.md).
+
 ## Decision models
 
 For schemas made of `bool`, `Literal`, and `Enum` fields, use a decision model
