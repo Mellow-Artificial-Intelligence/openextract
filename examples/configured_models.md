@@ -12,8 +12,11 @@ sets an output-token limit. It requires Python 3.12+, `openextract`, and an
 `ANTHROPIC_API_KEY` with access to that model. Running it against the provider
 makes a paid request; the tests below use no real credentials or provider calls.
 
+In your project directory, add OpenExtract with uv and set the API key.
+If you need to create a project, see the [quickstart](../README.md#first-extraction).
+
 ```bash
-pip install openextract
+uv add openextract
 export ANTHROPIC_API_KEY='your-api-key'
 ```
 
