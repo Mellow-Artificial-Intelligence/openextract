@@ -244,9 +244,41 @@ def test_custom_chat_endpoint_and_settings():
     assert json.loads(seen[0].content)["model"] == "tenant/model:latest"
 
 
-def test_openrouter_protocol_can_be_explicitly_overridden():
-    model = Model("openrouter:typesafe/model", api="chat", api_key="key")
-    assert resolve(model).api == "chat"
+@pytest.mark.parametrize(
+    "name",
+    [
+        "openrouter:cloudflare/clairic",
+        "openrouter:inception/mercury-decide",
+        "openrouter:levanto/sage-2",
+        "openrouter:scaledown/extract",
+        "openrouter-extractions:custom/preview",
+    ],
+)
+def test_openrouter_extractions_route(monkeypatch, name):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "env-key")
+    resolved = resolve(name)
+    assert resolved.api == "openrouter-extractions"
+    assert resolved.base_url == "https://openrouter.ai/api/alpha"
+    assert resolved.model_name == name.split(":", 1)[1]
+    assert resolved.headers["authorization"] == "Bearer env-key"
+
+
+@pytest.mark.parametrize(
+    "name,api,base_url",
+    [
+        ("openrouter:typesafe/model", "chat", "https://openrouter.ai/api/v1"),
+        (
+            "openrouter:inception/mercury-decide",
+            "openrouter-decisions",
+            "https://openrouter.ai/api/alpha",
+        ),
+        ("openrouter:custom/preview", "openrouter-extractions", "https://openrouter.ai/api/alpha"),
+    ],
+)
+def test_openrouter_protocol_can_be_explicitly_overridden(name, api, base_url):
+    resolved = resolve(Model(name, api=api, api_key="key"))
+    assert resolved.api == api
+    assert resolved.base_url == base_url
 
 
 @pytest.mark.parametrize("mode", ["tool", "json_schema"])
