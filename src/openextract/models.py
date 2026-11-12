@@ -6,7 +6,7 @@ import math
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any, Literal, get_args
 
 import httpx
 
@@ -22,6 +22,7 @@ type API = Literal[
     "bedrock",
     "openai-decisions",
     "openrouter-decisions",
+    "openrouter-extractions",
 ]
 
 
@@ -82,6 +83,12 @@ _PROVIDERS = {
     "openrouter": _Provider(
         "chat", "https://openrouter.ai/api/v1", "OPENROUTER_API_KEY", "OPENROUTER_BASE_URL"
     ),
+    "openrouter-extractions": _Provider(
+        "openrouter-extractions",
+        "https://openrouter.ai/api/v1",
+        "OPENROUTER_API_KEY",
+        "OPENROUTER_BASE_URL",
+    ),
     "groq": _Provider("chat", "https://api.groq.com/openai/v1", "GROQ_API_KEY", "GROQ_BASE_URL"),
     "mistral": _Provider(
         "chat", "https://api.mistral.ai/v1", "MISTRAL_API_KEY", "MISTRAL_BASE_URL"
@@ -98,6 +105,12 @@ _PROVIDERS = {
     ),
 }
 _ALIASES = {"openai-responses": "openai", "google-gla": "google", "gemini": "google"}
+_OPENROUTER_EXTRACTION_MODELS = {
+    "cloudflare/clairic",
+    "inception/mercury-decide",
+    "levanto/sage-2",
+    "scaledown/extract",
+}
 
 
 @dataclass(frozen=True)
@@ -122,27 +135,15 @@ def resolve(model: str | Model) -> ResolvedModel:
         raise ValueError(f"Unknown provider {prefix!r}; configure Model(api=..., base_url=...).")
     if model.api is not None:
         api = model.api
+    elif prefix == "openrouter" and name in _OPENROUTER_EXTRACTION_MODELS:
+        api = "openrouter-extractions"
+    elif prefix == "openrouter" and name.startswith(("typesafe/", "~typesafe/")):
+        api = "openrouter-decisions"
     else:
         assert provider is not None
         api = provider.api
-    if api not in {
-        "responses",
-        "chat",
-        "anthropic",
-        "gemini",
-        "ollama",
-        "cohere",
-        "bedrock",
-        "openai-decisions",
-        "openrouter-decisions",
-    }:
+    if api not in get_args(API.__value__):
         raise ValueError(f"Unsupported HTTP API: {api!r}.")
-    if (
-        prefix == "openrouter"
-        and name.startswith(("typesafe/", "~typesafe/"))
-        and model.api is None
-    ):
-        api = "openrouter-decisions"
     if model.output_mode is not None:
         if model.output_mode not in ("tool", "json_schema"):
             raise ValueError("output_mode must be 'tool' or 'json_schema'.")
@@ -152,8 +153,8 @@ def resolve(model: str | Model) -> ResolvedModel:
     if base_url is None:
         assert provider is not None
         base_url = os.environ.get(provider.url_env) or provider.base_url
-        if api == "openrouter-decisions":
-            base_url = base_url.rstrip("/").removesuffix("/v1") + "/alpha"
+        if api in ("openrouter-decisions", "openrouter-extractions"):
+            base_url = base_url.rstrip("/").removesuffix("/v1").removesuffix("/alpha") + "/alpha"
         if api == "bedrock" and not base_url:
             region = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION")
             if not region:

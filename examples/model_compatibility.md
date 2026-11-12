@@ -31,6 +31,7 @@ uv run --no-sync pytest tests/test_configured_models.py
 | Local Ollama | Top-level parameters; sampling inside `options` | JSON Schema |
 | Cohere V2 Chat | Top-level request parameters | JSON Schema |
 | Bedrock Converse | Top-level parameters; inference options inside `inferenceConfig` | Forced extraction tool |
+| [OpenRouter Extractions](../README.md#openrouter-extractions) | Top-level request parameters such as `provider` and `reference_date` | Flat typed fields with model-specific metadata |
 | Decisions | Settings rejected | `bool`, `Literal`, and `Enum` fields only |
 
 Settings use the provider's native spelling and are not checked against an SDK

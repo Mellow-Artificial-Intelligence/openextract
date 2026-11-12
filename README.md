@@ -96,8 +96,8 @@ media-type overrides, using the same `Invoice` result type.
 ## Usage
 
 ```python
-extract(schema, model, source, instructions=None, *, media_type=None, client=None)
-await extract_async(schema, model, source, instructions=None, *, media_type=None, client=None)
+extract(schema, model, source, instructions=None, *, media_type=None, client=None, include_metadata=False)
+await extract_async(schema, model, source, instructions=None, *, media_type=None, client=None, include_metadata=False)
 ```
 
 - **`source`** accepts plain text, a `pathlib.Path` (or another `os.PathLike`) for a local file, an `http(s)://` URL, or raw `bytes`. Strings are text unless they start with `http://` or `https://`. Text is encoded as UTF-8 automatically; use `Path("invoice.pdf")` to read a local file.
@@ -105,6 +105,7 @@ await extract_async(schema, model, source, instructions=None, *, media_type=None
 - **`instructions`** are optional extra guidance for the model.
 - **`media_type`** defaults to `text/plain` for plain strings. For files, URLs, and bytes, openextract checks the file extension, then the URL's `Content-Type`, then the leading bytes (PDF, PNG, JPEG, GIF, WebP, MP3, WAV, FLAC, OGG, MP4, UTF-8 text). Pass it to override the result.
 - **`client`** is an optional `httpx.Client` for `extract`, or `httpx.AsyncClient` for `extract_async`. It is used only for model requests and remains open. Without it, openextract creates and closes a client for each extraction. Source URLs are fetched separately without model credentials.
+- **`include_metadata`** returns an [`ExtractionResult`](#openrouter-extractions) when enabled for OpenRouter Extractions.
 
 Media detection does not mean every model accepts every format. Choose a model
 that supports your input and schema.
@@ -130,7 +131,7 @@ input type and structured output or tool calling used by its adapter.
 | --- | --- | --- | --- |
 | `openai`, `openai-responses` | [Responses](https://developers.openai.com/api/docs/guides/structured-outputs) | `OPENAI_API_KEY` | Text, images, PDF, Word, RTF, ODT, PowerPoint, Excel |
 | `openai-chat` | Chat Completions, tool or JSON Schema output | `OPENAI_API_KEY` | Text, images, PDF, MP3, WAV |
-| `openrouter` | Chat Completions, tool or JSON Schema output | `OPENROUTER_API_KEY` | Chat content supported by the endpoint and model |
+| `openrouter` | Chat Completions, [Extractions](#openrouter-extractions), or [Decisions](#decision-models), selected by model | `OPENROUTER_API_KEY` | Depends on the API and model |
 | `groq`, `mistral`, `xai`, `cerebras`, `huggingface` | Chat Completions, tool or JSON Schema output | `GROQ_API_KEY`, `MISTRAL_API_KEY`, `XAI_API_KEY`, `CEREBRAS_API_KEY`, `HF_TOKEN`, respectively | Chat content supported by the endpoint and model |
 | `anthropic` | Messages with a forced extraction tool | `ANTHROPIC_API_KEY` | Text, PNG, JPEG, GIF, WebP, PDF |
 | `google`, `google-gla`, `gemini` | Gemini `generateContent` with JSON Schema | `GOOGLE_API_KEY` or `GEMINI_API_KEY` | Text, images, PDF, audio, video |
@@ -190,9 +191,9 @@ with httpx.Client() as client:
 ```
 
 `api` selects `responses`, `chat`, `anthropic`, `gemini`, `ollama`, `cohere`,
-`bedrock`, `openai-decisions`, or `openrouter-decisions`. `base_url` includes the
-API version, but not the operation path. For Decisions, use a base ending in
-`/v1` for OpenAI or `/api/alpha` for OpenRouter. Credentials go in `api_key` or
+`bedrock`, `openai-decisions`, `openrouter-decisions`, or `openrouter-extractions`.
+`base_url` includes the API version. Use a base ending in `/v1` for OpenAI Decisions
+and `/api/alpha` for OpenRouter Decisions or Extractions. Credentials go in `api_key` or
 `headers`, not the URL. Custom headers take precedence over generated headers.
 For keyless custom services, omit `api_key`.
 
@@ -201,8 +202,8 @@ providers also read their base URL override: `OPENAI_BASE_URL`,
 `ANTHROPIC_BASE_URL`, `GOOGLE_BASE_URL`, `OLLAMA_BASE_URL`,
 `OPENROUTER_BASE_URL`, `GROQ_BASE_URL`, `MISTRAL_BASE_URL`, `XAI_BASE_URL`,
 `CEREBRAS_BASE_URL`, `HF_BASE_URL`, `COHERE_BASE_URL`, or `BEDROCK_BASE_URL`.
-For automatic OpenRouter Decisions routing, `OPENROUTER_BASE_URL` is the regular
-base ending in `/api/v1`; openextract replaces `/v1` with `/alpha`.
+For OpenRouter Decisions and Extractions, openextract translates an
+`OPENROUTER_BASE_URL` ending in `/api/v1` to `/api/alpha`.
 
 Chat Completions defaults to tool calling. For compatible endpoints, select
 `output_mode="json_schema"` to request JSON text using `response_format`, with
@@ -241,6 +242,64 @@ Pydantic validation failure once with feedback that omits raw input values.
 Refusals, incomplete generations, malformed response envelopes, and invalid
 Decisions answers fail immediately. The HTTP retry budget applies to each
 validation attempt. Set both retry counts to zero for a single model request.
+
+## OpenRouter Extractions
+
+Set `OPENROUTER_API_KEY` and pass the model with the usual `openrouter:` prefix.
+OpenExtract selects [OpenRouter's alpha Extractions API](https://openrouter.ai/docs/guides/community/extractions)
+for `cloudflare/clairic`, `inception/mercury-decide`, `levanto/sage-2`, and
+`scaledown/extract`. Use `Model("openrouter:provider/model", api="openrouter-extractions")`
+to select it explicitly for another model.
+
+```python
+from datetime import date
+from decimal import Decimal
+from typing import Annotated
+
+from pydantic import BaseModel, Field
+
+from openextract import OpenRouterField, extract
+
+
+class Invoice(BaseModel):
+    invoice_number: str
+    total: Annotated[Decimal, OpenRouterField(decimals=2, unit="USD")]
+    due_date: date | None = Field(description="The payment due date, if stated.")
+
+
+result = extract(
+    Invoice,
+    "openrouter:cloudflare/clairic",
+    "Invoice INV-2291. Total due: 1080.00 USD. Pay by 2026-10-02.",
+    include_metadata=True,
+)
+print(result.data.total)
+print(result.answers["invoice_number"].get("span"))
+```
+
+Both sync and async calls return the validated Pydantic instance by default.
+With `include_metadata=True`, `ExtractionResult.data` holds that instance,
+`answers` holds the provider's original answer objects keyed by Python field name,
+and `metadata` holds other response fields such as usage and truncation status.
+Confidence, source spans, null probabilities, and distributions vary by model
+and field. The default call raises `SchemaValidationError` if OpenRouter reports
+that it read only part of the source. With metadata enabled, check
+`result.metadata.get("truncated")` for partial results.
+
+The adapter infers fields from `str`, `int`, `float`, `Decimal`, `date`, `time`,
+`datetime`, their nullable forms, and lists of text, numbers, or dates. It sends
+`Field(description=...)` and call-level instructions with each field while keeping
+the source text intact for spans. Use `OpenRouterField` inside `Annotated` to set
+native options or specify a type explicitly. For example,
+`Annotated[float, OpenRouterField(type="estimate", min=0, max=90)]` extracts an
+estimate's value as a float and keeps its distribution in the answer metadata.
+Pydantic applies constraints and validators to the returned values. Use a
+structured-output provider from the table above for nested records.
+
+Each model has its own input and field limits. Clairic reads text and images and
+supports all native field types. ScaleDown Extract reads PDFs and returns text
+or lists of text. The library sends one source per call. Pass native request
+options such as `reference_date` and `provider` through `Model(settings=...)`.
 
 ## Decision models
 

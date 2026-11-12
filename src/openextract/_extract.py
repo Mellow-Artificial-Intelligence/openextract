@@ -8,13 +8,14 @@ import os
 from collections.abc import Generator
 from contextlib import contextmanager, nullcontext
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, overload
 
 import httpx
 from pydantic import BaseModel, ValidationError
 
-from . import _decisions, _openai_decisions, _providers, _transport
+from . import _decisions, _openai_decisions, _openrouter_extractions, _providers, _transport
 from ._content import Content
+from ._openrouter_extractions import ExtractionResult
 from ._validation_errors import invalid_response_message, validation_details, validation_message
 from .exceptions import (
     ExtractionError,
@@ -41,6 +42,7 @@ _SIGNATURES = {
 _RIFF_FORMATS = {b"WEBP": "image/webp", b"WAVE": "audio/wav"}
 
 
+@overload
 def extract[T: BaseModel](
     schema: type[T],
     model: str | Model,
@@ -49,22 +51,65 @@ def extract[T: BaseModel](
     *,
     media_type: str | None = None,
     client: httpx.Client | None = None,
-) -> T:
+    include_metadata: Literal[False] = False,
+) -> T: ...
+
+
+@overload
+def extract[T: BaseModel](
+    schema: type[T],
+    model: str | Model,
+    source: Source,
+    instructions: str | None = None,
+    *,
+    media_type: str | None = None,
+    client: httpx.Client | None = None,
+    include_metadata: Literal[True],
+) -> ExtractionResult[T]: ...
+
+
+@overload
+def extract[T: BaseModel](
+    schema: type[T],
+    model: str | Model,
+    source: Source,
+    instructions: str | None = None,
+    *,
+    media_type: str | None = None,
+    client: httpx.Client | None = None,
+    include_metadata: bool,
+) -> T | ExtractionResult[T]: ...
+
+
+def extract[T: BaseModel](
+    schema: type[T],
+    model: str | Model,
+    source: Source,
+    instructions: str | None = None,
+    *,
+    media_type: str | None = None,
+    client: httpx.Client | None = None,
+    include_metadata: bool = False,
+) -> T | ExtractionResult[T]:
     """Extract ``schema`` from plain text, a path object, a URL, or raw bytes.
 
     Strings are UTF-8 text unless they start with ``http://`` or ``https://``.
     Use ``pathlib.Path`` or another ``os.PathLike`` object for local files.
     Text defaults to ``text/plain``. For files, URLs, and bytes, the media type
     is inferred from the name, URL headers, or content; ``media_type`` overrides it.
+
+    With OpenRouter Extractions, ``include_metadata=True`` returns an
+    ``ExtractionResult`` with the validated data and provider metadata.
     """
     resolved = resolve(model)
+    _check_metadata_option(resolved, include_metadata)
     content = _load(source, media_type)
     path, body = _prepare(schema, resolved, content, instructions)
     with nullcontext(client) if client is not None else httpx.Client() as session:
         for attempt in range(resolved.config.validation_retries + 1):
             try:
                 payload = _transport.post(resolved, path, body, session)
-                return _validate(schema, resolved, payload)
+                return _validate(schema, resolved, payload, include_metadata)
             except ValidationError as exc:
                 if attempt == resolved.config.validation_retries:
                     raise SchemaValidationError(validation_message(exc, attempt + 1)) from exc
@@ -72,6 +117,45 @@ def extract[T: BaseModel](
             except (KeyError, IndexError, TypeError, ValueError, AttributeError) as exc:
                 raise SchemaValidationError(invalid_response_message(exc)) from exc
     raise AssertionError("Unreachable")  # pragma: no cover
+
+
+@overload
+async def extract_async[T: BaseModel](
+    schema: type[T],
+    model: str | Model,
+    source: Source,
+    instructions: str | None = None,
+    *,
+    media_type: str | None = None,
+    client: httpx.AsyncClient | None = None,
+    include_metadata: Literal[False] = False,
+) -> T: ...
+
+
+@overload
+async def extract_async[T: BaseModel](
+    schema: type[T],
+    model: str | Model,
+    source: Source,
+    instructions: str | None = None,
+    *,
+    media_type: str | None = None,
+    client: httpx.AsyncClient | None = None,
+    include_metadata: Literal[True],
+) -> ExtractionResult[T]: ...
+
+
+@overload
+async def extract_async[T: BaseModel](
+    schema: type[T],
+    model: str | Model,
+    source: Source,
+    instructions: str | None = None,
+    *,
+    media_type: str | None = None,
+    client: httpx.AsyncClient | None = None,
+    include_metadata: bool,
+) -> T | ExtractionResult[T]: ...
 
 
 async def extract_async[T: BaseModel](
@@ -82,16 +166,18 @@ async def extract_async[T: BaseModel](
     *,
     media_type: str | None = None,
     client: httpx.AsyncClient | None = None,
-) -> T:
+    include_metadata: bool = False,
+) -> T | ExtractionResult[T]:
     """Async version of :func:`extract`."""
     resolved = resolve(model)
+    _check_metadata_option(resolved, include_metadata)
     content = await _load_async(source, media_type)
     path, body = _prepare(schema, resolved, content, instructions)
     async with nullcontext(client) if client is not None else httpx.AsyncClient() as session:
         for attempt in range(resolved.config.validation_retries + 1):
             try:
                 payload = await _transport.post_async(resolved, path, body, session)
-                return _validate(schema, resolved, payload)
+                return _validate(schema, resolved, payload, include_metadata)
             except ValidationError as exc:
                 if attempt == resolved.config.validation_retries:
                     raise SchemaValidationError(validation_message(exc, attempt + 1)) from exc
@@ -101,9 +187,18 @@ async def extract_async[T: BaseModel](
     raise AssertionError("Unreachable")  # pragma: no cover
 
 
+def _check_metadata_option(model: ResolvedModel, include_metadata: bool) -> None:
+    if include_metadata and model.api != "openrouter-extractions":
+        raise ValueError("include_metadata=True requires the OpenRouter Extractions API.")
+
+
 def _prepare(
     schema: type[BaseModel], model: ResolvedModel, content: Content, instructions: str | None
 ) -> tuple[str, dict[str, Any]]:
+    if model.api == "openrouter-extractions":
+        return "/extractions", _openrouter_extractions.request_body(
+            schema, model, content, instructions
+        )
     if model.api == "openai-decisions":
         body = _openai_decisions._request_body(
             schema, model.model_name, content, _PROMPT, instructions
@@ -117,7 +212,11 @@ def _prepare(
     return "/decisions", body
 
 
-def _validate[T: BaseModel](schema: type[T], model: ResolvedModel, payload: dict[str, Any]) -> T:
+def _validate[T: BaseModel](
+    schema: type[T], model: ResolvedModel, payload: dict[str, Any], include_metadata: bool
+) -> T | ExtractionResult[T]:
+    if model.api == "openrouter-extractions":
+        return _openrouter_extractions.parse(schema, payload, include_metadata)
     if model.api == "openai-decisions":
         return _openai_decisions._parse(schema, payload)
     if model.api == "openrouter-decisions":
