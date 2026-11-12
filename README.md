@@ -18,12 +18,15 @@ Supported input formats depend on the chosen model.
 
 ## First extraction
 
-Requires Python 3.12+. All model requests use HTTPX directly. Pydantic is used
-for schemas and validation; Pydantic AI and provider SDKs are not dependencies.
-No provider extras are needed:
+Requires Python 3.12+ and [uv](https://docs.astral.sh/uv/getting-started/installation/).
+All model requests use HTTPX directly. Pydantic is used for schemas and validation;
+Pydantic AI and provider SDKs are not dependencies. No provider extras are needed.
+
+Run `uv add` in your project directory. If you're starting from an empty
+directory, run `uv init --python 3.12` first.
 
 ```bash
-pip install openextract
+uv add openextract
 ```
 
 Set `OPENAI_API_KEY` to your OpenAI API key in the same terminal. Your account
@@ -68,7 +71,7 @@ print(invoice.currency)  # str | None: USD
 ```
 
 ```bash
-python first_extraction.py
+uv run python first_extraction.py
 ```
 
 Expected fields for this fixture:
