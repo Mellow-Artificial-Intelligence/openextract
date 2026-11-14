@@ -173,6 +173,7 @@ supported API. Custom provider names require both `api` and `base_url`.
 
 ```python
 import os
+from pathlib import Path
 
 import httpx
 from openextract import Model, extract
@@ -190,7 +191,7 @@ model = Model(
 )
 
 with httpx.Client() as client:
-    invoice = extract(Invoice, model, "./invoice.pdf", client=client)
+    invoice = extract(Invoice, model, Path("invoice.pdf"), client=client)
 ```
 
 `api` selects `responses`, `chat`, `anthropic`, `gemini`, `ollama`, `cohere`,
@@ -219,7 +220,7 @@ model = Model(
     output_mode="json_schema",
     settings={"provider": {"require_parameters": True}},
 )
-invoice = extract(Invoice, model, "./invoice.pdf")
+invoice = extract(Invoice, model, Path("invoice.pdf"))
 ```
 
 Set `OPENROUTER_API_KEY` in the environment. `require_parameters` restricts
@@ -378,7 +379,7 @@ can contain sensitive data. For programmatic handling, use exception classes and
 | `ModelError` | A model request fails, or the provider reports an HTTP or generation error. |
 | `SchemaValidationError` | The model's output doesn't match the schema. |
 | `ProviderNotInstalledError` | Deprecated compatibility export; never raised by HTTP adapters. |
-| `ExtractionError` | A URL can't be fetched. |
+| `ExtractionError` | A URL can't be fetched, or a provider's API key or Bedrock region isn't configured. |
 
 Invalid configuration or unsupported media raises `ValueError`; unsupported model
 objects or Decisions field types raise `TypeError`. Local file errors retain their
