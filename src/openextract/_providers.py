@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 from urllib.parse import quote
 
+from ._anthropic_schema import json_schema as _anthropic_schema
 from ._content import Content
 from .models import ResolvedModel
 
@@ -36,6 +37,8 @@ _STRUCTURE_FIELDS = {
     "toolConfig",
     "text",
     "response_format",
+    "output_config",
+    "output_format",
     "format",
 }
 
@@ -198,14 +201,19 @@ def _messages(
         body["tool_choice"] = {"type": "function", "function": {"name": "extract"}}
     elif api == "anthropic":
         body["max_tokens"] = 4096
-        body["tools"] = [
-            {
-                "name": "extract",
-                "description": _TOOL_DESCRIPTION,
-                "input_schema": schema,
+        if model.config.output_mode == "json_schema":
+            body["output_config"] = {
+                "format": {"type": "json_schema", "schema": _anthropic_schema(schema)}
             }
-        ]
-        body["tool_choice"] = {"type": "tool", "name": "extract"}
+        else:
+            body["tools"] = [
+                {
+                    "name": "extract",
+                    "description": _TOOL_DESCRIPTION,
+                    "input_schema": schema,
+                }
+            ]
+            body["tool_choice"] = {"type": "tool", "name": "extract"}
     else:
         body["messages"][-1] = {
             "role": "user",
@@ -381,6 +389,18 @@ def _parse_anthropic(payload: dict[str, Any]) -> Any:
     return calls[0]["input"]
 
 
+def _parse_anthropic_json(payload: dict[str, Any]) -> Any:
+    if payload["stop_reason"] != "end_turn":
+        raise ValueError("The model refused or did not complete a JSON Schema response.")
+    parts = payload["content"]
+    if any(part["type"] == "tool_use" for part in parts):
+        raise ValueError("Unexpected tool call in a JSON Schema response.")
+    texts = [part["text"] for part in parts if part["type"] == "text"]
+    if len(texts) != 1 or not isinstance(texts[0], str):
+        raise ValueError("Expected one JSON text block in the model response.")
+    return texts[0]
+
+
 def _parse_gemini(payload: dict[str, Any]) -> Any:
     candidate = payload["candidates"][0]
     if candidate["finishReason"] != "STOP":
@@ -475,6 +495,8 @@ def parse(model: ResolvedModel, payload: dict[str, Any]) -> str | dict[str, Any]
     """Return structured output, rejecting refusals and incomplete generations."""
     if model.api == "chat" and model.config.output_mode == "json_schema":
         result = _parse_chat_json(payload)
+    elif model.api == "anthropic" and model.config.output_mode == "json_schema":
+        result = _parse_anthropic_json(payload)
     else:
         result = _ADAPTERS[model.api].parse(payload)
     if not isinstance(result, (str, dict)) or result == "":

@@ -26,7 +26,7 @@ uv run --no-sync pytest tests/test_configured_models.py
 | --- | --- | --- |
 | OpenAI Responses | Top-level request parameters | Strict JSON Schema |
 | Chat Completions | Top-level request parameters | Forced tool by default; optional JSON Schema |
-| Anthropic Messages | Top-level request parameters, including `max_tokens` | Forced extraction tool |
+| Anthropic Messages | Top-level request parameters, including `max_tokens` | Forced extraction tool (default), or `output_mode="json_schema"` native JSON |
 | Gemini | `generationConfig` | JSON Schema |
 | Local Ollama | Top-level parameters; sampling inside `options` | JSON Schema |
 | Cohere V2 Chat | Top-level request parameters | JSON Schema |

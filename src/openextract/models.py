@@ -155,8 +155,10 @@ def resolve(model: str | Model) -> ResolvedModel:
     if model.output_mode is not None:
         if model.output_mode not in ("tool", "json_schema"):
             raise ValueError("output_mode must be 'tool' or 'json_schema'.")
-        if api != "chat":
-            raise ValueError("output_mode is only configurable for the Chat Completions API.")
+        if api not in ("chat", "anthropic"):
+            raise ValueError(
+                "output_mode is only configurable for Chat Completions and Anthropic Messages."
+            )
     base_url = model.base_url
     if base_url is None:
         assert provider is not None
