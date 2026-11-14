@@ -22,6 +22,7 @@ _DOCUMENT_TYPES = {
     "application/vnd.ms-excel": ".xls",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
 }
+_TOOL_DESCRIPTION = "Return the extracted information."
 _STRUCTURE_FIELDS = {
     "model",
     "input",
@@ -129,9 +130,7 @@ def _responses(
     prompt: str,
     instructions: str | None,
 ) -> tuple[str, dict[str, Any]]:
-    body: dict[str, Any]
-    path = "/responses"
-    body = {
+    body: dict[str, Any] = {
         "model": model.model_name,
         "input": [
             {
@@ -153,7 +152,7 @@ def _responses(
     }
     if instructions:
         body["instructions"] = instructions
-    return path, body
+    return "/responses", body
 
 
 def _messages(
@@ -163,7 +162,6 @@ def _messages(
     prompt: str,
     instructions: str | None,
 ) -> tuple[str, dict[str, Any]]:
-    body: dict[str, Any]
     api = model.api
     assert api in ("chat", "anthropic", "cohere")
     path = "/messages" if api == "anthropic" else "/chat/completions" if api == "chat" else "/chat"
@@ -192,7 +190,7 @@ def _messages(
                 "type": "function",
                 "function": {
                     "name": "extract",
-                    "description": "Return the extracted information.",
+                    "description": _TOOL_DESCRIPTION,
                     "parameters": schema,
                 },
             }
@@ -203,7 +201,7 @@ def _messages(
         body["tools"] = [
             {
                 "name": "extract",
-                "description": "Return the extracted information.",
+                "description": _TOOL_DESCRIPTION,
                 "input_schema": schema,
             }
         ]
@@ -227,7 +225,6 @@ def _gemini(
     prompt: str,
     instructions: str | None,
 ) -> tuple[str, dict[str, Any]]:
-    body: dict[str, Any]
     path = f"/models/{quote(model.model_name, safe='')}:generateContent"
     if content.is_text:
         document = {"text": content.text}
@@ -257,8 +254,6 @@ def _ollama(
     prompt: str,
     instructions: str | None,
 ) -> tuple[str, dict[str, Any]]:
-    body: dict[str, Any]
-    path = "/api/chat"
     message: dict[str, Any] = {"role": "user", "content": prompt}
     if content.is_text:
         message["content"] += "\n\n" + content.text
@@ -273,7 +268,7 @@ def _ollama(
         "format": schema,
         "stream": False,
     }
-    return path, body
+    return "/api/chat", body
 
 
 def _bedrock(
@@ -283,7 +278,6 @@ def _bedrock(
     prompt: str,
     instructions: str | None,
 ) -> tuple[str, dict[str, Any]]:
-    body: dict[str, Any]
     path = f"/model/{quote(model.model_name, safe='')}/converse"
     if content.is_text:
         document = {"text": content.text}
@@ -311,7 +305,7 @@ def _bedrock(
                 {
                     "toolSpec": {
                         "name": "extract",
-                        "description": "Return the extracted information.",
+                        "description": _TOOL_DESCRIPTION,
                         "inputSchema": {"json": schema},
                     }
                 }
@@ -332,8 +326,7 @@ def _parse_responses(payload: dict[str, Any]) -> Any:
     ]
     if any(part["type"] == "refusal" for part in parts):
         raise ValueError("The model refused to extract the document.")
-    result = "".join(part["text"] for part in parts if part["type"] == "output_text")
-    return result
+    return "".join(part["text"] for part in parts if part["type"] == "output_text")
 
 
 def _parse_chat(payload: dict[str, Any]) -> Any:
@@ -344,8 +337,7 @@ def _parse_chat(payload: dict[str, Any]) -> Any:
     calls = choice["message"].get("tool_calls", [])
     if len(calls) != 1 or calls[0]["function"]["name"] != "extract":
         raise ValueError("Expected exactly one extraction tool call.")
-    result = calls[0]["function"]["arguments"]
-    return result
+    return calls[0]["function"]["arguments"]
 
 
 def _parse_chat_json(payload: dict[str, Any]) -> Any:
@@ -364,36 +356,30 @@ def _parse_anthropic(payload: dict[str, Any]) -> Any:
     calls = [part for part in payload["content"] if part["type"] == "tool_use"]
     if len(calls) != 1 or calls[0]["name"] != "extract":
         raise ValueError("Expected exactly one extraction tool call.")
-    result = calls[0]["input"]
-    return result
+    return calls[0]["input"]
 
 
 def _parse_gemini(payload: dict[str, Any]) -> Any:
     candidate = payload["candidates"][0]
     if candidate["finishReason"] != "STOP":
         raise ValueError("The model response was blocked or incomplete.")
-    result = "".join(
+    return "".join(
         part["text"]
         for part in candidate["content"]["parts"]
         if "text" in part and not part.get("thought")
     )
-    return result
 
 
 def _parse_ollama(payload: dict[str, Any]) -> Any:
     if payload.get("done") is not True or payload.get("done_reason", "stop") != "stop":
         raise ValueError("The model response was not completed.")
-    result = payload["message"]["content"]
-    return result
+    return payload["message"]["content"]
 
 
 def _parse_cohere(payload: dict[str, Any]) -> Any:
     if payload["finish_reason"].lower() != "complete":
         raise ValueError("The model response was not completed.")
-    result = "".join(
-        part["text"] for part in payload["message"]["content"] if part["type"] == "text"
-    )
-    return result
+    return "".join(part["text"] for part in payload["message"]["content"] if part["type"] == "text")
 
 
 def _parse_bedrock(payload: dict[str, Any]) -> Any:
@@ -404,8 +390,7 @@ def _parse_bedrock(payload: dict[str, Any]) -> Any:
     ]
     if len(calls) != 1 or calls[0]["name"] != "extract":
         raise ValueError("Expected exactly one extraction tool call.")
-    result = calls[0]["input"]
-    return result
+    return calls[0]["input"]
 
 
 type _RequestBuilder = Callable[
