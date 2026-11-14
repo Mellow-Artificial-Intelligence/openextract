@@ -26,7 +26,7 @@ def request_body(
     return {
         "model": model.removeprefix("openrouter:"),
         "state": [prompt, *([instructions] if instructions else []), _document(content)],
-        "questions": {name: _question(name, field) for name, field in schema.model_fields.items()},
+        "questions": {name: question(name, field) for name, field in schema.model_fields.items()},
     }
 
 
@@ -36,7 +36,7 @@ def _document(content: Content) -> str | dict[str, Any]:
     return {"type": "image_url", "image_url": {"url": content.data_uri}}
 
 
-def _question(name: str, field: FieldInfo) -> dict[str, Any]:
+def question(name: str, field: FieldInfo) -> dict[str, Any]:
     instructions = field_instructions(name, field)
     if field.annotation is bool:
         return {"type": "noul", "instructions": instructions}

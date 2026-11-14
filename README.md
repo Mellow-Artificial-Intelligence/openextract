@@ -138,6 +138,7 @@ input type and structured output or tool calling used by its adapter.
 | `groq`, `mistral`, `xai`, `cerebras`, `huggingface` | Chat Completions, tool or JSON Schema output | `GROQ_API_KEY`, `MISTRAL_API_KEY`, `XAI_API_KEY`, `CEREBRAS_API_KEY`, `HF_TOKEN`, respectively | Chat content supported by the endpoint and model |
 | `mistral` with `Model(api="mistral-ocr")` | Document-level JSON Schema annotations via `/ocr` | `MISTRAL_API_KEY` | PDFs, including scans; [usage and visual limits](examples/mistral_annotations.md) |
 | `anthropic` | Messages with a forced extraction tool | `ANTHROPIC_API_KEY` | Text, PNG, JPEG, GIF, WebP, PDF |
+| `gemini-decisions` | Gemini Decisions (closed-set schemas) | `GOOGLE_API_KEY` or `GEMINI_API_KEY` | Text, images, PDF |
 | `google`, `google-gla`, `gemini` | Gemini `generateContent` with JSON Schema | `GOOGLE_API_KEY` or `GEMINI_API_KEY` | Text, images, PDF, audio, video |
 | `ollama` | Local `/api/chat` with JSON Schema | None | Text, images |
 | `cohere` | V2 Chat with JSON Schema | `CO_API_KEY` | Text, images |
@@ -196,7 +197,7 @@ with httpx.Client() as client:
 ```
 
 `api` selects `responses`, `chat`, `anthropic`, `gemini`, `ollama`, `cohere`,
-`bedrock`, `openai-decisions`, `openrouter-decisions`, or `openrouter-extractions`.
+`bedrock`, `openai-decisions`, `openrouter-decisions`, `gemini-decisions`, or `openrouter-extractions`.
 `base_url` includes the API version. Use a base ending in `/v1` for OpenAI Decisions
 and `/api/alpha` for OpenRouter Decisions or Extractions. Credentials go in `api_key` or
 `headers`, not the URL. Custom headers take precedence over generated headers.
@@ -315,12 +316,20 @@ text and images with these providers:
 | Model string | API key | Endpoint |
 | --- | --- | --- |
 | `openai-decisions:gpt-6-luna` | `OPENAI_API_KEY` | [OpenAI Decisions](https://developers.openai.com/api/docs/guides/decisions) |
+| `gemini-decisions:gemini-decision-1` | `GOOGLE_API_KEY` or `GEMINI_API_KEY` | [Gemini Decisions](https://aistudio.google.com/docs/decisions-api) |
 | `openrouter:typesafe/jev-1.14` | `OPENROUTER_API_KEY` | OpenRouter Decisions |
 
-No provider extra is needed for either decision endpoint. The explicit
+No provider extra is needed for these decision endpoints. The explicit
 `openai-decisions:` prefix selects the Decisions API; `openai:` continues to use
 Responses for general extraction. OpenAI Decisions accepts 1–400 schema fields.
-PDFs, audio, video, and free-form fields are not supported by decision models.
+Gemini Decisions additionally supports PDFs, with 1–1,000 fields and 2–255
+options per choice. Use `gemini-decisions:gemini-decision-1` or
+`Model("google:gemini-decision-1", api="gemini-decisions")`; ordinary `google:`
+strings continue to use `generateContent`. Images and PDFs are sent as inline
+base64 data, including downloaded URL sources. Gemini field names must match
+`[A-Za-z0-9_-]{1,64}`; option keys follow Google's documented limits.
+Audio, video, free-form fields, and rubric scoring are not supported by these
+decision adapters. PDF inputs remain unsupported by OpenAI/OpenRouter Decisions.
 
 For example, classify a receipt and check whether it is paid. [Jev](https://openrouter.ai/typesafe/jev-1.14) is also available as `openrouter:typesafe/jev-1.14` or `openrouter:~typesafe/jev-latest`.
 
@@ -339,10 +348,11 @@ class Triage(BaseModel):
 
 
 triage = extract(Triage, "openai-decisions:gpt-6-luna", source=Path("receipt.png"))
+# Or: extract(Triage, "gemini-decisions:gemini-decision-1", source=Path("receipt.pdf"))
 # Or: extract(Triage, "openrouter:typesafe/jev-1.14", source=Path("receipt.png"))
 ```
 
-Each field becomes one question, phrased by its `description`. A `bool` field is `True` when the probability of yes is at least 0.5. Other field types raise a `TypeError`. Missing, invalid, or refused OpenAI answers raise `SchemaValidationError`.
+Each field becomes one question, phrased by its `description`. A `bool` field is `True` when the probability of yes is at least 0.5. Other field types raise a `TypeError`. Missing or invalid answers raise `SchemaValidationError`.
 
 ## Errors
 
