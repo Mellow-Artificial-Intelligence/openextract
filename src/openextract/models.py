@@ -20,6 +20,7 @@ type API = Literal[
     "ollama",
     "cohere",
     "bedrock",
+    "gemini-decisions",
     "openai-decisions",
     "openrouter-decisions",
     "openrouter-extractions",
@@ -75,6 +76,12 @@ _PROVIDERS = {
     ),
     "google": _Provider(
         "gemini",
+        "https://generativelanguage.googleapis.com/v1beta",
+        "GOOGLE_API_KEY",
+        "GOOGLE_BASE_URL",
+    ),
+    "gemini-decisions": _Provider(
+        "gemini-decisions",
         "https://generativelanguage.googleapis.com/v1beta",
         "GOOGLE_API_KEY",
         "GOOGLE_BASE_URL",
@@ -177,10 +184,14 @@ def resolve(model: str | Model) -> ResolvedModel:
     key = model.api_key
     if key is None and provider and provider.key_env:
         key = os.environ.get(provider.key_env)
-        if not key and prefix in ("google", "google-gla", "gemini"):
+        if not key and prefix in ("google", "google-gla", "gemini", "gemini-decisions"):
             key = os.environ.get("GEMINI_API_KEY")
     headers = httpx.Headers(model.headers)
-    auth_header = {"anthropic": "x-api-key", "gemini": "x-goog-api-key"}.get(api, "authorization")
+    auth_header = {
+        "anthropic": "x-api-key",
+        "gemini": "x-goog-api-key",
+        "gemini-decisions": "x-goog-api-key",
+    }.get(api, "authorization")
     if key and auth_header not in headers:
         headers[auth_header] = f"Bearer {key}" if auth_header == "authorization" else key
     if provider and provider.key_env and model.api_key is None and auth_header not in headers:
