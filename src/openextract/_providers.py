@@ -271,6 +271,28 @@ def _ollama(
     return "/api/chat", body
 
 
+def _mistral_ocr(
+    model: ResolvedModel,
+    schema: dict[str, Any],
+    content: Content,
+    prompt: str,
+    instructions: str | None,
+) -> tuple[str, dict[str, Any]]:
+    if content.media_type != "application/pdf":
+        raise ValueError("The mistral-ocr adapter supports only PDF inputs.")
+    return "/ocr", {
+        "model": model.model_name,
+        "document": {"type": "document_url", "document_url": content.data_uri},
+        "document_annotation_format": {
+            "type": "json_schema",
+            "json_schema": {"name": "extract", "schema": schema, "strict": True},
+        },
+        "document_annotation_prompt": f"{prompt}\n{instructions or ''}".strip(),
+        "bbox_annotation_format": None,
+        "include_image_base64": False,
+    }
+
+
 def _bedrock(
     model: ResolvedModel,
     schema: dict[str, Any],
@@ -412,6 +434,7 @@ _ADAPTERS = {
     "ollama": _Adapter(_ollama, _parse_ollama),
     "cohere": _Adapter(_messages, _parse_cohere),
     "bedrock": _Adapter(_bedrock, _parse_bedrock),
+    "mistral-ocr": _Adapter(_mistral_ocr, lambda payload: payload["document_annotation"]),
 }
 
 

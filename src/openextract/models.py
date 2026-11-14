@@ -20,6 +20,7 @@ type API = Literal[
     "ollama",
     "cohere",
     "bedrock",
+    "mistral-ocr",
     "openai-decisions",
     "openrouter-decisions",
     "openrouter-extractions",
