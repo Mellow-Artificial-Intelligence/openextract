@@ -136,6 +136,7 @@ input type and structured output or tool calling used by its adapter.
 | `openai-chat` | Chat Completions, tool or JSON Schema output | `OPENAI_API_KEY` | Text, images, PDF, MP3, WAV |
 | `openrouter` | Chat Completions, [Extractions](#openrouter-extractions), or [Decisions](#decision-models), selected by model | `OPENROUTER_API_KEY` | Depends on the API and model |
 | `groq`, `mistral`, `xai`, `cerebras`, `huggingface` | Chat Completions, tool or JSON Schema output | `GROQ_API_KEY`, `MISTRAL_API_KEY`, `XAI_API_KEY`, `CEREBRAS_API_KEY`, `HF_TOKEN`, respectively | Chat content supported by the endpoint and model |
+| `mistral` with `Model(api="mistral-ocr")` | Document-level JSON Schema annotations via `/ocr` | `MISTRAL_API_KEY` | PDFs, including scans; [usage and visual limits](examples/mistral_annotations.md) |
 | `anthropic` | Messages with a forced extraction tool | `ANTHROPIC_API_KEY` | Text, PNG, JPEG, GIF, WebP, PDF |
 | `gemini-decisions` | Gemini Decisions (closed-set schemas) | `GOOGLE_API_KEY` or `GEMINI_API_KEY` | Text, images, PDF |
 | `google`, `google-gla`, `gemini` | Gemini `generateContent` with JSON Schema | `GOOGLE_API_KEY` or `GEMINI_API_KEY` | Text, images, PDF, audio, video |
