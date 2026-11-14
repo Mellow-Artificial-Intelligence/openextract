@@ -136,7 +136,7 @@ input type and structured output or tool calling used by its adapter.
 | `openai-chat` | Chat Completions, tool or JSON Schema output | `OPENAI_API_KEY` | Text, images, PDF, MP3, WAV |
 | `openrouter` | Chat Completions, [Extractions](#openrouter-extractions), or [Decisions](#decision-models), selected by model | `OPENROUTER_API_KEY` | Depends on the API and model |
 | `groq`, `mistral`, `xai`, `cerebras`, `huggingface` | Chat Completions, tool or JSON Schema output | `GROQ_API_KEY`, `MISTRAL_API_KEY`, `XAI_API_KEY`, `CEREBRAS_API_KEY`, `HF_TOKEN`, respectively | Chat content supported by the endpoint and model |
-| `anthropic` | Messages with a forced extraction tool | `ANTHROPIC_API_KEY` | Text, PNG, JPEG, GIF, WebP, PDF |
+| `anthropic` | Messages with a forced extraction tool (default) or native JSON Schema | `ANTHROPIC_API_KEY` | Text, PNG, JPEG, GIF, WebP, PDF |
 | `google`, `google-gla`, `gemini` | Gemini `generateContent` with JSON Schema | `GOOGLE_API_KEY` or `GEMINI_API_KEY` | Text, images, PDF, audio, video |
 | `ollama` | Local `/api/chat` with JSON Schema | None | Text, images |
 | `cohere` | V2 Chat with JSON Schema | `CO_API_KEY` | Text, images |
@@ -228,8 +228,26 @@ OpenRouter routing to endpoints supporting the requested parameters. In this
 mode, openextract sends the JSON Schema instead of extraction tools, reads JSON
 from the response's message content, and validates it with the original Pydantic
 model. `output_mode="tool"` explicitly selects tool calling. This option is only
-configurable for Chat Completions; other adapters retain their own output formats.
+configurable for Chat Completions and Anthropic Messages.
 The model and endpoint must support the selected mode.
+
+Anthropic Messages also supports `Model("anthropic:claude-sonnet-4-5",
+output_mode="json_schema")`. Set `ANTHROPIC_API_KEY` as usual. This opts into
+[native JSON outputs](https://platform.claude.com/docs/en/build-with-claude/structured-outputs)
+via `output_config.format`, without tools or a beta header. Use a model/endpoint
+that supports native JSON output; there is no automatic fallback. Both `extract`
+and `extract_async` still return your Pydantic model. The default remains forced
+tool calling.
+
+Anthropic JSON schemas close every object with `additionalProperties: false`
+and preserve optional fields and defaults. Open-ended dictionaries, recursive or
+external references, tuple schemas, and `allOf` compositions are rejected before
+a provider request; use tool mode or fixed nested models (or key/value lists for
+maps). Numeric bounds, string lengths/patterns, unsupported formats, and array
+limits beyond `minItems` 0/1 move into descriptions and are enforced locally by
+the original Pydantic model, including configured validation retries. Provider
+schema-complexity limits still apply. HTTP 200 refusals and max-token truncation
+raise `SchemaValidationError`; increase `settings["max_tokens"]` for truncation.
 
 `settings` uses the provider's native parameter names. Gemini settings go inside
 `generationConfig`; Ollama sampling options go inside `settings["options"]`;

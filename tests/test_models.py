@@ -298,12 +298,11 @@ def test_invalid_output_mode():
     "name",
     [
         "openai:test",
-        "anthropic:test",
         "google:test",
         "openai-decisions:test",
         "openrouter:typesafe/model",
     ],
 )
-def test_output_mode_is_scoped_to_chat(name):
+def test_output_mode_is_scoped_to_chat_and_anthropic(name):
     with pytest.raises(ValueError, match="only configurable"):
         resolve(Model(name, api_key="test", output_mode="json_schema"))
