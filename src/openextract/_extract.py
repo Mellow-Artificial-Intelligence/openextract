@@ -200,11 +200,11 @@ def _prepare(
             schema, model, content, instructions
         )
     if model.api == "openai-decisions":
-        body = _openai_decisions._request_body(
+        body = _openai_decisions.request_body(
             schema, model.model_name, content, _PROMPT, instructions
         )
     elif model.api == "openrouter-decisions":
-        body = _decisions._request_body(schema, model.model_name, content, _PROMPT, instructions)
+        body = _decisions.request_body(schema, model.model_name, content, _PROMPT, instructions)
     else:
         return _providers.build(model, schema.model_json_schema(), content, _PROMPT, instructions)
     if model.config.settings:
@@ -218,9 +218,9 @@ def _validate[T: BaseModel](
     if model.api == "openrouter-extractions":
         return _openrouter_extractions.parse(schema, payload, include_metadata)
     if model.api == "openai-decisions":
-        return _openai_decisions._parse(schema, payload)
+        return _openai_decisions.parse(schema, payload)
     if model.api == "openrouter-decisions":
-        return _decisions._parse(schema, payload)
+        return _decisions.parse(schema, payload)
     output = _providers.parse(model, payload)
     if isinstance(output, dict):
         # Tool inputs are decoded JSON; retain JSON validation semantics for strict types.
