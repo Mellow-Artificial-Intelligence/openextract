@@ -54,7 +54,10 @@ or a media override does not change the result type or introduce a result wrappe
   schema instances, but support only `bool`, `Literal`, and `Enum` fields and
   text/image input. Their wire formats, credentials, and response checks differ;
   OpenAI also enforces its 1–400 field limit. Keep those differences explicit
-  in their builders and parsers; share only HTTP transport and final validation.
+  in their builders and parsers. The [Gemini adapter](src/openextract/_gemini_decisions.py)
+  uses Google's Decisions REST contract for text, images, and PDFs. It shares
+  OpenRouter's matching named `noul`/choice mapping and answer validation, with
+  its own media encoding, Google authentication, and field/option limits.
 
 ### When a public option earns its place
 

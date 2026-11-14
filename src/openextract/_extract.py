@@ -13,7 +13,14 @@ from typing import Any, Literal, overload
 import httpx
 from pydantic import BaseModel, ValidationError
 
-from . import _decisions, _openai_decisions, _openrouter_extractions, _providers, _transport
+from . import (
+    _decisions,
+    _gemini_decisions,
+    _openai_decisions,
+    _openrouter_extractions,
+    _providers,
+    _transport,
+)
 from ._content import Content
 from ._openrouter_extractions import ExtractionResult
 from ._validation_errors import invalid_response_message, validation_details, validation_message
@@ -203,6 +210,10 @@ def _prepare(
         body = _openai_decisions.request_body(
             schema, model.model_name, content, _PROMPT, instructions
         )
+    elif model.api == "gemini-decisions":
+        body = _gemini_decisions.request_body(
+            schema, model.model_name, content, _PROMPT, instructions
+        )
     elif model.api == "openrouter-decisions":
         body = _decisions.request_body(schema, model.model_name, content, _PROMPT, instructions)
     else:
@@ -219,7 +230,7 @@ def _validate[T: BaseModel](
         return _openrouter_extractions.parse(schema, payload, include_metadata)
     if model.api == "openai-decisions":
         return _openai_decisions.parse(schema, payload)
-    if model.api == "openrouter-decisions":
+    if model.api in ("openrouter-decisions", "gemini-decisions"):
         return _decisions.parse(schema, payload)
     output = _providers.parse(model, payload)
     if isinstance(output, dict):
