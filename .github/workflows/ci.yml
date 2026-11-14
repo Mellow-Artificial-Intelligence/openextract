@@ -70,42 +70,16 @@ jobs:
           enable-cache: true
           cache-dependency-glob: uv.lock
       - run: uv build
-      - name: Smoke-test wheel and source distribution
+      - name: Export frozen runtime dependencies
+        run: uv export --frozen --no-dev --no-emit-project --output-file /tmp/runtime.txt
+      - name: Check footprint and offline first use of wheel and source distribution
         run: |
           for dist in dist/*.whl dist/*.tar.gz; do
             uv venv --clear .venv-smoke
-            uv pip install --python .venv-smoke/bin/python "$dist"
-            .venv-smoke/bin/python - <<'PY'
-          import importlib.metadata
-          import httpx
-          from pydantic import BaseModel
-          from openextract import Model, extract
-
-          installed = {
-              dist.metadata["Name"].lower().replace("_", "-")
-              for dist in importlib.metadata.distributions()
-          }
-          sdks = {
-              "pydantic-ai", "pydantic-ai-slim", "pydantic-graph", "openai",
-              "anthropic", "google-genai", "boto3", "botocore", "cohere", "groq",
-              "huggingface-hub", "mistralai", "xai-sdk",
-          }
-          assert not installed & sdks, installed & sdks
-
-          class Invoice(BaseModel):
-              total: float
-
-          payload = {
-              "status": "completed",
-              "output": [{"type": "message", "content": [
-                  {"type": "output_text", "text": '{"total": 42}'}
-              ]}],
-          }
-          transport = httpx.MockTransport(lambda request: httpx.Response(200, json=payload))
-          with httpx.Client(transport=transport) as client:
-              result = extract(Invoice, Model("openai:test", api_key="test"), b"text", client=client)
-          assert result.total == 42
-          PY
+            uv pip sync --require-hashes --python .venv-smoke/bin/python /tmp/runtime.txt
+            uv pip install --no-deps --python .venv-smoke/bin/python "$dist"
+            uv pip check --python .venv-smoke/bin/python
+            .venv-smoke/bin/python -I -B scripts/check_package.py dist/*.whl "$dist"
           done
 
   ci:
