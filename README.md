@@ -139,7 +139,7 @@ input type and structured output or tool calling used by its adapter.
 | `anthropic` | Messages with a forced extraction tool (default) or native JSON Schema | `ANTHROPIC_API_KEY` | Text, PNG, JPEG, GIF, WebP, PDF |
 | `mistral` with `Model(api="mistral-ocr")` | Document-level JSON Schema annotations via `/ocr` | `MISTRAL_API_KEY` | PDFs, including scans; [usage and visual limits](examples/mistral_annotations.md) |
 | `gemini-decisions` | Gemini Decisions (closed-set schemas) | `GOOGLE_API_KEY` or `GEMINI_API_KEY` | Text, images, PDF |
-| `google`, `google-gla`, `gemini` | Gemini `generateContent` with JSON Schema | `GOOGLE_API_KEY` or `GEMINI_API_KEY` | Text, images, PDF, audio, video |
+| `google`, `google-gla`, `gemini` | Gemini `generateContent` with JSON Schema | `GOOGLE_API_KEY` or `GEMINI_API_KEY` | Text, images, PDF, audio, video, [Office/OpenDocument](examples/gemini_documents.md) |
 | `ollama` | Local `/api/chat` with JSON Schema | None | Text, images |
 | `cohere` | V2 Chat with JSON Schema | `CO_API_KEY` | Text, images |
 | `bedrock` | Converse with a forced extraction tool | `AWS_BEARER_TOKEN_BEDROCK` | Text, PNG, JPEG, GIF, WebP, PDF |

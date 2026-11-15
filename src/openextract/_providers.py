@@ -23,6 +23,20 @@ _DOCUMENT_TYPES = {
     "application/vnd.ms-excel": ".xls",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
 }
+# Keep the provider's allowlist explicit; Office formats differ from Responses.
+_GEMINI_DOCUMENT_TYPES = {
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.template",
+    "application/vnd.oasis.opendocument.text",
+    "application/vnd.ms-powerpoint",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "application/vnd.oasis.opendocument.presentation",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.oasis.opendocument.spreadsheet",
+}
 _TOOL_DESCRIPTION = "Return the extracted information."
 _STRUCTURE_FIELDS = {
     "model",
@@ -238,7 +252,7 @@ def _gemini(
         document = {"text": content.text}
     elif (
         content.media_type.startswith(("image/", "audio/", "video/"))
-        or content.media_type == "application/pdf"
+        or content.media_type in _GEMINI_DOCUMENT_TYPES
     ):
         document = {"inlineData": {"mimeType": content.media_type, "data": content.base64}}
     else:
