@@ -1,7 +1,13 @@
+"""Offline by default: a mock provider, isolated credentials, and no retry delays."""
+
+import json
+from functools import partial
+
 import httpx
 import pytest
 
-from openextract import _transport
+from openextract import _transport, extract, extract_async, models
+from tests.helpers import output
 
 
 def pytest_addoption(parser):
@@ -20,56 +26,77 @@ def pytest_collection_modifyitems(config, items):
 
 
 @pytest.fixture(autouse=True)
-def block_unmarked_network_requests(request, monkeypatch):
-    if request.node.get_closest_marker("live") and request.config.getoption("--live"):
+def offline(request, monkeypatch):
+    """Outside live tests, block real HTTP, hide provider settings, and skip retry delays."""
+    if request.node.get_closest_marker("live"):
         return
 
     def blocked(self, request):
         pytest.fail("Real HTTP requests require a live-marked test and --live.")
 
     async def blocked_async(self, request):
-        pytest.fail("Real HTTP requests require a live-marked test and --live.")
+        blocked(self, request)
+
+    async def no_delay(seconds):
+        pass
 
     monkeypatch.setattr(httpx.HTTPTransport, "handle_request", blocked)
     monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", blocked_async)
-
-
-@pytest.fixture(autouse=True)
-def isolate_credentials_and_retry_delays(request, monkeypatch):
-    if request.node.get_closest_marker("live"):
-        return
-    for name in (
-        "OPENAI_API_KEY",
-        "ANTHROPIC_API_KEY",
-        "GOOGLE_API_KEY",
-        "GEMINI_API_KEY",
-        "OPENROUTER_API_KEY",
-        "GROQ_API_KEY",
-        "MISTRAL_API_KEY",
-        "XAI_API_KEY",
-        "CEREBRAS_API_KEY",
-        "HF_TOKEN",
-        "CO_API_KEY",
-        "AWS_BEARER_TOKEN_BEDROCK",
-        "OPENAI_BASE_URL",
-        "ANTHROPIC_BASE_URL",
-        "GOOGLE_BASE_URL",
-        "OLLAMA_BASE_URL",
-        "OPENROUTER_BASE_URL",
-        "GROQ_BASE_URL",
-        "MISTRAL_BASE_URL",
-        "XAI_BASE_URL",
-        "CEREBRAS_BASE_URL",
-        "HF_BASE_URL",
-        "COHERE_BASE_URL",
-        "BEDROCK_BASE_URL",
-        "AWS_REGION",
-        "AWS_DEFAULT_REGION",
-    ):
-        monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(_transport.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(_transport.asyncio, "sleep", no_delay)
+    variables = {"GEMINI_API_KEY", "AWS_REGION", "AWS_DEFAULT_REGION"}
+    for _, _, key_variable, url_variable in models._PROVIDERS.values():
+        variables |= {key_variable, url_variable} - {None}
+    for variable in variables:
+        monkeypatch.delenv(variable, raising=False)
 
-    async def sleep(seconds):
-        pass
 
-    monkeypatch.setattr(_transport.asyncio, "sleep", sleep)
+class Provider:
+    """A mock model provider that records requests and replays queued replies."""
+
+    def __init__(self):
+        self.requests = []
+        self.reply()
+
+    def reply(self, *replies, status=200):
+        """Queue JSON payloads or request handlers; the last one answers every later request."""
+        self.replies = replies or (output(),)
+        self.status = status
+
+    def __call__(self, request):
+        self.requests.append(request)
+        reply = self.replies[min(len(self.requests), len(self.replies)) - 1]
+        return reply(request) if callable(reply) else httpx.Response(self.status, json=reply)
+
+    @property
+    def bodies(self):
+        """The decoded JSON body of every model request."""
+        return [json.loads(request.content) for request in self.requests if request.content]
+
+
+@pytest.fixture
+def provider(monkeypatch):
+    """Route every HTTPX request, including source URL downloads, to a mock provider."""
+    provider = Provider()
+    transport = httpx.MockTransport(provider)
+
+    def get(url, **options):
+        with httpx.Client(**options) as client:
+            return client.get(url)
+
+    for client in ("Client", "AsyncClient"):
+        monkeypatch.setattr(httpx, client, partial(getattr(httpx, client), transport=transport))
+    monkeypatch.setattr(httpx, "get", get)
+    return provider
+
+
+@pytest.fixture(params=["sync", "async"])
+def run(request, provider):
+    """``await run(...)`` calls ``extract`` or ``extract_async``, so one test covers both."""
+
+    async def call(*args, **kwargs):
+        if request.param == "sync":
+            return extract(*args, **kwargs)
+        return await extract_async(*args, **kwargs)
+
+    return call

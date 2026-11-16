@@ -1,12 +1,13 @@
-import json
+"""Anthropic native JSON output: an adapted schema, one finished JSON block, local validation."""
+
 from typing import Annotated, Literal
 
-import httpx
 import pytest
 from pydantic import BaseModel, Field, ValidationError
 
-from openextract import Model, SchemaValidationError, extract, extract_async
-from tests.helpers import configured
+from openextract import SchemaValidationError, extract
+from openextract._schemas import anthropic_json
+from tests.helpers import configured, output
 
 
 class Item(BaseModel):
@@ -19,34 +20,29 @@ class Invoice(BaseModel):
     note: str | None = None
 
 
+class Recursive(BaseModel):
+    children: list["Recursive"]
+
+
+class Map(BaseModel):
+    values: dict[str, int]
+
+
 VALUE = {"items": [{"name": "Pen", "quantity": 2}, {"name": "Pad", "quantity": 1}]}
 
 
-def response(value=VALUE):
-    return {"stop_reason": "end_turn", "content": [{"type": "text", "text": json.dumps(value)}]}
+def json_model(**options):
+    """An Anthropic model that asks for native JSON output instead of a tool call."""
+    return configured("anthropic:test", output_mode="json_schema", **options)
 
 
-@pytest.mark.parametrize("asynchronous", [False, True])
 @pytest.mark.parametrize("source", [b"Invoice", b"%PDF-mock", b"\x89PNGmock"])
-async def test_native_json_contract(asynchronous, source):
-    seen = []
-
-    def handler(request):
-        seen.append(request)
-        return httpx.Response(200, json=response())
-
+async def test_requests_native_json_with_an_adapted_schema(run, provider, source):
+    provider.reply(output("anthropic-json", VALUE))
     original = Invoice.model_json_schema()
-    model = configured("anthropic:test", output_mode="json_schema", settings={"max_tokens": 1234})
-    transport = httpx.MockTransport(handler)
-    if asynchronous:
-        async with httpx.AsyncClient(transport=transport) as client:
-            result = await extract_async(Invoice, model, source, "Read all items", client=client)
-    else:
-        with httpx.Client(transport=transport) as client:
-            result = extract(Invoice, model, source, "Read all items", client=client)
-    assert result == Invoice.model_validate(VALUE)
-    request = seen[0]
-    body = json.loads(request.content)
+    model = json_model(settings={"max_tokens": 1234})
+    assert await run(Invoice, model, source, "Read all items") == Invoice.model_validate(VALUE)
+    request, body = provider.requests[0], provider.bodies[0]
     assert request.url.path == "/v1/messages"
     assert request.headers["anthropic-version"] == "2023-06-01"
     assert "anthropic-beta" not in request.headers
@@ -57,161 +53,104 @@ async def test_native_json_contract(asynchronous, source):
     assert schema["additionalProperties"] is False
     assert schema["required"] == ["items"]
     assert schema["properties"]["note"]["default"] is None
-    item = schema["$defs"]["Item"]
-    assert item["additionalProperties"] is False
-    assert "minimum" not in item["properties"]["quantity"]
-    assert "minimum" in item["properties"]["quantity"]["description"]
-    assert "maxLength" not in item["properties"]["name"]
-    assert "maxLength" in item["properties"]["name"]["description"]
     assert "minItems" not in schema["properties"]["items"]
+    item = schema["$defs"]["Item"]
+    quantity, name = item["properties"]["quantity"], item["properties"]["name"]
+    assert item["additionalProperties"] is False
+    assert "minimum" not in quantity and "minimum" in quantity["description"]
+    assert "maxLength" not in name and "maxLength" in name["description"]
     assert Invoice.model_json_schema() == original
 
 
-@pytest.mark.parametrize("asynchronous", [False, True])
-@pytest.mark.parametrize("stop_reason", ["refusal", "max_tokens", "stop_sequence", "tool_use"])
-async def test_http_200_incomplete_or_refused(asynchronous, stop_reason):
-    payload = response()
-    payload["stop_reason"] = stop_reason
-    transport = httpx.MockTransport(lambda r: httpx.Response(200, json=payload))
-    model = configured("anthropic:test", output_mode="json_schema")
-    with pytest.raises(SchemaValidationError):
-        if asynchronous:
-            async with httpx.AsyncClient(transport=transport) as client:
-                await extract_async(Invoice, model, b"Invoice", client=client)
-        else:
-            with httpx.Client(transport=transport) as client:
-                extract(Invoice, model, b"Invoice", client=client)
-
-
 @pytest.mark.parametrize(
-    "content",
+    "flaw",
     [
-        [],
-        [{"type": "text", "text": None}],
-        [{"type": "text", "text": ""}],
-        [{"type": "text", "text": "{"}],
-        [{"type": "tool_use"}],
-        [{"type": "text", "text": "{}"}, {"type": "text", "text": "{}"}],
-        [{"type": "thinking", "thinking": "internal"}],
+        {"stop_reason": "refusal"},
+        {"stop_reason": "max_tokens"},
+        {"stop_reason": "stop_sequence"},
+        {"stop_reason": "tool_use"},
+        {"content": []},
+        {"content": [{"type": "text", "text": None}]},
+        {"content": [{"type": "text", "text": ""}]},
+        {"content": [{"type": "text", "text": "{"}]},
+        {"content": [{"type": "tool_use"}]},
+        {"content": [{"type": "text", "text": "{}"}, {"type": "text", "text": "{}"}]},
+        {"content": [{"type": "thinking", "thinking": "internal"}]},
     ],
 )
-def test_invalid_json_content(content):
-    with (
-        httpx.Client(
-            transport=httpx.MockTransport(
-                lambda r: httpx.Response(200, json={"stop_reason": "end_turn", "content": content})
-            )
-        ) as client,
-        pytest.raises(SchemaValidationError),
-    ):
-        extract(
-            Invoice, configured("anthropic:test", output_mode="json_schema"), b"x", client=client
-        )
+async def test_flawed_response_raises_schema_validation_error(run, provider, flaw):
+    provider.reply(output("anthropic-json", VALUE) | flaw)
+    with pytest.raises(SchemaValidationError):
+        await run(Invoice, json_model(), b"Invoice")
 
 
-@pytest.mark.parametrize("asynchronous", [False, True])
-async def test_local_validation_and_retry(asynchronous):
-    seen = []
-
-    def handler(request):
-        seen.append(json.loads(request.content))
-        return httpx.Response(200, json=response({"items": []} if len(seen) == 1 else VALUE))
-
-    model = Model("anthropic:test", api_key="test", output_mode="json_schema", validation_retries=1)
-    transport = httpx.MockTransport(handler)
-    if asynchronous:
-        async with httpx.AsyncClient(transport=transport) as client:
-            result = await extract_async(Invoice, model, b"x", client=client)
-    else:
-        with httpx.Client(transport=transport) as client:
-            result = extract(Invoice, model, b"x", client=client)
+async def test_validation_retry_repeats_the_schema_with_feedback(run, provider):
+    provider.reply(output("anthropic-json", {"items": []}), output("anthropic-json", VALUE))
+    result = await run(Invoice, json_model(validation_retries=1), b"Invoice")
     assert result == Invoice.model_validate(VALUE)
-    assert len(seen) == 2
-    assert seen[0]["output_config"] == seen[1]["output_config"]
-    assert "items" in seen[1]["system"]
+    first, retry = provider.bodies
+    assert first["output_config"] == retry["output_config"]
+    assert "items" in retry["system"]
 
 
-def test_local_constraints_remain_enforced():
-    with (
-        httpx.Client(
-            transport=httpx.MockTransport(
-                lambda r: httpx.Response(
-                    200, json=response({"items": [{"name": "!", "quantity": 0}]})
-                )
-            )
-        ) as client,
-        pytest.raises(SchemaValidationError) as error,
-    ):
-        extract(
-            Invoice, configured("anthropic:test", output_mode="json_schema"), b"x", client=client
-        )
-    assert isinstance(error.value.__cause__, ValidationError)
-    assert {e["type"] for e in error.value.__cause__.errors()} >= {
-        "string_too_short",
-        "greater_than_equal",
-    }
-
-
-class Recursive(BaseModel):
-    children: list["Recursive"]
-
-
-class Map(BaseModel):
-    values: dict[str, int]
+def test_constraints_anthropic_cannot_enforce_are_validated_locally(provider):
+    provider.reply(output("anthropic-json", {"items": [{"name": "!", "quantity": 0}]}))
+    with pytest.raises(SchemaValidationError) as error:
+        extract(Invoice, json_model(), b"Invoice")
+    cause = error.value.__cause__
+    assert isinstance(cause, ValidationError)
+    violations = {detail["type"] for detail in cause.errors()}
+    assert violations >= {"string_too_short", "greater_than_equal"}
 
 
 @pytest.mark.parametrize("schema", [Recursive, Map])
-def test_unsupported_models_fail_before_request(schema):
+def test_unsupported_schema_fails_before_any_request(provider, schema):
     with pytest.raises(ValueError, match="Anthropic JSON output"):
-        extract(schema, configured("anthropic:test", output_mode="json_schema"), b"x")
+        extract(schema, json_model(), b"Invoice")
+    assert not provider.requests
 
 
 @pytest.mark.parametrize("keyword", ["output_config", "output_format"])
 @pytest.mark.parametrize("mode", [None, "tool", "json_schema"])
-def test_output_settings_reserved(keyword, mode):
+def test_settings_cannot_override_output_fields(keyword, mode):
+    model = configured("anthropic:test", output_mode=mode, settings={keyword: {}})
     with pytest.raises(ValueError, match="cannot override"):
-        extract(
-            Invoice, configured("anthropic:test", output_mode=mode, settings={keyword: {}}), b"x"
-        )
+        extract(Invoice, model, b"Invoice")
 
 
 @pytest.mark.parametrize("mode", [None, "tool"])
-def test_forced_tool_default_unchanged(mode):
-    def handler(request):
-        body = json.loads(request.content)
-        assert "output_config" not in body
-        assert body["tools"][0]["input_schema"] == Invoice.model_json_schema()
-        assert body["tool_choice"] == {"type": "tool", "name": "extract"}
-        return httpx.Response(
-            200,
-            json={
-                "stop_reason": "tool_use",
-                "content": [{"type": "tool_use", "name": "extract", "input": VALUE}],
-            },
-        )
-
-    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        assert extract(
-            Invoice, configured("anthropic:test", output_mode=mode), b"x", client=client
-        ) == Invoice.model_validate(VALUE)
+def test_forced_tool_call_remains_the_default(provider, mode):
+    provider.reply(output("anthropic", VALUE))
+    model = configured("anthropic:test", output_mode=mode)
+    assert extract(Invoice, model, b"Invoice") == Invoice.model_validate(VALUE)
+    body = provider.bodies[0]
+    assert "output_config" not in body
+    assert body["tools"][0]["input_schema"] == Invoice.model_json_schema()
+    assert body["tool_choice"] == {"type": "tool", "name": "extract"}
 
 
-def test_schema_edge_cases():
-    from openextract._schemas import anthropic_json
-
-    for schema in [
+@pytest.mark.parametrize(
+    "schema",
+    [
         {"$ref": "https://example.com/schema"},
         {"allOf": []},
         {"prefixItems": []},
         {"patternProperties": {}},
         {"enum": [{}]},
-    ]:
-        with pytest.raises(ValueError, match="Anthropic JSON output"):
-            anthropic_json(schema)
+    ],
+)
+def test_adapter_rejects_schemas_anthropic_cannot_express(schema):
+    with pytest.raises(ValueError, match="Anthropic JSON output"):
+        anthropic_json(schema)
+
+
+def test_adapter_keeps_only_the_keywords_anthropic_accepts():
     assert anthropic_json({"type": "string", "format": "date"})["format"] == "date"
     assert "format" not in anthropic_json({"type": "string", "format": "password"})
     assert anthropic_json({"type": "array", "minItems": 1})["minItems"] == 1
 
+
+def test_adapter_expresses_a_tagged_union_without_a_discriminator():
     class Cat(BaseModel):
         kind: Literal["cat"]
 
@@ -221,6 +160,5 @@ def test_schema_edge_cases():
     class Pet(BaseModel):
         pet: Annotated[Cat | Dog, Field(discriminator="kind")]
 
-    adapted = anthropic_json(Pet.model_json_schema())
-    assert "anyOf" in adapted["properties"]["pet"]
-    assert "discriminator" not in adapted["properties"]["pet"]
+    pet = anthropic_json(Pet.model_json_schema())["properties"]["pet"]
+    assert "anyOf" in pet and "discriminator" not in pet

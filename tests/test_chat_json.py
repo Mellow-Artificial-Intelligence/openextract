@@ -1,11 +1,12 @@
+"""Chat Completions JSON Schema output: a strict schema, a finished JSON message, validation."""
+
 import json
 
-import httpx
 import pytest
 from pydantic import BaseModel, Field, ValidationError
 
-from openextract import Model, SchemaValidationError, extract, extract_async
-from tests.helpers import configured
+from openextract import SchemaValidationError, extract
+from tests.helpers import configured, output
 
 
 class Item(BaseModel):
@@ -19,123 +20,69 @@ class Invoice(BaseModel):
 
 
 INVOICE = {"total": 42.5, "items": [{"description": "Notebook", "quantity": 2}]}
+INVOICE_JSON = json.dumps(INVOICE)
 
 
-def response(value=INVOICE):
-    return {"choices": [{"finish_reason": "stop", "message": {"content": json.dumps(value)}}]}
+def json_model(name="openai-chat:test", **options):
+    """A Chat Completions model that asks for JSON Schema output instead of a tool call."""
+    return configured(name, output_mode="json_schema", **options)
 
 
-@pytest.mark.parametrize("asynchronous", [False, True])
 @pytest.mark.parametrize(
     "name", ["openai-chat:test", "openrouter:google/gemini-2.5-flash", "custom:test"]
 )
-async def test_json_schema_request_and_response_contract(asynchronous, name):
-    seen = []
-
-    def handler(request):
-        seen.append(request)
-        return httpx.Response(200, json=response())
-
+async def test_requests_json_schema_output_with_a_strict_schema(run, provider, name):
+    provider.reply(output("chat-json", INVOICE))
     original = Invoice.model_json_schema()
-    model = configured(
-        name, api="chat", base_url="https://example.com/v1", output_mode="json_schema"
-    )
-    transport = httpx.MockTransport(handler)
-    if asynchronous:
-        async with httpx.AsyncClient(transport=transport) as client:
-            result = await extract_async(
-                Invoice, model, b"Invoice", "Include every item.", client=client
-            )
-    else:
-        with httpx.Client(transport=transport) as client:
-            result = extract(Invoice, model, b"Invoice", "Include every item.", client=client)
+    model = json_model(name, api="chat", base_url="https://example.com/v1")
+    result = await run(Invoice, model, b"Invoice", "Include every item.")
     assert result == Invoice.model_validate(INVOICE)
-    request = json.loads(seen[0].content)
-    assert seen[0].url == "https://example.com/v1/chat/completions"
-    assert "tools" not in request and "tool_choice" not in request
-    assert request["messages"][0] == {"role": "system", "content": "Include every item."}
-    assert request["response_format"]["type"] == "json_schema"
-    format = request["response_format"]["json_schema"]
-    assert format["name"] == "extract"
-    assert format["strict"] is True
-    assert format["schema"]["additionalProperties"] is False
-    assert format["schema"]["$defs"]["Item"]["additionalProperties"] is False
-    assert format["schema"]["properties"]["items"]["minItems"] == 1
+    request, body = provider.requests[0], provider.bodies[0]
+    assert request.url == "https://example.com/v1/chat/completions"
+    assert "tools" not in body and "tool_choice" not in body
+    assert body["messages"][0] == {"role": "system", "content": "Include every item."}
+    assert body["response_format"]["type"] == "json_schema"
+    json_schema = body["response_format"]["json_schema"]
+    assert json_schema["name"] == "extract"
+    assert json_schema["strict"] is True
+    assert json_schema["schema"]["additionalProperties"] is False
+    assert json_schema["schema"]["$defs"]["Item"]["additionalProperties"] is False
+    assert json_schema["schema"]["properties"]["items"]["minItems"] == 1
     assert Invoice.model_json_schema() == original
 
 
 @pytest.mark.parametrize(
     "finish_reason,message",
     [
-        ("length", {"content": json.dumps(INVOICE)}),
-        ("content_filter", {"content": json.dumps(INVOICE)}),
-        ("tool_calls", {"content": json.dumps(INVOICE)}),
-        ("stop", {"content": json.dumps(INVOICE), "refusal": "refused"}),
-        (
-            "stop",
-            {"content": json.dumps(INVOICE), "tool_calls": [{"function": {"name": "extract"}}]},
-        ),
+        ("length", {"content": INVOICE_JSON}),
+        ("content_filter", {"content": INVOICE_JSON}),
+        ("tool_calls", {"content": INVOICE_JSON}),
+        ("stop", {"content": INVOICE_JSON, "refusal": "refused"}),
+        ("stop", {"content": INVOICE_JSON, "tool_calls": [{"function": {"name": "extract"}}]}),
         ("stop", {"content": None}),
         ("stop", {"content": INVOICE}),
         ("stop", {"content": ""}),
         ("stop", {"content": "not JSON"}),
     ],
 )
-def test_json_schema_rejects_invalid_output(finish_reason, message):
-    payload = {"choices": [{"finish_reason": finish_reason, "message": message}]}
-    with (
-        httpx.Client(
-            transport=httpx.MockTransport(lambda r: httpx.Response(200, json=payload))
-        ) as client,
-        pytest.raises(SchemaValidationError),
-    ):
-        extract(
-            Invoice,
-            configured("openai-chat:test", output_mode="json_schema"),
-            b"Invoice",
-            client=client,
-        )
+def test_flawed_response_raises_schema_validation_error(provider, finish_reason, message):
+    provider.reply({"choices": [{"finish_reason": finish_reason, "message": message}]})
+    with pytest.raises(SchemaValidationError):
+        extract(Invoice, json_model(), b"Invoice")
 
 
-@pytest.mark.parametrize("asynchronous", [False, True])
-async def test_json_schema_validates_output_and_retries(asynchronous):
-    seen = []
-
-    def handler(request):
-        seen.append(json.loads(request.content))
-        value = {"total": 42.5, "items": []} if len(seen) == 1 else INVOICE
-        return httpx.Response(200, json=response(value))
-
-    model = Model(
-        "openai-chat:test", api_key="test", output_mode="json_schema", validation_retries=1
-    )
-    transport = httpx.MockTransport(handler)
-    if asynchronous:
-        async with httpx.AsyncClient(transport=transport) as client:
-            result = await extract_async(Invoice, model, b"Invoice", client=client)
-    else:
-        with httpx.Client(transport=transport) as client:
-            result = extract(Invoice, model, b"Invoice", client=client)
+async def test_validation_retry_repeats_the_schema_with_feedback(run, provider):
+    provider.reply(output("chat-json", INVOICE | {"items": []}), output("chat-json", INVOICE))
+    result = await run(Invoice, json_model(validation_retries=1), b"Invoice")
     assert result.total == 42.5
-    assert len(seen) == 2
-    assert seen[0]["response_format"] == seen[1]["response_format"]
-    assert "items" in seen[1]["messages"][0]["content"]
-    assert all("tools" not in body for body in seen)
+    first, retry = provider.bodies
+    assert first["response_format"] == retry["response_format"]
+    assert "items" in retry["messages"][0]["content"]
+    assert "tools" not in first and "tools" not in retry
 
 
-def test_json_schema_validation_failure_keeps_pydantic_error():
-    with (
-        httpx.Client(
-            transport=httpx.MockTransport(
-                lambda r: httpx.Response(200, json=response({"total": 42, "items": []}))
-            )
-        ) as client,
-        pytest.raises(SchemaValidationError) as error,
-    ):
-        extract(
-            Invoice,
-            configured("openai-chat:test", output_mode="json_schema"),
-            b"Invoice",
-            client=client,
-        )
+def test_schema_invalid_output_keeps_the_pydantic_error(provider):
+    provider.reply(output("chat-json", {"total": 42, "items": []}))
+    with pytest.raises(SchemaValidationError) as error:
+        extract(Invoice, json_model(), b"Invoice")
     assert isinstance(error.value.__cause__, ValidationError)

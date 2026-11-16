@@ -1,21 +1,14 @@
-import json
+"""OpenRouter Extractions: schema fields in, validated data and the provider's answers out."""
+
 from datetime import date, datetime, time
 from decimal import Decimal
 from typing import Annotated
 
-import httpx
 import pytest
 from pydantic import BaseModel, ConfigDict, Field, RootModel, create_model, field_validator
 
-from openextract import (
-    ExtractionResult,
-    Model,
-    OpenRouterField,
-    SchemaValidationError,
-    extract,
-    extract_async,
-)
-from tests.helpers import configured, serve
+from openextract import ExtractionResult, Model, OpenRouterField, SchemaValidationError, extract
+from tests.helpers import configured
 
 CLAIRIC = "openrouter:cloudflare/clairic"
 SCALEDOWN = "openrouter:scaledown/extract"
@@ -25,7 +18,7 @@ class Receipt(BaseModel):
     vendor: str
 
 
-def test_text_returns_validated_data_and_original_metadata(monkeypatch):
+def test_text_returns_validated_data_and_original_metadata(provider, monkeypatch):
     class Invoice(BaseModel):
         model_config = ConfigDict(strict=True)
         vendor: str = Field(alias="seller", description="Seller named on the invoice.")
@@ -36,8 +29,8 @@ def test_text_returns_validated_data_and_original_metadata(monkeypatch):
         purchase_order: Annotated[str, Field(min_length=2)] | None
         quantities: Annotated[list[Annotated[int, Field(gt=0)]], Field(min_length=1)] | None
 
-    source = "📄 Acme invoice"
-    options = {
+    source = "\N{PAGE FACING UP} Acme invoice"
+    settings = {
         "reference_date": "2026-11-11",
         "provider": {"options": {"cloudflare": {"return_state_text": True}}},
     }
@@ -51,51 +44,11 @@ def test_text_returns_validated_data_and_original_metadata(monkeypatch):
         "quantities": {"value": [1, 2], "spans": [None, [7, 8]], "confidences": [0.8, 0.9]},
     }
     metadata = {"state_text": source, "truncated": False, "usage": {"cost": 0.0001}}
-
-    def handler(request):
-        assert request.method == "POST"
-        assert str(request.url) == "https://proxy.example/api/alpha/extractions"
-        assert request.headers["authorization"] == "Bearer env-key"
-        body = json.loads(request.content)
-        assert body == {
-            **options,
-            "model": "cloudflare/clairic",
-            "state": source,
-            "fields": {
-                "vendor": {
-                    "type": "text",
-                    "instructions": "Seller named on the invoice.\nBe exact.",
-                },
-                "total": {
-                    "type": "number",
-                    "decimals": 2,
-                    "unit": "USD",
-                    "instructions": "total\nBe exact.",
-                },
-                "due_date": {"type": "date", "instructions": "due date\nBe exact."},
-                "paid_at": {"type": "datetime", "instructions": "paid at\nBe exact."},
-                "cutoff": {"type": "time", "instructions": "cutoff\nBe exact."},
-                "purchase_order": {"type": "text", "instructions": "purchase order\nBe exact."},
-                "quantities": {
-                    "type": "list",
-                    "items": "number",
-                    "integer": True,
-                    "instructions": "quantities\nBe exact.",
-                },
-            },
-        }
-        return httpx.Response(200, json={**metadata, "answers": answers})
-
     monkeypatch.setenv("OPENROUTER_API_KEY", "env-key")
     monkeypatch.setenv("OPENROUTER_BASE_URL", "https://proxy.example/api/v1/")
-    serve(monkeypatch, handler)
-    result = extract(
-        Invoice,
-        Model(CLAIRIC, settings=options),
-        source,
-        "Be exact.",
-        include_metadata=True,
-    )
+    provider.reply({**metadata, "answers": answers})
+    model = Model(CLAIRIC, settings=settings)
+    result = extract(Invoice, model, source, "Be exact.", include_metadata=True)
     assert isinstance(result, ExtractionResult)
     assert result.data.vendor == "Acme"
     assert result.data.total == Decimal("12.5")
@@ -106,6 +59,34 @@ def test_text_returns_validated_data_and_original_metadata(monkeypatch):
     assert result.data.quantities == [1, 2]
     assert result.answers == answers
     assert result.metadata == metadata
+    request, body = provider.requests[0], provider.bodies[0]
+    assert request.method == "POST"
+    assert request.url == "https://proxy.example/api/alpha/extractions"
+    assert request.headers["authorization"] == "Bearer env-key"
+    assert body == {
+        **settings,
+        "model": "cloudflare/clairic",
+        "state": source,
+        "fields": {
+            "vendor": {"type": "text", "instructions": "Seller named on the invoice.\nBe exact."},
+            "total": {
+                "type": "number",
+                "decimals": 2,
+                "unit": "USD",
+                "instructions": "total\nBe exact.",
+            },
+            "due_date": {"type": "date", "instructions": "due date\nBe exact."},
+            "paid_at": {"type": "datetime", "instructions": "paid at\nBe exact."},
+            "cutoff": {"type": "time", "instructions": "cutoff\nBe exact."},
+            "purchase_order": {"type": "text", "instructions": "purchase order\nBe exact."},
+            "quantities": {
+                "type": "list",
+                "items": "number",
+                "integer": True,
+                "instructions": "quantities\nBe exact.",
+            },
+        },
+    }
 
 
 @pytest.mark.parametrize(
@@ -118,79 +99,51 @@ def test_text_returns_validated_data_and_original_metadata(monkeypatch):
     ],
 )
 async def test_asset_request_and_values_only_result(
-    monkeypatch, model_name, content, kind, file_format, encoded
+    run, provider, monkeypatch, model_name, content, kind, file_format, encoded
 ):
-    def handler(request):
-        assert request.url.path == "/api/alpha/extractions"
-        assert json.loads(request.content) == {
-            "model": model_name.split(":", 1)[1],
-            "state": "document",
-            "assets": {"document": {"type": kind, "format": file_format, "data_base64": encoded}},
-            "fields": {"vendor": {"type": "text", "instructions": "vendor"}},
-        }
-        return httpx.Response(200, json={"answers": {"vendor": {"value": "Acme"}}})
-
     monkeypatch.setenv("OPENROUTER_API_KEY", "env-key")
-    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        result = await extract_async(Receipt, model_name, content, client=client)
-        assert result == Receipt(vendor="Acme")
-        assert not client.is_closed
+    provider.reply({"answers": {"vendor": {"value": "Acme"}}})
+    assert await run(Receipt, model_name, content) == Receipt(vendor="Acme")
+    request, body = provider.requests[0], provider.bodies[0]
+    assert request.url.path == "/api/alpha/extractions"
+    assert body == {
+        "model": model_name.split(":", 1)[1],
+        "state": "document",
+        "assets": {"document": {"type": kind, "format": file_format, "data_base64": encoded}},
+        "fields": {"vendor": {"type": "text", "instructions": "vendor"}},
+    }
 
 
-async def test_explicit_api_and_native_field_options(monkeypatch):
+async def test_explicit_api_and_native_field_options(run, provider):
+    duration = {"type": "duration", "integer": True, "unit": "days"}
+    estimate = {"type": "estimate", "min": 0, "max": 90, "step": 1}
+    forecast = {"type": "forecast", "min": 0, "max": 100, "horizon": 2, "interval": "month"}
+
     class Terms(BaseModel):
-        term_days: Annotated[int, OpenRouterField(type="duration", integer=True, unit="days")]
-        days_to_pay: Annotated[float, OpenRouterField(type="estimate", min=0, max=90, step=1)]
-        payments: Annotated[
-            list[float],
-            OpenRouterField(type="forecast", min=0, max=100, horizon=2, interval="month"),
-        ]
+        term_days: Annotated[int, OpenRouterField(**duration)]
+        days_to_pay: Annotated[float, OpenRouterField(**estimate)]
+        payments: Annotated[list[float], OpenRouterField(**forecast)]
 
-    def handler(request):
-        assert request.url.path == "/api/alpha/extractions"
-        assert json.loads(request.content)["fields"] == {
-            "term_days": {
-                "type": "duration",
-                "integer": True,
-                "unit": "days",
-                "instructions": "term days",
-            },
-            "days_to_pay": {
-                "type": "estimate",
-                "min": 0,
-                "max": 90,
-                "step": 1,
-                "instructions": "days to pay",
-            },
-            "payments": {
-                "type": "forecast",
-                "min": 0,
-                "max": 100,
-                "horizon": 2,
-                "interval": "month",
-                "instructions": "payments",
-            },
-        }
-        return httpx.Response(
-            200,
-            json={
-                "answers": {
-                    "term_days": {"value": 30},
-                    "days_to_pay": {"value": 35, "p10": 30, "p90": 40},
-                    "payments": {"value": [50, 50], "steps": [{"median": 50}, {"median": 50}]},
-                }
-            },
-        )
-
-    serve(monkeypatch, handler)
-    model = configured("openrouter:cloudflare/clairic", api="openrouter-extractions")
-    result = await extract_async(Terms, model, "Net 30", include_metadata=True)
+    answers = {
+        "term_days": {"value": 30},
+        "days_to_pay": {"value": 35, "p10": 30, "p90": 40},
+        "payments": {"value": [50, 50], "steps": [{"median": 50}, {"median": 50}]},
+    }
+    provider.reply({"answers": answers})
+    model = configured(CLAIRIC, api="openrouter-extractions")
+    result = await run(Terms, model, "Net 30", include_metadata=True)
     assert result.data == Terms(term_days=30, days_to_pay=35, payments=[50, 50])
     assert result.answers["days_to_pay"]["p10"] == 30
     assert result.answers["payments"]["steps"] == [{"median": 50}, {"median": 50}]
+    assert provider.requests[0].url.path == "/api/alpha/extractions"
+    assert provider.bodies[0]["fields"] == {
+        "term_days": {**duration, "instructions": "term days"},
+        "days_to_pay": {**estimate, "instructions": "days to pay"},
+        "payments": {**forecast, "instructions": "payments"},
+    }
 
 
-def test_validation_retry_preserves_source_and_returns_final_answer(monkeypatch):
+def test_validation_retry_preserves_source_and_returns_final_answer(provider):
     class Invoice(BaseModel):
         total: int
 
@@ -201,23 +154,16 @@ def test_validation_retry_preserves_source_and_returns_final_answer(monkeypatch)
                 raise ValueError("Private validation detail")
             return value
 
-    requests = []
-
-    def handler(request):
-        requests.append(json.loads(request.content))
-        value = -9876 if len(requests) == 1 else 10
-        return httpx.Response(200, json={"answers": {"total": {"value": value}}})
-
-    serve(monkeypatch, handler)
+    provider.reply({"answers": {"total": {"value": -9876}}}, {"answers": {"total": {"value": 10}}})
     result = extract(Invoice, Model(CLAIRIC, api_key="test-key"), "Due: 10", include_metadata=True)
     assert result.data.total == 10
     assert result.answers == {"total": {"value": 10}}
-    assert len(requests) == 2
-    assert requests[0]["state"] == requests[1]["state"] == "Due: 10"
-    retry = requests[1]["fields"]["total"]["instructions"]
-    assert "total: Value did not satisfy a schema validator." in retry
-    assert "Private validation detail" not in retry
-    assert "-9876" not in retry
+    first, retry = provider.bodies
+    assert first["state"] == retry["state"] == "Due: 10"
+    feedback = retry["fields"]["total"]["instructions"]
+    assert "total: Value did not satisfy a schema validator." in feedback
+    assert "Private validation detail" not in feedback
+    assert "-9876" not in feedback
 
 
 @pytest.mark.parametrize(
@@ -230,6 +176,7 @@ def test_unsupported_schema_rejected_before_sending(annotation):
 
 
 def test_unsupported_inputs_and_reserved_settings_rejected_before_sending():
+    chat_model = configured("openrouter:google/gemini-2.5-flash")
     with pytest.raises(TypeError, match="requires a Pydantic model with named fields"):
         extract(RootModel[str], configured(CLAIRIC), "text")
     with pytest.raises(ValueError, match="at least one schema field"):
@@ -239,9 +186,7 @@ def test_unsupported_inputs_and_reserved_settings_rejected_before_sending():
     with pytest.raises(ValueError, match="cannot override request fields"):
         extract(Receipt, configured(CLAIRIC, settings={"assets": {}}), "text")
     with pytest.raises(ValueError, match="requires the OpenRouter Extractions API"):
-        extract(
-            Receipt, configured("openrouter:google/gemini-2.5-flash"), "text", include_metadata=True
-        )
+        extract(Receipt, chat_model, "text", include_metadata=True)
 
 
 @pytest.mark.parametrize(
@@ -254,15 +199,14 @@ def test_unsupported_inputs_and_reserved_settings_rejected_before_sending():
         {"vendor": {"confidence": 0.8}},
     ],
 )
-def test_invalid_answer_envelopes_raise_schema_error(monkeypatch, answers):
-    serve(monkeypatch, lambda request: httpx.Response(200, json={"answers": answers}))
+def test_invalid_answer_envelopes_raise_schema_error(provider, answers):
+    provider.reply({"answers": answers})
     with pytest.raises(SchemaValidationError, match="OpenRouter Extractions"):
         extract(Receipt, configured(CLAIRIC), "text")
 
 
-def test_truncated_input_requires_metadata_opt_in(monkeypatch):
-    payload = {"truncated": True, "answers": {"vendor": {"value": "Acme"}}}
-    serve(monkeypatch, lambda request: httpx.Response(200, json=payload))
+def test_truncated_input_requires_metadata_opt_in(provider):
+    provider.reply({"truncated": True, "answers": {"vendor": {"value": "Acme"}}})
     with pytest.raises(SchemaValidationError, match="read only part of the source"):
         extract(Receipt, configured(CLAIRIC), "text")
     result = extract(Receipt, configured(CLAIRIC), "text", include_metadata=True)
