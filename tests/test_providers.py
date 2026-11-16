@@ -376,6 +376,13 @@ def test_refusals_and_incomplete_output_raise_schema_validation_error(provider, 
     assert len(provider.requests) == 1
 
 
+def test_empty_output_fails_without_a_validation_retry(provider):
+    provider.reply({"status": "completed", "output": [{"type": "reasoning"}]})
+    with pytest.raises(SchemaValidationError, match="no structured output"):
+        extract(Invoice, configured(validation_retries=1), b"text")
+    assert len(provider.requests) == 1
+
+
 async def test_chat_accepts_a_forced_tool_call_that_reports_a_natural_stop(run, provider):
     provider.reply(chat("stop", **output("chat")["choices"][0]["message"]))
     assert await run(Invoice, configured("openai-chat:test"), b"text") == Invoice(total=42)

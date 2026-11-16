@@ -319,6 +319,13 @@ async def test_invalid_answers_raise_schema_validation_error(run, provider, mode
     assert len(provider.requests) == 1
 
 
+def test_refusal_is_reported_as_a_refusal(provider):
+    refused = {"type": "refusal", "name": "is_paid"}
+    provider.reply({"answers": [OPENAI_ANSWERS[0], refused, OPENAI_ANSWERS[2]]})
+    with pytest.raises(SchemaValidationError, match="refused to answer 'is_paid'"):
+        extract(Triage, OPENAI, b"text")
+
+
 def test_non_json_response_raises_schema_validation_error(provider):
     provider.reply(lambda request: httpx.Response(200, content=b"not JSON"))
     with pytest.raises(SchemaValidationError):

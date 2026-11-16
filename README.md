@@ -63,10 +63,8 @@ or a URL.
 
 ## Usage
 
-```python
-def extract(schema, model, source, instructions=None, *, media_type=None, client=None, include_metadata=False): ...
-async def extract_async(schema, model, source, instructions=None, *, media_type=None, client=None, include_metadata=False): ...
-```
+`extract` and `extract_async` take the same arguments:
+`(schema, model, source, instructions=None, *, media_type=None, client=None, include_metadata=False)`.
 
 | Argument | Meaning |
 | --- | --- |

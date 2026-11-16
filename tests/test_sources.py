@@ -44,6 +44,10 @@ async def test_strings_are_text(run, provider, source):
     assert document(provider) == {"type": "input_text", "text": source}
 
 
+def test_text_defaults_to_plain_text():
+    assert _content.load("Total due: 120.00", None).media_type == "text/plain"
+
+
 async def test_string_never_reads_a_matching_local_file(run, provider, monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     Path("invoice.txt").write_text("Private local document")
@@ -129,14 +133,39 @@ async def test_url_is_typed_by_content_type_and_fetched_without_credentials(run,
     assert document(provider)["text"] == "<p>hi</p>"
 
 
-async def test_url_extension_wins_over_a_generic_content_type(run, provider):
-    def download(request):
-        headers = {"content-type": "application/octet-stream"}
-        return httpx.Response(200, content=PDF_BYTES, headers=headers)
+@pytest.mark.parametrize(
+    "path,content_type,expected",
+    [
+        ("/invoice.pdf", "text/html", "application/pdf"),
+        ("/download", "image/png; charset=binary", "image/png"),
+        ("/download", "application/octet-stream", "application/pdf"),
+        ("/download", "", "application/pdf"),
+    ],
+    ids=["extension", "header", "generic-header", "no-header"],
+)
+async def test_url_is_typed_by_extension_then_header_then_content(
+    provider, path, content_type, expected
+):
+    provider.reply(
+        lambda request: httpx.Response(
+            200, content=PDF_BYTES, headers={"content-type": content_type}
+        )
+    )
+    url = "https://example.com" + path
+    assert _content.load(url, None).media_type == expected
+    assert (await _content.load_async(url, None)).media_type == expected
 
-    provider.reply(download, output())
-    await run(Invoice, configured(), "https://example.com/invoice.pdf")
-    assert document(provider) == PDF_FILE
+
+async def test_url_redirects_are_followed(run, provider):
+    def redirect(request):
+        return httpx.Response(302, headers={"location": "https://example.com/final.txt"})
+
+    def final(request):
+        return httpx.Response(200, content=b"Total due: 120.00")
+
+    provider.reply(redirect, final, output())
+    await run(Invoice, configured(), "https://example.com/start")
+    assert document(provider) == {"type": "input_text", "text": "Total due: 120.00"}
 
 
 async def test_url_http_error_raises_extraction_error(run, provider):

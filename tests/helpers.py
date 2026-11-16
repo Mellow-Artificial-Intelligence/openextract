@@ -46,27 +46,3 @@ def output(api="responses", value=None):
         },
         "mistral-ocr": {"document_annotation": text},
     }[api]
-
-
-def serve(monkeypatch, handler):
-    """Temporary bridge for tests not yet moved to the ``provider`` fixture."""
-    import httpx
-
-    transport = httpx.MockTransport(handler)
-    real_client, real_async_client = httpx.Client, httpx.AsyncClient
-
-    def sync_client(**kwargs):
-        kwargs.setdefault("transport", transport)
-        return real_client(**kwargs)
-
-    def async_client(**kwargs):
-        kwargs.setdefault("transport", transport)
-        return real_async_client(**kwargs)
-
-    def get(url, **kwargs):
-        with sync_client(**kwargs) as client:
-            return client.get(url)
-
-    monkeypatch.setattr(httpx, "Client", sync_client)
-    monkeypatch.setattr(httpx, "AsyncClient", async_client)
-    monkeypatch.setattr(httpx, "get", get)
