@@ -8,6 +8,31 @@ timing when that is known.
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-11-16
+
+### Added
+- Gemini Decisions through the `gemini-decisions:` prefix or
+  `Model(api="gemini-decisions")`, filling `bool`, `Literal`, and `Enum` schemas
+  from text, images, and PDFs.
+- Mistral document annotations through `Model(api="mistral-ocr")`, for typed
+  extraction from PDFs, including scans.
+- `Model(output_mode="json_schema")` for Anthropic Messages, using native JSON
+  outputs instead of a forced tool call. Tool calling remains the default.
+- Office and OpenDocument inputs for Gemini `generateContent`.
+
+### Changed
+- Rebuilt the internals around three adapter families that share one interface,
+  with about a sixth less source and no change to the public API.
+- The README now covers everything the separate example guides did, and those
+  guides are removed. The first-extraction examples use `openai:gpt-6.1-sol`
+  ahead of the December 11, 2026 shutdown of `gpt-5`.
+- A few Decisions error messages are reworded. Exception classes and attributes
+  are unchanged.
+
+### Fixed
+- Office and OpenDocument paths and URLs are recognized by their extension on
+  every platform, instead of depending on the operating system's media type table.
+
 ## [2.1.0] - 2026-11-11
 
 ### Added

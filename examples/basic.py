@@ -26,7 +26,7 @@ if __name__ == "__main__":
         source = argument if argument.startswith(("http://", "https://")) else Path(argument)
     else:
         source = Path(__file__).parent / "fixtures/invoice.txt"
-    invoice = extract(Invoice, "openai:gpt-5", source)
+    invoice = extract(Invoice, "openai:gpt-6.1-sol", source)
     print(invoice.vendor)
     print(invoice.total)
     print(invoice.currency)

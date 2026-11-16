@@ -1,42 +1,25 @@
-import json
+"""Provider failures become a ModelError with the facts, a next step, and no secrets."""
 
 import httpx
 import pytest
 
-from openextract import Model, ModelError, extract, extract_async
+from openextract import Model, ModelError, extract
 from tests.helpers import configured
 from tests.test_extract import Invoice
 
 
-@pytest.mark.parametrize("asynchronous", [False, True])
 @pytest.mark.parametrize("mode", ["tool", "json_schema"])
-async def test_native_provider_failure_with_http_200_surfaces_as_model_error(asynchronous, mode):
-    seen = []
-    payload = {
-        "provider": "Google AI Studio",
-        "choices": [
-            {
-                "finish_reason": "error",
-                "native_finish_reason": "MALFORMED_FUNCTION_CALL",
-                "message": {"tool_calls": []},
-            }
-        ],
+async def test_failure_reported_with_http_200_is_not_retried(run, provider, mode):
+    choice = {
+        "finish_reason": "error",
+        "native_finish_reason": "MALFORMED_FUNCTION_CALL",
+        "message": {"tool_calls": []},
     }
-
-    def handler(request):
-        seen.append(request)
-        return httpx.Response(200, json=payload)
-
+    provider.reply({"provider": "Google AI Studio", "choices": [choice]})
     model = Model("openrouter:google/gemini-2.5-flash", api_key="test", output_mode=mode)
-    transport = httpx.MockTransport(handler)
     with pytest.raises(ModelError, match="MALFORMED_FUNCTION_CALL") as error:
-        if asynchronous:
-            async with httpx.AsyncClient(transport=transport) as client:
-                await extract_async(Invoice, model, b"Invoice", client=client)
-        else:
-            with httpx.Client(transport=transport) as client:
-                extract(Invoice, model, b"Invoice", client=client)
-    assert len(seen) == 1
+        await run(Invoice, model, b"Invoice")
+    assert len(provider.requests) == 1
     assert error.value.status_code == 200
     assert error.value.provider == "Google AI Studio"
     assert error.value.finish_reason == "error"
@@ -47,30 +30,20 @@ async def test_native_provider_failure_with_http_200_surfaces_as_model_error(asy
 @pytest.mark.parametrize(
     "raw",
     [
-        json.dumps({"error": {"message": "Unsupported schema keyword: minItems"}}),
+        '{"error": {"message": "Unsupported schema keyword: minItems"}}',
         "Unsupported schema keyword: minItems",
     ],
 )
-def test_http_and_application_errors_preserve_upstream_message(status, raw):
-    payload = {
-        "error": {
-            "code": 400,
-            "message": "Provider returned error",
-            "metadata": {"provider_name": "Google", "raw": raw},
-        }
-    }
-    with (
-        httpx.Client(
-            transport=httpx.MockTransport(lambda r: httpx.Response(status, json=payload))
-        ) as client,
-        pytest.raises(ModelError, match="Unsupported schema keyword: minItems") as error,
-    ):
-        extract(Invoice, configured(), b"Invoice", client=client)
+def test_http_and_application_errors_preserve_the_upstream_message(provider, status, raw):
+    metadata = {"provider_name": "Google", "raw": raw}
+    rejection = {"code": 400, "message": "Provider returned error", "metadata": metadata}
+    provider.reply({"error": rejection}, status=status)
+    with pytest.raises(ModelError, match="Unsupported schema keyword: minItems") as error:
+        extract(Invoice, configured(), b"Invoice")
     assert error.value.code == 400
     assert error.value.provider == "Google"
     assert error.value.status_code == status
-    if status == 400:
-        assert isinstance(error.value.__cause__, httpx.HTTPStatusError)
+    assert isinstance(error.value.__cause__, httpx.HTTPStatusError) == (status == 400)
 
 
 @pytest.mark.parametrize(
@@ -97,43 +70,21 @@ def test_http_and_application_errors_preserve_upstream_message(status, raw):
         ({"choices": [{"finish_reason": "error"}]}, "error"),
     ],
 )
-def test_other_provider_error_shapes(payload, expected):
-    with (
-        httpx.Client(
-            transport=httpx.MockTransport(lambda r: httpx.Response(200, json=payload))
-        ) as client,
-        pytest.raises(ModelError, match=expected),
-    ):
-        extract(Invoice, configured(), b"Invoice", client=client)
+def test_other_provider_error_shapes(provider, payload, expected):
+    provider.reply(payload)
+    with pytest.raises(ModelError, match=expected):
+        extract(Invoice, configured(), b"Invoice")
 
 
 @pytest.mark.parametrize("status", [200, 401])
-def test_error_details_redact_credentials_in_messages_and_fields(status):
-    def handler(request):
-        secret = request.headers["authorization"].removeprefix("Bearer ")
-        payload = {
-            "error": {
-                "code": secret,
-                "message": "Invalid credential " + secret,
-                "metadata": {
-                    "provider_name": "provider-" + secret,
-                    "raw": "upstream rejected private-header",
-                },
-            }
-        }
-        return httpx.Response(status, json=payload)
-
-    model = Model(
-        "openai:test",
-        api_key="private-key",
-        headers={"X-Custom-Key": "private-header"},
-        max_retries=0,
-    )
-    with (
-        httpx.Client(transport=httpx.MockTransport(handler)) as client,
-        pytest.raises(ModelError) as error,
-    ):
-        extract(Invoice, model, b"Invoice", client=client)
+def test_credentials_are_redacted_from_the_message_and_fields(provider, status):
+    metadata = {"provider_name": "provider-private-key", "raw": "upstream rejected private-header"}
+    rejection = {"code": "private-key", "message": "Invalid credential private-key"}
+    provider.reply({"error": rejection | {"metadata": metadata}}, status=status)
+    model = configured(api_key="private-key", headers={"X-Custom-Key": "private-header"})
+    with pytest.raises(ModelError) as error:
+        extract(Invoice, model, b"Invoice")
+    assert provider.requests[0].headers["authorization"] == "Bearer private-key"
     assert "private-key" not in str(error.value)
     assert "private-header" not in str(error.value)
     assert "[REDACTED]" in str(error.value)
@@ -141,32 +92,44 @@ def test_error_details_redact_credentials_in_messages_and_fields(status):
     assert error.value.provider == "provider-[REDACTED]"
 
 
-def test_failure_reason_fields_redact_caller_client_credentials():
-    payload = {
-        "choices": [{"finish_reason": "error", "native_finish_reason": "failure-client-secret"}]
-    }
-    with (
-        httpx.Client(
-            headers={"X-API-Key": "client-secret"},
-            transport=httpx.MockTransport(lambda r: httpx.Response(200, json=payload)),
-        ) as client,
-        pytest.raises(ModelError) as error,
-    ):
-        extract(Invoice, configured(), b"Invoice", client=client)
+@pytest.mark.parametrize(
+    "headers", [{"X-API-Key": "client-secret"}, {"Authorization": "Bearer client-secret"}]
+)
+def test_failure_reason_redacts_credentials_from_the_callers_client(provider, headers):
+    choice = {"finish_reason": "error", "native_finish_reason": "failure-client-secret"}
+    provider.reply({"choices": [choice]})
+    with httpx.Client(headers=headers) as client, pytest.raises(ModelError) as error:
+        extract(Invoice, configured(api_key=""), b"Invoice", client=client)
     assert error.value.native_finish_reason == "failure-[REDACTED]"
     assert "client-secret" not in str(error.value)
 
 
-def test_non_json_http_error_keeps_status_without_body():
-    with (
-        httpx.Client(
-            transport=httpx.MockTransport(lambda r: httpx.Response(502, json=["private body"]))
-        ) as client,
-        pytest.raises(ModelError, match="HTTP 502") as error,
-    ):
-        extract(Invoice, configured(), b"Invoice", client=client)
+def test_http_error_without_an_error_object_keeps_the_status_and_drops_the_body(provider):
+    provider.reply(["private body"], status=502)
+    with pytest.raises(ModelError, match="HTTP 502") as error:
+        extract(Invoice, configured(), b"Invoice")
     assert error.value.status_code == 502
     assert "private body" not in str(error.value)
+
+
+def test_top_level_message_is_preserved_without_echoing_the_whole_body(provider):
+    payload = {"message": "Model access is disabled", "private": "source contents"}
+    provider.reply(payload, status=403)
+    with pytest.raises(ModelError) as error:
+        extract(Invoice, configured(), b"Invoice")
+    assert "Details: Model access is disabled" in str(error.value)
+    assert "source contents" not in str(error.value)
+
+
+def test_large_message_cannot_hide_the_next_step_or_inject_extra_lines(provider):
+    provider.reply({"error": {"message": "private-key\n" * 1000}}, status=401)
+    with pytest.raises(ModelError) as error:
+        extract(Invoice, configured(api_key="private-key"), b"Invoice")
+    message = str(error.value)
+    assert "private-key" not in message
+    assert len(message) < 2300
+    assert len(message.splitlines()) == 3
+    assert message.splitlines()[-1].startswith("Next step:")
 
 
 @pytest.mark.parametrize(
@@ -186,19 +149,15 @@ def test_non_json_http_error_keeps_status_without_body():
         (504, None, None, "provider or gateway timed out"),
     ],
 )
-def test_provider_errors_explain_the_failure_and_next_step(status, code, native, hint):
+def test_error_explains_the_failure_and_the_next_step(provider, status, code, native, hint):
     payload = {
         "error": {"message": "Request was rejected", "code": code},
         "provider": "Example Provider",
         "choices": [{"finish_reason": "error", "native_finish_reason": native}],
     }
-    with (
-        httpx.Client(
-            transport=httpx.MockTransport(lambda r: httpx.Response(status, json=payload))
-        ) as client,
-        pytest.raises(ModelError) as error,
-    ):
-        extract(Invoice, configured(), b"Invoice", client=client)
+    provider.reply(payload, status=status)
+    with pytest.raises(ModelError) as error:
+        extract(Invoice, configured(), b"Invoice")
     message = str(error.value)
     assert "\nProvider: Example Provider\n" in message
     assert "\nDetails: Request was rejected\n" in message
@@ -207,32 +166,3 @@ def test_provider_errors_explain_the_failure_and_next_step(status, code, native,
     assert error.value.status_code == status
     assert error.value.code == code
     assert error.value.native_finish_reason == native
-
-
-def test_top_level_error_message_is_preserved_without_echoing_whole_body():
-    payload = {"message": "Model access is disabled", "private": "source contents"}
-    with (
-        httpx.Client(
-            transport=httpx.MockTransport(lambda r: httpx.Response(403, json=payload))
-        ) as client,
-        pytest.raises(ModelError) as error,
-    ):
-        extract(Invoice, configured(), b"Invoice", client=client)
-    assert "Details: Model access is disabled" in str(error.value)
-    assert "source contents" not in str(error.value)
-
-
-def test_large_provider_message_cannot_hide_the_next_step_or_inject_extra_lines():
-    payload = {"error": {"message": "private-key\n" * 1000}}
-    with (
-        httpx.Client(
-            transport=httpx.MockTransport(lambda r: httpx.Response(401, json=payload))
-        ) as client,
-        pytest.raises(ModelError) as error,
-    ):
-        extract(Invoice, Model("openai:test", api_key="private-key"), b"Invoice", client=client)
-    message = str(error.value)
-    assert "private-key" not in message
-    assert len(message) < 2300
-    assert len(message.splitlines()) == 3
-    assert message.splitlines()[-1].startswith("Next step:")
