@@ -49,7 +49,7 @@ body:
     id: version
     attributes:
       label: openextract Version
-      placeholder: "0.1.4"
+      placeholder: "2.2.0"
     validations:
       required: true
 
