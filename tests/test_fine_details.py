@@ -34,7 +34,7 @@ def guide(monkeypatch):
             ),
         )
 
-    load = extract_module._load
+    load = extract_module.load
 
     def record_load(source, media_type):
         overrides.append(media_type)
@@ -43,7 +43,7 @@ def guide(monkeypatch):
         return content
 
     serve(monkeypatch, respond)
-    monkeypatch.setattr(extract_module, "_load", record_load)
+    monkeypatch.setattr(extract_module, "load", record_load)
     namespace = {}
     blocks = re.findall(
         r"```python\n(.*?)```", (ROOT / "examples/fine_details.md").read_text(), re.S

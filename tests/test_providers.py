@@ -9,7 +9,7 @@ import pytest
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from openextract import SchemaValidationError, extract, extract_async
-from openextract._providers import _strict_schema
+from openextract._schemas import openai_strict
 from tests.helpers import configured, output
 
 
@@ -488,7 +488,7 @@ def test_strict_schema_preserves_nested_definitions_and_original():
 
     original = Data.model_json_schema()
     before = copy.deepcopy(original)
-    adapted = _strict_schema(original)
+    adapted = openai_strict(original)
     assert original == before
     assert adapted["required"] == ["children", "optional", "category"]
     assert "default" not in adapted["properties"]["category"]

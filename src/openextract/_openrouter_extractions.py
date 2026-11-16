@@ -22,6 +22,7 @@ _SCALAR_TYPES = {
     time: "time",
     datetime: "datetime",
 }
+_LIST_ITEMS = ("text", "number", "date")
 _ASSET_FORMATS = {
     "application/pdf": ("document", "pdf"),
     "image/jpeg": ("image", "jpeg"),
@@ -47,9 +48,9 @@ class ExtractionResult[T: BaseModel]:
     metadata: dict[str, Any]
 
 
-def request_body(
+def request(
     schema: type[BaseModel], model: ResolvedModel, content: Content, instructions: str | None
-) -> dict[str, Any]:
+) -> tuple[str, dict[str, Any]]:
     if schema.__pydantic_root_model__:
         raise TypeError("OpenRouter Extractions requires a Pydantic model with named fields.")
     if not schema.model_fields:
@@ -57,28 +58,44 @@ def request_body(
     settings = model.config.settings
     if reserved := _REQUEST_FIELDS & settings.keys():
         raise ValueError(f"settings cannot override request fields: {sorted(reserved)}.")
-    body = {
-        **settings,
-        "model": model.model_name,
-        "fields": {
-            name: _field_spec(name, field, instructions)
-            for name, field in schema.model_fields.items()
-        },
+    fields = {
+        name: _field_spec(name, field, instructions) for name, field in schema.model_fields.items()
     }
+    body = {**settings, "model": model.model_name, "fields": fields}
     if content.is_text:
         body["state"] = content.text
     elif asset := _ASSET_FORMATS.get(content.media_type):
         kind, file_format = asset
+        document = {"type": kind, "format": file_format, "data_base64": content.base64}
         body["state"] = "document"
-        body["assets"] = {
-            "document": {"type": kind, "format": file_format, "data_base64": content.base64}
-        }
+        body["assets"] = {"document": document}
     else:
         raise ValueError(
             "OpenRouter Extractions supports text, PDF, PNG, JPEG, and WebP. "
             f"Received {content.media_type}."
         )
-    return body
+    return "/extractions", body
+
+
+def parse[T: BaseModel](
+    schema: type[T], model: ResolvedModel, payload: dict[str, Any], *, include_metadata: bool
+) -> T | ExtractionResult[T]:
+    answers = payload.get("answers")
+    if not isinstance(answers, dict) or answers.keys() != schema.model_fields.keys():
+        raise ValueError("OpenRouter Extractions must return one answer for every schema field.")
+    if not include_metadata and payload.get("truncated") is True:
+        raise ValueError(
+            "OpenRouter read only part of the source. Use include_metadata=True to inspect "
+            "partial results or retry with a shorter source."
+        )
+    if not all(isinstance(answer, dict) and "value" in answer for answer in answers.values()):
+        raise ValueError("Every OpenRouter Extractions answer must contain a value.")
+    values = {name: answer["value"] for name, answer in answers.items()}
+    data = schema.model_validate_json(json.dumps(values), by_alias=False, by_name=True)
+    if not include_metadata:
+        return data
+    metadata = {key: value for key, value in payload.items() if key != "answers"}
+    return ExtractionResult(data, answers, metadata)
 
 
 def _field_spec(name: str, field: FieldInfo, instructions: str | None) -> dict[str, Any]:
@@ -96,19 +113,15 @@ def _field_spec(name: str, field: FieldInfo, instructions: str | None) -> dict[s
 
 def _infer_field(name: str, annotation: Any) -> dict[str, Any]:
     if get_origin(annotation) in (Union, UnionType):
-        types = [member for member in get_args(annotation) if member is not NoneType]
-        if len(types) == 1:
-            annotation = types[0]
+        members = [member for member in get_args(annotation) if member is not NoneType]
+        if len(members) == 1:
+            annotation = members[0]
     annotation = _unannotated(annotation)
     if spec := _scalar_spec(annotation):
         return spec
-    if get_origin(annotation) is list:
-        items = get_args(annotation)
-        if (
-            len(items) == 1
-            and (spec := _scalar_spec(_unannotated(items[0])))
-            and spec["type"] in ("text", "number", "date")
-        ):
+    if get_origin(annotation) is list and len(items := get_args(annotation)) == 1:
+        spec = _scalar_spec(_unannotated(items[0]))
+        if spec and spec["type"] in _LIST_ITEMS:
             return {**spec, "type": "list", "items": spec["type"]}
     raise TypeError(
         f"OpenRouter Extractions cannot infer a field type for {name!r}. "
@@ -118,35 +131,10 @@ def _infer_field(name: str, annotation: Any) -> dict[str, Any]:
 
 
 def _unannotated(annotation: Any) -> Any:
-    if get_origin(annotation) is Annotated:
-        return get_args(annotation)[0]
-    return annotation
+    return get_args(annotation)[0] if get_origin(annotation) is Annotated else annotation
 
 
 def _scalar_spec(annotation: Any) -> dict[str, Any] | None:
     if isinstance(annotation, type) and (kind := _SCALAR_TYPES.get(annotation)):
-        return {"type": kind, **({"integer": True} if annotation is int else {})}
+        return {"type": kind, "integer": True} if annotation is int else {"type": kind}
     return None
-
-
-def parse[T: BaseModel](
-    schema: type[T], payload: dict[str, Any], include_metadata: bool
-) -> T | ExtractionResult[T]:
-    answers = payload.get("answers")
-    if not isinstance(answers, dict) or answers.keys() != schema.model_fields.keys():
-        raise ValueError("OpenRouter Extractions must return one answer for every schema field.")
-    if not include_metadata and payload.get("truncated") is True:
-        raise ValueError(
-            "OpenRouter read only part of the source. Use include_metadata=True to inspect "
-            "partial results or retry with a shorter source."
-        )
-    values = {}
-    for name, answer in answers.items():
-        if not isinstance(answer, dict) or "value" not in answer:
-            raise ValueError("Every OpenRouter Extractions answer must contain a value.")
-        values[name] = answer["value"]
-    data = schema.model_validate_json(json.dumps(values), by_alias=False, by_name=True)
-    if include_metadata:
-        metadata = {key: value for key, value in payload.items() if key != "answers"}
-        return ExtractionResult(data, answers, metadata)
-    return data

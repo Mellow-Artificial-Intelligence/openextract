@@ -197,7 +197,7 @@ def test_forced_tool_default_unchanged(mode):
 
 
 def test_schema_edge_cases():
-    from openextract._anthropic_schema import json_schema
+    from openextract._schemas import anthropic_json
 
     for schema in [
         {"$ref": "https://example.com/schema"},
@@ -207,10 +207,10 @@ def test_schema_edge_cases():
         {"enum": [{}]},
     ]:
         with pytest.raises(ValueError, match="Anthropic JSON output"):
-            json_schema(schema)
-    assert json_schema({"type": "string", "format": "date"})["format"] == "date"
-    assert "format" not in json_schema({"type": "string", "format": "password"})
-    assert json_schema({"type": "array", "minItems": 1})["minItems"] == 1
+            anthropic_json(schema)
+    assert anthropic_json({"type": "string", "format": "date"})["format"] == "date"
+    assert "format" not in anthropic_json({"type": "string", "format": "password"})
+    assert anthropic_json({"type": "array", "minItems": 1})["minItems"] == 1
 
     class Cat(BaseModel):
         kind: Literal["cat"]
@@ -221,6 +221,6 @@ def test_schema_edge_cases():
     class Pet(BaseModel):
         pet: Annotated[Cat | Dog, Field(discriminator="kind")]
 
-    adapted = json_schema(Pet.model_json_schema())
+    adapted = anthropic_json(Pet.model_json_schema())
     assert "anyOf" in adapted["properties"]["pet"]
     assert "discriminator" not in adapted["properties"]["pet"]

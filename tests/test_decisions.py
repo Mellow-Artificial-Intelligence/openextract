@@ -6,7 +6,6 @@ import httpx
 import pytest
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
-import openextract._extract as extract_module
 from openextract import (
     ExtractionError,
     Model,
@@ -15,6 +14,7 @@ from openextract import (
     extract,
     extract_async,
 )
+from openextract._content import PROMPT
 from tests.helpers import serve
 
 PDF_BYTES = b"%PDF-1.7 fake"
@@ -66,7 +66,7 @@ def test_decisions_model_fills_choice_and_yes_no_fields(monkeypatch):
     assert seen[0].headers["authorization"] == "Bearer sk-or-test"
     body = json.loads(seen[0].content)
     assert body["model"] == "typesafe/jev-1.14"
-    assert body["state"] == [extract_module._PROMPT, "Be strict.", "Receipt. Paid in EUR."]
+    assert body["state"] == [PROMPT, "Be strict.", "Receipt. Paid in EUR."]
     assert body["questions"] == {
         "document_type": {
             "type": "choice",
@@ -182,7 +182,7 @@ def test_openai_decisions_fills_schema_and_uses_named_answers(monkeypatch):
             {
                 "role": "user",
                 "content": [
-                    {"type": "input_text", "text": extract_module._PROMPT},
+                    {"type": "input_text", "text": PROMPT},
                     {"type": "input_text", "text": "Paid receipt in EUR."},
                 ],
             },
@@ -217,7 +217,7 @@ async def test_openai_decisions_async_reads_images(monkeypatch):
     result = await extract_async(Triage, "openai-decisions:gpt-6-luna", b"\x89PNG....")
     assert result.is_paid is True
     body = json.loads(seen[0].content)
-    assert body["input"][0] == {"role": "developer", "content": extract_module._PROMPT}
+    assert body["input"][0] == {"role": "developer", "content": PROMPT}
     assert body["input"][1]["content"][-1] == {
         "type": "input_image",
         "image_url": "data:image/png;base64,iVBORy4uLi4=",

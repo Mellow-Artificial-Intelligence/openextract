@@ -5,12 +5,12 @@ import httpx
 import pytest
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
-import openextract._extract as extract_module
 from openextract import (
     ExtractionError,
     Model,
     ModelError,
     SchemaValidationError,
+    _content,
     extract,
     extract_async,
 )
@@ -134,7 +134,7 @@ async def test_simple_and_customized_calls_preserve_contract(monkeypatch, asynch
     ],
 )
 def test_sniffs_media_type(data, media_type):
-    assert extract_module._sniff(data) == media_type
+    assert _content._sniff(data) == media_type
 
 
 def test_explicit_media_type_wins(monkeypatch):
