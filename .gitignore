@@ -1,21 +1,17 @@
-# Python-generated files
+# Python
 __pycache__/
 *.py[oc]
+*.egg-info
 build/
 dist/
-wheels/
-*.egg-info
-
-# Virtual environments
 .venv
-.extractbench/
 
-# Environment files
+# Test output
+.coverage
+coverage.xml
+htmlcov/
+
+# Local files
 .env
 tests/test.pdf
 tests/test.png
-
-# Coverage
-.coverage
-htmlcov/
-coverage.xml

@@ -46,7 +46,6 @@ dev = [
     "ty>=0.0.35",
 ]
 
-[tool.ty]
 # Type-check library code only; tests intentionally use invalid types for error paths.
 [tool.ty.src]
 include = ["src/openextract"]
