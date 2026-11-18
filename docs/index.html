@@ -3,140 +3,85 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>openextract — structured data from files</title>
-  <meta name="description" content="Extract structured data from documents, images, audio, and video. Define a Pydantic schema, choose a model, and get a validated Python object.">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
-  <style>
-    :root {
-      --paper: #faf9f6;
-      --panel: #f0efeb;
-      --ink: #242724;
-      --muted: #62665e;
-      --rule: #dddfd7;
-      --lavender: #d2d1e3;
-      --sage: #d4ddbd;
-      --sans: "DM Sans", "Helvetica Neue", Arial, sans-serif;
-      --mono: "Geist Mono", ui-monospace, monospace;
-    }
-    * { box-sizing: border-box; }
-    html { background: var(--paper); -webkit-text-size-adjust: 100%; }
-    body { display: flex; flex-direction: column; min-height: 100svh; max-width: 1120px; margin: 0 auto; padding: 0 28px; color: var(--ink); font: 400 16px/1.6 var(--sans); }
-    a { color: inherit; text-underline-offset: 4px; }
-    a:hover { text-decoration-thickness: 2px; }
-    :focus-visible { outline: 2px solid var(--ink); outline-offset: 4px; }
-    ::selection { background: var(--lavender); }
-    header { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 20px 0; }
-    .mark { font: 500 20px/1.4 var(--mono); letter-spacing: -.05em; text-decoration: none; }
-    nav { display: flex; gap: 24px; font-size: 14px; }
-    nav a { display: inline-flex; align-items: center; min-height: 44px; }
-    .skip-link { position: absolute; top: 8px; padding: 8px; background: var(--paper); transform: translateY(-160%); }
-    .skip-link:focus { transform: none; }
-    main { flex: 1; display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); align-items: center; gap: 48px; padding: 24px 0; }
-    .overview, .example { min-width: 0; }
-    .intro { margin-bottom: 28px; }
-    h1 { margin: 0 0 16px; font-size: clamp(40px, 5vw, 58px); font-weight: 500; line-height: 1.06; letter-spacing: -.055em; }
-    .intro p { max-width: 34ch; margin: 0; color: var(--muted); font-size: 18px; }
-    .install { display: flex; align-items: stretch; justify-content: space-between; gap: 12px; padding: 4px 4px 4px 16px; background: var(--lavender); }
-    .install code { align-self: center; padding: 10px 0; white-space: nowrap; }
-    code, samp { font-family: var(--mono); font-size: .85em; }
-    button { min-width: 64px; min-height: 44px; padding: 0 12px; border: 0; background: transparent; color: var(--ink); font: 500 12px var(--mono); cursor: pointer; }
-    button:hover { background: var(--sage); }
-    h2 { margin: 0 0 10px; font-size: 15px; font-weight: 500; }
-    pre { margin: 0; padding: 24px; overflow-x: auto; background: var(--panel); font: 400 13px/1.65 var(--mono); tab-size: 4; }
-    pre code { font: inherit; }
-    .result { margin: 10px 0 0; color: var(--muted); font-size: 13px; }
-    .result samp { color: var(--ink); }
-    footer { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px 20px; padding: 12px 0; border-top: 1px solid var(--rule); color: var(--muted); font-size: 12px; }
-    @media (max-width: 700px) {
-      body { max-width: 440px; padding-inline: 20px; }
-      header { padding-block: 12px; }
-      nav { gap: 16px; }
-      main { grid-template-columns: minmax(0, 1fr); align-content: center; gap: 16px; padding-block: 12px; }
-      .intro { margin-bottom: 16px; }
-      h1 { margin-bottom: 10px; font-size: 36px; line-height: 1.04; }
-      .intro p { font-size: 15px; line-height: 1.5; }
-      .install { padding-left: 12px; gap: 4px; }
-      .install code { font-size: 12px; }
-      h2 { margin-bottom: 8px; font-size: 14px; }
-      pre { padding: 16px; font-size: 12px; line-height: 1.5; }
-      .result { margin-top: 8px; }
-    }
-    @media (max-width: 700px) and (max-height: 700px) {
-      header { padding-block: 8px; }
-      main { gap: 12px; padding-block: 4px; }
-      .intro { margin-bottom: 12px; }
-      h1 { font-size: 32px; }
-      footer { padding-block: 8px; }
-    }
-  </style>
+  <meta name="color-scheme" content="dark">
+  <title>openextract — Files in. Structure out.</title>
+  <meta name="description" content="Extract structured data from documents, images, audio, and video with a Pydantic schema and one Python function.">
+  <link rel="icon" href="mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+  <script defer src="field.js"></script>
 </head>
 <body>
-  <a class="skip-link" href="#main">Skip to content</a>
-  <header>
-    <a class="mark" href="https://github.com/Mellow-Artificial-Intelligence/openextract">openextract</a>
-    <nav aria-label="Project">
-      <a href="https://github.com/Mellow-Artificial-Intelligence/openextract#readme">Docs</a>
-      <a href="https://github.com/Mellow-Artificial-Intelligence/openextract">GitHub</a>
-    </nav>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="mast">
+    <div class="mast-inner wrap">
+      <a class="brand" href="#main"><img src="mark.svg" width="31" height="31" alt="">openextract</a>
+      <nav aria-label="Project">
+        <a href="#quickstart">Quickstart</a>
+        <a class="docs-link" href="https://github.com/Mellow-Artificial-Intelligence/openextract#readme">Docs <span aria-hidden="true">↗</span></a>
+        <a class="repo" href="https://github.com/Mellow-Artificial-Intelligence/openextract"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>GitHub</a>
+      </nav>
+    </div>
   </header>
 
-  <main id="main">
-    <div class="overview">
-      <div class="intro">
-        <h1>Files in.<br>Typed data out.</h1>
-        <p>Turn files into validated Pydantic models.</p>
+  <main id="main" tabindex="-1" aria-label="Interactive extraction walkthrough">
+    <div class="stage">
+      <div class="scene wrap" id="story">
+        <div class="intro">
+          <p class="eyebrow"><i></i> Open-source Python library</p>
+          <h1 id="title">Files <em>in.</em></h1>
+          <p class="lede">Turn documents, images, audio, and video into validated Python objects.</p>
+        </div>
+        <figure class="figure" aria-label="Three-dimensional illustration of source data taking shape">
+          <canvas id="field" aria-hidden="true"></canvas>
+        </figure>
+        <div class="specimen">
+          <p class="eyebrow" id="specimen-name">Source · invoice.txt</p>
+          <samp id="specimen-value">Total due: 120.00</samp>
+        </div>
       </div>
+      <section class="quickstart wrap" id="quickstart" tabindex="0" aria-labelledby="example-heading">
+        <div>
+          <p class="eyebrow"><i></i> Quickstart</p>
+          <h2 id="example-heading">Your first <br>extraction<em>.</em></h2>
+          <p>Define an invoice with Pydantic and pass it to <code>extract</code>. The total comes back as a Python <code>Decimal</code>.</p>
+          <p class="setup">Use Python 3.12+ and set <code>OPENAI_API_KEY</code> to run this example.</p>
+          <div class="actions">
+            <div class="command"><span aria-hidden="true">$</span><code id="install-cmd">uv add openextract</code>
+              <button hidden id="copy" type="button" aria-label="Copy install command">Copy</button>
+            </div>
+            <a class="text-link" href="https://github.com/Mellow-Artificial-Intelligence/openextract#providers">Explore providers <span aria-hidden="true">↗</span></a>
+          </div>
+          <span class="sr-only" role="status" id="copy-status"></span>
+        </div>
+        <div class="example">
+          <div class="file-head"><span><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>invoice.py</span><span>Python</span></div>
+          <pre tabindex="0" aria-label="Python extraction example"><code><span class="k">from</span> decimal <span class="k">import</span> <span class="t">Decimal</span>
+<span class="k">from</span> pydantic <span class="k">import</span> <span class="t">BaseModel</span>
+<span class="k">from</span> openextract <span class="k">import</span> <span class="f">extract</span>
 
-      <div class="install">
-        <code id="install-cmd">uv add openextract</code>
-        <button id="copy-install" type="button" aria-label="Copy install command" aria-live="polite" hidden>Copy</button>
+<span class="k">class</span> <span class="t">Invoice</span>(<span class="t">BaseModel</span>):
+    total: <span class="t">Decimal</span>
+
+invoice = <span class="f">extract</span>(
+    <span class="t">Invoice</span>,
+    <span class="s">"openai:gpt-6.1-sol"</span>,
+    <span class="s">"Total due: 120.00"</span>,
+)
+<span class="f">print</span>(invoice.total)</code></pre>
+          <div class="output"><span>$ python invoice.py</span><samp>120.00</samp></div>
+        </div>
+        <div class="resources"><a href="https://pypi.org/project/openextract/">PyPI ↗</a><a href="https://github.com/Mellow-Artificial-Intelligence/openextract/blob/main/LICENSE">MIT license ↗</a></div>
+      </section>
+      <div class="rail wrap" hidden>
+        <progress id="field-progress" max="3" value="0" aria-label="Walkthrough progress"></progress>
+        <div class="phases" role="group" aria-label="Walkthrough scenes">
+          <button type="button" aria-current="step"><small>01</small> Source</button>
+          <button type="button"><small>02</small> Schema</button>
+          <button type="button"><small>03</small> Object</button>
+          <button type="button"><small>04</small> Quickstart</button>
+        </div>
       </div>
     </div>
-
-    <section class="example" aria-labelledby="example-title">
-      <h2 id="example-title">Your schema. One function.</h2>
-<pre tabindex="0" role="region" aria-label="Python extraction example"><code>from decimal import Decimal
-from pydantic import BaseModel
-from openextract import extract
-
-class Invoice(BaseModel):
-    total: Decimal
-
-invoice = extract(
-    Invoice,
-    "openai:gpt-6.1-sol",
-    "Total due: 120.00",
-)
-print(invoice.total)</code></pre>
-      <p class="result">Expected total: <samp>Decimal("120.00")</samp>.</p>
-    </section>
   </main>
-
-  <footer>
-    <span>Python 3.12+</span>
-    <span><a href="https://pypi.org/project/openextract/">PyPI</a> · <a href="https://github.com/Mellow-Artificial-Intelligence/openextract/blob/main/LICENSE">MIT license</a></span>
-  </footer>
-
-  <script>
-    const button = document.getElementById("copy-install");
-    button.hidden = false;
-    button.addEventListener("click", async () => {
-      const command = document.getElementById("install-cmd");
-      try {
-        await navigator.clipboard.writeText(command.textContent);
-        button.textContent = "Copied";
-      } catch {
-        const range = document.createRange();
-        range.selectNodeContents(command);
-        const selection = window.getSelection();
-        selection.removeAllRanges();
-        selection.addRange(range);
-        button.textContent = "Selected";
-      }
-      setTimeout(() => { button.textContent = "Copy"; }, 1600);
-    });
-  </script>
 </body>
 </html>
