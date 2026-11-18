@@ -20,7 +20,7 @@ function setupCopy() {
     }
     clearTimeout(reset);
     status.textContent = message === "Copied" ? "Install command copied" : "Install command selected for copying";
-    button.textContent = message === "Copied" ? "✓" : "↔";
+    button.textContent = message;
     reset = setTimeout(() => {
       button.textContent = "Copy";
       status.textContent = "";
@@ -172,6 +172,7 @@ function setupField() {
     if (outgoing.contains(document.activeElement)) scroller.focus({preventScroll: true});
     story.hidden = showExample;
     quickstart.hidden = !showExample;
+    canvas.parentElement.classList.toggle("resting", showExample);
     if (!showExample) {
       const [opening, emphasis, description, source, sample] = scenes[next];
       const word = document.createElement("em");
@@ -225,7 +226,7 @@ function setupField() {
   }
   function draw(now) {
     frame = 0;
-    if (story.hidden || !width || !height) return;
+    if (!width || !height) return;
     const settling = settle();
     const time = reduce.matches ? 0 : now / 1000;
     ctx.clearRect(0, 0, width, height);
@@ -239,7 +240,7 @@ function setupField() {
     const cy = Math.cos(yaw), sy = Math.sin(yaw);
     const cp = Math.cos(pitch), sp = Math.sin(pitch);
     const cr = Math.cos(roll), sr = Math.sin(roll);
-    const scale = Math.min(width / 3.38, height / 3.2);
+    const scale = Math.min(width / 3.5, height / 3.7);
     const dot = Math.max(.72, Math.min(1.55, scale * .009));
 
     for (const p of points) {
@@ -263,7 +264,7 @@ function setupField() {
       const depth = y * sp + rz * cp;
       const perspective = 5.5 / (5.5 - depth);
       const px = width / 2 + (rx * cr - ry * sr) * perspective * scale;
-      const py = height / 2 + (rx * sr + ry * cr) * perspective * scale;
+      const py = height * .46 + (rx * sr + ry * cr) * perspective * scale;
       const pulse = Math.max(0, Math.sin((p.phase * 2 - time * .16) * TAU)) ** 12;
       const schemaWeight = part ? 1 - mix : mix;
       const cubeWeight = part ? mix : 0;
@@ -318,7 +319,7 @@ function setupField() {
     event.preventDefault();
     goToStage(destinations[event.key]);
   });
-  canvas.addEventListener("pointermove", event => {
+  scroller.addEventListener("pointermove", event => {
     if (reduce.matches || event.pointerType === "touch") return;
     const rect = canvas.getBoundingClientRect();
     pointerX = (event.clientX - rect.left) / width * 2 - 1;
@@ -329,7 +330,7 @@ function setupField() {
     pointerX = pointerY = 0;
     schedule();
   }
-  canvas.addEventListener("pointerleave", centerView);
+  scroller.addEventListener("pointerleave", centerView);
   reduce.addEventListener("change", centerView);
   scroller.addEventListener("scroll", onScroll, {passive: true});
   document.documentElement.classList.add("exhibit");
