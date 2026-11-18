@@ -5,10 +5,9 @@ from pathlib import Path
 
 import httpx
 import pytest
-from pydantic import BaseModel
 
 from openextract import ExtractionError, _content, extract
-from tests.helpers import configured, output
+from tests.helpers import Invoice, configured, output
 
 PDF_BYTES = b"%PDF-1.7 fake"
 PDF_FILE = {
@@ -16,10 +15,6 @@ PDF_FILE = {
     "filename": "document.pdf",
     "file_data": "data:application/pdf;base64,JVBERi0xLjcgZmFrZQ==",
 }
-
-
-class Invoice(BaseModel):
-    total: float
 
 
 def document(provider):

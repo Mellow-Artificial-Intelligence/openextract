@@ -4,13 +4,17 @@ import base64
 
 import httpx
 import pytest
-from pydantic import BaseModel
 
 from openextract import extract
-from tests.helpers import configured, output
+from tests.helpers import Invoice, configured, output
 
 GEMINI = configured("google:gemini-4-hydrogen")
 DATA = b"\x00\xffmock document bytes"
+SPREADSHEETS = [
+    ("xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+    ("xls", "application/vnd.ms-excel"),
+    ("ods", "application/vnd.oasis.opendocument.spreadsheet"),
+]
 DOCUMENTS = [
     ("docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
     ("doc", "application/msword"),
@@ -19,14 +23,8 @@ DOCUMENTS = [
     ("pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation"),
     ("ppt", "application/vnd.ms-powerpoint"),
     ("odp", "application/vnd.oasis.opendocument.presentation"),
-    ("xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
-    ("xls", "application/vnd.ms-excel"),
-    ("ods", "application/vnd.oasis.opendocument.spreadsheet"),
+    *SPREADSHEETS,
 ]
-
-
-class Invoice(BaseModel):
-    total: float
 
 
 def inline(media_type):
@@ -73,7 +71,7 @@ def test_other_binary_documents_remain_unsupported(media_type):
         extract(Invoice, GEMINI, b"document", media_type=media_type)
 
 
-@pytest.mark.parametrize("extension,media_type", DOCUMENTS[-3:])
+@pytest.mark.parametrize("extension,media_type", SPREADSHEETS)
 @pytest.mark.parametrize("source_kind", ["path", "bytes", "url"])
 async def test_spreadsheet_selection_is_sent_on_the_document_part(
     run, provider, tmp_path, extension, media_type, source_kind
@@ -81,15 +79,17 @@ async def test_spreadsheet_selection_is_sent_on_the_document_part(
     selection = {"sheetIndex": 2, "visibleCells": "A1:H50", "contentLayers": ["DATA", "FORMULAS"]}
     settings = {"spreadsheetMetadata": selection, "temperature": 0}
     model = configured("google:gemini-4-hydrogen", settings=settings)
-    source = DATA
+    source, explicit_type = DATA, media_type
     provider.reply(output("gemini"))
     if source_kind == "path":
         source = tmp_path / f"workbook.{extension}"
         source.write_bytes(DATA)
+        explicit_type = None
     elif source_kind == "url":
         source = f"https://example.com/workbook.{extension}"
+        explicit_type = None
         provider.reply(lambda request: httpx.Response(200, content=DATA), output("gemini"))
-    result = await run(Invoice, model, source, "Use the final total.", media_type=media_type)
+    result = await run(Invoice, model, source, "Use the final total.", media_type=explicit_type)
     assert result == Invoice(total=42)
     body = provider.bodies[-1]
     assert body["contents"][0]["parts"][-1] == {
@@ -108,7 +108,7 @@ async def test_spreadsheet_selection_is_sent_on_the_document_part(
 async def test_empty_spreadsheet_selection_is_preserved(run, provider):
     model = configured("google:gemini-4-hydrogen", settings={"spreadsheetMetadata": {}})
     provider.reply(output("gemini"))
-    await run(Invoice, model, DATA, media_type=DOCUMENTS[-1][1])
+    await run(Invoice, model, DATA, media_type=SPREADSHEETS[0][1])
     assert provider.bodies[0]["contents"][0]["parts"][-1]["spreadsheetMetadata"] == {}
     assert model.settings == {"spreadsheetMetadata": {}}
 

@@ -186,19 +186,10 @@ use tool mode for those.
 
 ## Gemini spreadsheet selection
 
-For XLSX, XLS, or ODS input on Gemini 3 and 4+ models, select a worksheet and
-cell range without installing a spreadsheet parser:
+For XLSX, XLS, and ODS inputs on Gemini 3 and 4+ models, `spreadsheetMetadata`
+selects a worksheet, cell range, and content layers without a local parser:
 
 ```python
-from pathlib import Path
-from pydantic import BaseModel
-from openextract import Model, extract
-
-
-class Totals(BaseModel):
-    revenue: float
-
-
 model = Model(
     "google:gemini-4-hydrogen",
     settings={
@@ -209,22 +200,16 @@ model = Model(
         },
     },
 )
-totals = extract(Totals, model, Path("financial_model.xlsx"))
+invoice = extract(Invoice, model, Path("financial_model.xlsx"))
 ```
 
-`spreadsheetMetadata` goes on the file part; other settings still go to
-`generationConfig`. `sheetIndex` is 1-based. Within this object, omitting it
-selects all sheets; `visibleCells` accepts A1 notation. Layers can be `DATA`,
-`FORMULAS`, or `VISUAL`; the default is `DATA` and `FORMULAS`. An empty object
-requests those defaults. Omitting the setting preserves the existing request.
-Google validates selector values and model support. Other input types raise
-`ValueError` locally. Full-file upload limits still apply: slicing reduces what
-Google processes, not the bytes OpenExtract uploads. This does not add local
-parsing, file storage, or document/audio/video slicing.
-
-See Google's [November 18 release](https://aistudio.google.com/docs/changelog#11-18-2026)
-and [GenerateContent spreadsheet options](https://aistudio.google.com/docs/document-processing?generate-content=true#spreadsheet-options).
-Offline tests check the request and typed result, not live extraction quality.
+`spreadsheetMetadata` is attached to the file part while other settings still go to
+`generationConfig`. `sheetIndex` is 1-based (omit it to include every sheet),
+`visibleCells` takes A1 notation, and `contentLayers` accepts `"DATA"`, `"FORMULAS"`,
+and `"VISUAL"` (`"DATA"` and `"FORMULAS"` by default). Other input types raise
+`ValueError` locally; Google validates selector values, model support, and full-file
+upload limits. See Google's
+[spreadsheet options](https://aistudio.google.com/docs/document-processing?generate-content=true#spreadsheet-options).
 
 ## Mistral document annotations
 

@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from pydantic.fields import FieldInfo
 
 from ._content import Content
-from .models import ResolvedModel
+from .models import ResolvedModel, merge_settings
 
 _SCALAR_TYPES = {
     str: "text",
@@ -55,13 +55,11 @@ def request(
         raise TypeError("OpenRouter Extractions requires a Pydantic model with named fields.")
     if not schema.model_fields:
         raise ValueError("OpenRouter Extractions requires at least one schema field.")
-    settings = model.config.settings
-    if reserved := _REQUEST_FIELDS & settings.keys():
-        raise ValueError(f"settings cannot override request fields: {sorted(reserved)}.")
     fields = {
         name: _field_spec(name, field, instructions) for name, field in schema.model_fields.items()
     }
-    body = {**settings, "model": model.model_name, "fields": fields}
+    body: dict[str, Any] = {"model": model.model_name, "fields": fields}
+    merge_settings(body, model.config.settings, _REQUEST_FIELDS)
     if content.is_text:
         body["state"] = content.text
     elif asset := _ASSET_FORMATS.get(content.media_type):

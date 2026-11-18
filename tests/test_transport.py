@@ -9,8 +9,7 @@ import httpx
 import pytest
 
 from openextract import Model, ModelError, _transport, extract, extract_async
-from tests.helpers import configured, output
-from tests.test_extract import Invoice
+from tests.helpers import Invoice, configured, output
 
 
 def failing(failure):

@@ -5,11 +5,7 @@ import pytest
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
 from openextract import ModelError, SchemaValidationError, extract, extract_async
-from tests.helpers import configured, output
-
-
-class Invoice(BaseModel):
-    total: float
+from tests.helpers import Invoice, configured, output
 
 
 async def test_extracts_a_validated_instance(run, provider, tmp_path):

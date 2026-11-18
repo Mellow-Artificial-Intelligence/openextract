@@ -10,12 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from openextract import SchemaValidationError, extract
 from openextract._schemas import openai_strict
-from tests.helpers import configured, custom, output
-
-
-class Invoice(BaseModel):
-    total: float
-
+from tests.helpers import Invoice, configured, custom, output
 
 SCHEMA = Invoice.model_json_schema()
 PNG = "iVBORw=="

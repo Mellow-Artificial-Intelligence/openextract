@@ -85,20 +85,25 @@ def request_error(error: httpx.RequestError, attempts: int) -> ModelError:
     )
 
 
+def has_error_envelope(payload: dict[str, Any]) -> bool:
+    """Whether a 2xx response body carries a provider or generation error."""
+    if payload.get("error") is not None:
+        return True
+    choice = _first_choice(payload)
+    return choice.get("error") is not None or choice.get("finish_reason") == "error"
+
+
 def provider_error(
     payload: dict[str, Any], status_code: int, secrets: Iterable[str] = ()
-) -> ModelError | None:
-    """Describe an HTTP failure or an error envelope; ``None`` means the response succeeded."""
-    choices = payload.get("choices")
-    choice = _object(choices[0]) if isinstance(choices, list) and choices else {}
+) -> ModelError:
+    """Format an HTTP failure or an error envelope with redacted credentials."""
+    choice = _first_choice(payload)
     error = payload.get("error")
     if error is None:
         error = choice.get("error")
     finish = _text(choice.get("finish_reason"))
     native = _text(choice.get("native_finish_reason"))
     succeeded = 200 <= status_code < 300
-    if succeeded and error is None and finish != "error":
-        return None
 
     fields = _object(error)
     metadata = _object(fields.get("metadata"))
@@ -185,6 +190,11 @@ def _redact(value: str | None, secrets: Iterable[str]) -> str | None:
 
 def _count(number: int, noun: str) -> str:
     return f"{number} {noun}" if number == 1 else f"{number} {noun}s"
+
+
+def _first_choice(payload: dict[str, Any]) -> dict[str, Any]:
+    choices = payload.get("choices")
+    return _object(choices[0]) if isinstance(choices, list) and choices else {}
 
 
 def _object(value: object) -> dict[str, Any]:

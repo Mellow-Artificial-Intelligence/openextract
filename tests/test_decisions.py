@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field, ValidationError, create_model, field_vali
 
 from openextract import ExtractionError, Model, ModelError, SchemaValidationError, extract
 from openextract._content import PROMPT
-from tests.helpers import configured
+from tests.helpers import Invoice, configured
 
 OPENROUTER = "openrouter:typesafe/jev-1.14"
 OPENAI = "openai-decisions:gpt-6-luna"
@@ -23,10 +23,6 @@ KEY_VARIABLES = {
 PDF_BYTES = b"%PDF-1.7 fake"
 PNG_BYTES = b"\x89PNG...."
 PNG_URI = "data:image/png;base64,iVBORy4uLi4="
-
-
-class Invoice(BaseModel):
-    total: float
 
 
 class Currency(Enum):

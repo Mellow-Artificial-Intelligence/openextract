@@ -45,7 +45,7 @@ def parse[T: BaseModel](schema: type[T], model: ResolvedModel, payload: dict[str
             name: _value(name, fields[name], answer, yes_type, probability)
             for name, answer in pairs
         }
-        if sorted(name for name, _ in pairs) != sorted(fields):
+        if len(pairs) != len(fields) or values.keys() != fields.keys():
             raise ValueError("Expected exactly one answer for every schema field.")
         return schema.model_validate(values, by_name=True)
     except ValidationError as exc:
@@ -59,16 +59,19 @@ def _openrouter(
     schema: type[BaseModel], content: Content, instructions: str | None
 ) -> dict[str, Any]:
     _require_text_or_image(content)
-    image = {"type": "image_url", "image_url": {"url": content.data_uri}}
-    guidance = [PROMPT, instructions] if instructions else [PROMPT]
+    document: str | dict[str, Any] = (
+        content.text
+        if content.is_text
+        else {"type": "image_url", "image_url": {"url": content.data_uri}}
+    )
     return {
-        "state": [*guidance, content.text if content.is_text else image],
-        "questions": {name: _question(name, field) for name, field in schema.model_fields.items()},
+        "state": [*_guidance(instructions), document],
+        "questions": _named_questions(schema),
     }
 
 
 def _gemini(schema: type[BaseModel], content: Content, instructions: str | None) -> dict[str, Any]:
-    questions = {name: _question(name, field) for name, field in schema.model_fields.items()}
+    questions = _named_questions(schema)
     _check_gemini_limits(questions)
     if content.is_text:
         document = {"type": "text", "text": content.text}
@@ -79,8 +82,7 @@ def _gemini(schema: type[BaseModel], content: Content, instructions: str | None)
         raise ValueError(
             f"Gemini Decisions supports text, images and PDF, not {content.media_type}."
         )
-    guidance = [PROMPT, instructions] if instructions else [PROMPT]
-    texts = [{"type": "text", "text": text + "\n"} for text in guidance]
+    texts = [{"type": "text", "text": text + "\n"} for text in _guidance(instructions)]
     return {"input": [*texts, document], "questions": questions}
 
 
@@ -124,6 +126,14 @@ def _check_gemini_limits(questions: dict[str, dict[str, Any]]) -> None:
             raise ValueError("Invalid Gemini Decisions option key.")
 
 
+def _named_questions(schema: type[BaseModel]) -> dict[str, dict[str, Any]]:
+    return {name: _question(name, field) for name, field in schema.model_fields.items()}
+
+
+def _guidance(instructions: str | None) -> list[str]:
+    return [PROMPT, instructions] if instructions else [PROMPT]
+
+
 def _question(name: str, field: FieldInfo) -> dict[str, Any]:
     """Phrase a field in the named format OpenRouter and Gemini share."""
     if field.annotation is bool:
@@ -148,11 +158,13 @@ def _options(name: str, annotation: object) -> dict[str, object]:
 
 
 def _is_gemini_option(key: str) -> bool:
-    """Google allows 1–128 trimmed characters in at most 512 bytes, without control characters."""
-    control = any(
-        ord(char) < 32 or ord(char) == 127 or char.isspace() and char != " " for char in key
+    """Google allows 1–128 trimmed printable characters in at most 512 UTF-8 bytes."""
+    return (
+        1 <= len(key) <= 128
+        and len(key.encode()) <= 512
+        and key == key.strip()
+        and key.isprintable()
     )
-    return 1 <= len(key) <= 128 and len(key.encode()) <= 512 and key == key.strip() and not control
 
 
 def _require_text_or_image(content: Content) -> None:

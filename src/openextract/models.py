@@ -3,6 +3,7 @@
 import math
 import os
 from collections.abc import Mapping
+from collections.abc import Set as AbstractSet
 from dataclasses import dataclass, field
 from typing import Any, Literal, get_args
 
@@ -68,16 +69,21 @@ class ResolvedModel:
 
 type _Provider = tuple[API, str, str | None, str]
 
+_APIS = frozenset(get_args(API.__value__))
 _OPENAI = ("https://api.openai.com/v1", "OPENAI_API_KEY", "OPENAI_BASE_URL")
 _GOOGLE = ("https://generativelanguage.googleapis.com/v1beta", "GOOGLE_API_KEY", "GOOGLE_BASE_URL")
 _OPENROUTER = ("https://openrouter.ai/api/v1", "OPENROUTER_API_KEY", "OPENROUTER_BASE_URL")
-_ANTHROPIC = ("https://api.anthropic.com/v1", "ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL")
 # Model prefix: default API, base URL, API key variable, and base URL variable.
 _PROVIDERS: dict[str, _Provider] = {
     "openai": ("responses", *_OPENAI),
     "openai-chat": ("chat", *_OPENAI),
     "openai-decisions": ("openai-decisions", *_OPENAI),
-    "anthropic": ("anthropic", *_ANTHROPIC),
+    "anthropic": (
+        "anthropic",
+        "https://api.anthropic.com/v1",
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_BASE_URL",
+    ),
     "google": ("gemini", *_GOOGLE),
     "gemini-decisions": ("gemini-decisions", *_GOOGLE),
     "openrouter": ("chat", *_OPENROUTER),
@@ -109,7 +115,7 @@ def resolve(model: str | Model) -> ResolvedModel:
     """Fill in a model's API, endpoint, and credentials from its provider prefix."""
     if isinstance(model, str):
         model = Model(model)
-    if not isinstance(model, Model):
+    elif not isinstance(model, Model):
         raise TypeError("model must be a provider:model string or an openextract.Model.")
     prefix, _, name = model.name.partition(":")
     if not prefix or not name:
@@ -120,9 +126,12 @@ def resolve(model: str | Model) -> ResolvedModel:
             raise ValueError(
                 f"Unknown provider {prefix!r}; configure Model(api=..., base_url=...)."
             )
-        provider = (model.api, model.base_url, None, "")
+        api = _resolve_api(model, prefix, name, model.api)
+        return ResolvedModel(
+            model, name, api, _checked_url(model.base_url), _headers(model, api, None)
+        )
     default_api, default_url, key_variable, url_variable = provider
-    api = _api(model, prefix, name, default_api)
+    api = _resolve_api(model, prefix, name, default_api)
     base_url = model.base_url
     if base_url is None:
         base_url = _default_url(api, os.environ.get(url_variable) or default_url)
@@ -131,7 +140,19 @@ def resolve(model: str | Model) -> ResolvedModel:
     )
 
 
-def _api(model: Model, prefix: str, name: str, default: API) -> API:
+def merge_settings(
+    target: dict[str, Any],
+    settings: Mapping[str, Any],
+    reserved: AbstractSet[str],
+    kind: str = "request fields",
+) -> None:
+    """Copy caller generation settings into ``target``, rejecting managed keys."""
+    if overridden := reserved & settings.keys():
+        raise ValueError(f"settings cannot override {kind}: {sorted(overridden)}.")
+    target.update(settings)
+
+
+def _resolve_api(model: Model, prefix: str, name: str, default: API) -> API:
     if model.api is not None:
         api = model.api
     elif prefix == "openrouter" and name in _OPENROUTER_EXTRACTION_MODELS:
@@ -140,7 +161,7 @@ def _api(model: Model, prefix: str, name: str, default: API) -> API:
         api = "openrouter-decisions"
     else:
         api = default
-    if api not in get_args(API.__value__):
+    if api not in _APIS:
         raise ValueError(f"Unsupported HTTP API: {api!r}.")
     if model.output_mode not in (None, "tool", "json_schema"):
         raise ValueError("output_mode must be 'tool' or 'json_schema'.")

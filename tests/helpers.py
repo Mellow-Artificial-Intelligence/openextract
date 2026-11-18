@@ -2,7 +2,13 @@
 
 import json
 
+from pydantic import BaseModel
+
 from openextract import Model
+
+
+class Invoice(BaseModel):
+    total: float
 
 
 def configured(name="openai:test", **options):

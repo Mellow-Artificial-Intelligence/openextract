@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from ._content import DOCUMENT_EXTENSIONS, PROMPT, Content
 from ._schemas import Schema, anthropic_json, openai_strict
-from .models import ResolvedModel
+from .models import ResolvedModel, merge_settings
 
 type Request = tuple[str, dict[str, Any]]
 
@@ -24,6 +24,11 @@ _RESPONSES_DOCUMENTS = {
     if extension not in (".dotx", ".odp", ".ods")
 }
 _GEMINI_DOCUMENTS = DOCUMENT_EXTENSIONS.keys() - {"application/rtf"}
+_GEMINI_SPREADSHEETS = {
+    media
+    for media, extension in DOCUMENT_EXTENSIONS.items()
+    if extension in (".xlsx", ".xls", ".ods")
+}
 _GEMINI_OUTPUT_SETTINGS = {
     "responseMimeType",
     "responseJsonSchema",
@@ -56,19 +61,10 @@ def request(
     """Build the provider request, then merge the caller's generation settings into it."""
     build, _ = _ADAPTERS[model.api]
     path, body = build(model, schema.model_json_schema(), content, instructions)
-    settings = dict(model.config.settings)
-    if model.api == "gemini":
-        if "spreadsheetMetadata" in settings:
-            if DOCUMENT_EXTENSIONS.get(content.media_type) not in (".xlsx", ".xls", ".ods"):
-                raise ValueError("spreadsheetMetadata requires an XLSX, XLS, or ODS input.")
-            body["contents"][0]["parts"][-1]["spreadsheetMetadata"] = settings.pop(
-                "spreadsheetMetadata"
-            )
-        _configure(body["generationConfig"], settings, _GEMINI_OUTPUT_SETTINGS, "structured output")
-    else:
+    if model.api != "gemini":
         # Anthropic's max_tokens is a default, not a field callers are kept from configuring.
         managed = (body.keys() | _STRUCTURE_FIELDS) - {"max_tokens"}
-        _configure(body, settings, managed, "request fields")
+        merge_settings(body, model.config.settings, managed)
     if body.get("stream"):
         raise ValueError("Streaming is not supported by extract; omit settings['stream'].")
     return path, body
@@ -84,14 +80,6 @@ def parse[T: BaseModel](schema: type[T], model: ResolvedModel, payload: dict[str
         raise ValueError("The model returned no structured output.")
     # Tool inputs arrive decoded; re-encode them so strict types keep JSON validation semantics.
     return schema.model_validate_json(json.dumps(output) if isinstance(output, dict) else output)
-
-
-def _configure(
-    target: dict[str, Any], settings: dict[str, Any], managed: set[str], kind: str
-) -> None:
-    if overridden := managed & settings.keys():
-        raise ValueError(f"settings cannot override {kind}: {sorted(overridden)}.")
-    target.update(settings)
 
 
 def _responses(
@@ -170,14 +158,21 @@ def _gemini(
 ) -> Request:
     media = content.media_type
     if content.is_text:
-        document = {"text": content.text}
+        document: dict[str, Any] = {"text": content.text}
     elif media.startswith(("image/", "audio/", "video/")) or media in _GEMINI_DOCUMENTS:
         document = {"inlineData": {"mimeType": media, "data": content.base64}}
     else:
         raise _unsupported("gemini", content)
-    body = {
+    settings = dict(model.config.settings)
+    if "spreadsheetMetadata" in settings:
+        if media not in _GEMINI_SPREADSHEETS:
+            raise ValueError("spreadsheetMetadata requires an XLSX, XLS, or ODS input.")
+        document["spreadsheetMetadata"] = settings.pop("spreadsheetMetadata")
+    generation_config = {"responseMimeType": "application/json", "responseJsonSchema": schema}
+    merge_settings(generation_config, settings, _GEMINI_OUTPUT_SETTINGS, "structured output")
+    body: dict[str, Any] = {
         "contents": [{"role": "user", "parts": [{"text": PROMPT}, document]}],
-        "generationConfig": {"responseMimeType": "application/json", "responseJsonSchema": schema},
+        "generationConfig": generation_config,
     }
     if instructions:
         body["systemInstruction"] = {"parts": [{"text": instructions}]}
@@ -218,13 +213,15 @@ def _mistral_ocr(
 def _bedrock(
     model: ResolvedModel, schema: Schema, content: Content, instructions: str | None
 ) -> Request:
-    source = {"bytes": content.base64}
     if content.is_text:
-        document = {"text": content.text}
+        document: dict[str, Any] = {"text": content.text}
     elif content.media_type in _WEB_IMAGES:
-        document = {"image": {"format": content.media_type.split("/")[1], "source": source}}
+        image_format = content.media_type.split("/")[1]
+        document = {"image": {"format": image_format, "source": {"bytes": content.base64}}}
     elif content.is_pdf:
-        document = {"document": {"format": "pdf", "name": "document", "source": source}}
+        document = {
+            "document": {"format": "pdf", "name": "document", "source": {"bytes": content.base64}}
+        }
     else:
         raise _unsupported("bedrock", content)
     tool = {"name": "extract", "description": _TOOL_DESCRIPTION, "inputSchema": {"json": schema}}
