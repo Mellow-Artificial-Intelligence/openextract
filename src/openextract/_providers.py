@@ -56,12 +56,19 @@ def request(
     """Build the provider request, then merge the caller's generation settings into it."""
     build, _ = _ADAPTERS[model.api]
     path, body = build(model, schema.model_json_schema(), content, instructions)
+    settings = dict(model.config.settings)
     if model.api == "gemini":
-        _configure(body["generationConfig"], model, _GEMINI_OUTPUT_SETTINGS, "structured output")
+        if "spreadsheetMetadata" in settings:
+            if DOCUMENT_EXTENSIONS.get(content.media_type) not in (".xlsx", ".xls", ".ods"):
+                raise ValueError("spreadsheetMetadata requires an XLSX, XLS, or ODS input.")
+            body["contents"][0]["parts"][-1]["spreadsheetMetadata"] = settings.pop(
+                "spreadsheetMetadata"
+            )
+        _configure(body["generationConfig"], settings, _GEMINI_OUTPUT_SETTINGS, "structured output")
     else:
         # Anthropic's max_tokens is a default, not a field callers are kept from configuring.
         managed = (body.keys() | _STRUCTURE_FIELDS) - {"max_tokens"}
-        _configure(body, model, managed, "request fields")
+        _configure(body, settings, managed, "request fields")
     if body.get("stream"):
         raise ValueError("Streaming is not supported by extract; omit settings['stream'].")
     return path, body
@@ -79,8 +86,9 @@ def parse[T: BaseModel](schema: type[T], model: ResolvedModel, payload: dict[str
     return schema.model_validate_json(json.dumps(output) if isinstance(output, dict) else output)
 
 
-def _configure(target: dict[str, Any], model: ResolvedModel, managed: set[str], kind: str) -> None:
-    settings = model.config.settings
+def _configure(
+    target: dict[str, Any], settings: dict[str, Any], managed: set[str], kind: str
+) -> None:
     if overridden := managed & settings.keys():
         raise ValueError(f"settings cannot override {kind}: {sorted(overridden)}.")
     target.update(settings)

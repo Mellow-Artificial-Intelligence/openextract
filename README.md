@@ -118,8 +118,9 @@ model that rejects an encoded input reports it as `ModelError`.
   for every declared field, including those with defaults, and rejects open-ended
   dictionaries. Use a tool-calling model with `Model(..., api="chat")` for those.
   Tagged unions are adapted automatically.
-- **Gemini** reads only the first sheet of a spreadsheet, and Office files lose some
-  layout. See Google's [document guide](https://aistudio.google.com/docs/document-processing).
+- **Gemini** supports [spreadsheet selection](#gemini-spreadsheet-selection).
+  Office processing varies by format and selected content layers; see Google's
+  [document guide](https://aistudio.google.com/docs/document-processing).
 - **Bedrock** needs `AWS_REGION` (or `AWS_DEFAULT_REGION`) unless you set `base_url`,
   and authenticates with a [bearer token](https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys-use.html).
   SigV4 signing is not built in: pass your own authenticated `client` and
@@ -155,7 +156,7 @@ invoice = extract(Invoice, model, Path("invoice.pdf"))
 | `api` | `responses`, `chat`, `anthropic`, `gemini`, `ollama`, `cohere`, `bedrock`, `mistral-ocr`, `openai-decisions`, `gemini-decisions`, `openrouter-decisions`, or `openrouter-extractions`. |
 | `base_url` | Includes the API version, such as `https://host/v1`. Built-in providers also read `OPENAI_BASE_URL`, `ANTHROPIC_BASE_URL`, `GOOGLE_BASE_URL`, `OPENROUTER_BASE_URL`, `GROQ_BASE_URL`, `MISTRAL_BASE_URL`, `XAI_BASE_URL`, `CEREBRAS_BASE_URL`, `HF_BASE_URL`, `COHERE_BASE_URL`, `BEDROCK_BASE_URL`, and `OLLAMA_BASE_URL`. |
 | `api_key`, `headers` | Credentials belong here, never in the URL. Explicit values win over the environment, and your headers win over generated ones. Omit `api_key` for keyless endpoints. |
-| `settings` | Generation parameters in the provider's own names. They go to the top level of the request, except Gemini (`generationConfig`), Ollama sampling (`settings["options"]`), and Bedrock inference (`settings["inferenceConfig"]`). Anthropic's `max_tokens` defaults to 4096. Request structure and schema fields cannot be replaced, streaming is not supported, and Decisions accept no settings. |
+| `settings` | Generation parameters in the provider's own names. They go to the top level of the request, except Gemini (`generationConfig`, with `spreadsheetMetadata` on the input part), Ollama sampling (`settings["options"]`), and Bedrock inference (`settings["inferenceConfig"]`). Anthropic's `max_tokens` defaults to 4096. Request structure and schema fields cannot be replaced, streaming is not supported, and Decisions accept no settings. |
 | `timeout` | Seconds allowed for each model request. Defaults to 60. |
 | `max_retries` | Retries for transport failures and HTTP 408, 409, 429, 500, 502, 503, and 504, with exponential backoff or `Retry-After` capped at 30 seconds. Defaults to 2. Other errors and redirects fail immediately. |
 | `validation_retries` | Retries after output that fails your schema, with feedback that omits raw values. Defaults to 1. Each attempt has its own HTTP retry budget. Refusals, truncated output, and malformed responses fail immediately. |
@@ -182,6 +183,48 @@ lengths and patterns, unsupported formats, and array limits move into field
 descriptions and are still enforced by your schema. Open-ended dictionaries,
 recursive references, tuples, and `allOf` raise `ValueError` before any request:
 use tool mode for those.
+
+## Gemini spreadsheet selection
+
+For XLSX, XLS, or ODS input on Gemini 3 and 4+ models, select a worksheet and
+cell range without installing a spreadsheet parser:
+
+```python
+from pathlib import Path
+from pydantic import BaseModel
+from openextract import Model, extract
+
+
+class Totals(BaseModel):
+    revenue: float
+
+
+model = Model(
+    "google:gemini-4-hydrogen",
+    settings={
+        "spreadsheetMetadata": {
+            "sheetIndex": 2,
+            "visibleCells": "A1:H50",
+            "contentLayers": ["DATA", "FORMULAS"],
+        },
+    },
+)
+totals = extract(Totals, model, Path("financial_model.xlsx"))
+```
+
+`spreadsheetMetadata` goes on the file part; other settings still go to
+`generationConfig`. `sheetIndex` is 1-based. Within this object, omitting it
+selects all sheets; `visibleCells` accepts A1 notation. Layers can be `DATA`,
+`FORMULAS`, or `VISUAL`; the default is `DATA` and `FORMULAS`. An empty object
+requests those defaults. Omitting the setting preserves the existing request.
+Google validates selector values and model support. Other input types raise
+`ValueError` locally. Full-file upload limits still apply: slicing reduces what
+Google processes, not the bytes OpenExtract uploads. This does not add local
+parsing, file storage, or document/audio/video slicing.
+
+See Google's [November 18 release](https://aistudio.google.com/docs/changelog#11-18-2026)
+and [GenerateContent spreadsheet options](https://aistudio.google.com/docs/document-processing?generate-content=true#spreadsheet-options).
+Offline tests check the request and typed result, not live extraction quality.
 
 ## Mistral document annotations
 
