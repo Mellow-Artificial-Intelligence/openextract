@@ -2,14 +2,19 @@
 
 import json
 
+from pydantic import BaseModel
+
 from openextract import Model
+
+
+class Invoice(BaseModel):
+    total: float
 
 
 def configured(name="openai:test", **options):
     """A model with a key and no retries, so each test sees exactly one request."""
-    return Model(
-        name, **{"api_key": "test-key", "max_retries": 0, "validation_retries": 0} | options
-    )
+    defaults = {"api_key": "test-key", "max_retries": 0, "validation_retries": 0}
+    return Model(name, **(defaults | options))
 
 
 def custom(api, **options):

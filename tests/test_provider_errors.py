@@ -4,8 +4,7 @@ import httpx
 import pytest
 
 from openextract import Model, ModelError, extract
-from tests.helpers import configured
-from tests.test_extract import Invoice
+from tests.helpers import Invoice, configured
 
 
 @pytest.mark.parametrize("mode", ["tool", "json_schema"])

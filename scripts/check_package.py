@@ -37,13 +37,14 @@ INSTALLER_FILES = {
 
 
 def installed_bytes(dist: importlib.metadata.Distribution) -> int:
-    return sum(
-        dist.locate_file(file).stat().st_size
-        for file in dist.files or []
-        if file.suffix != ".pyc"
-        and file.name not in INSTALLER_FILES
-        and dist.locate_file(file).is_file()
-    )
+    total = 0
+    for file in dist.files or []:
+        if file.suffix == ".pyc" or file.name in INSTALLER_FILES:
+            continue
+        located = Path(dist.locate_file(file))
+        if located.is_file():
+            total += located.stat().st_size
+    return total
 
 
 def normalize(name: str) -> str:

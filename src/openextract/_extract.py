@@ -68,17 +68,20 @@ def extract[T: BaseModel](
     ``ExtractionResult`` with the validated data and provider metadata.
     """
     resolved = resolve(model)
-    request, parse = _adapter(resolved, include_metadata)
+    build_request, parse_response = _adapter(resolved, include_metadata)
     content = load(source, media_type)
     guidance = instructions
-    with nullcontext(client) if client is not None else httpx.Client() as session:
-        for attempt in range(1, resolved.config.validation_retries + 2):
-            path, body = request(schema, resolved, content, guidance)
+    attempt = 0
+    context = nullcontext(client) if client is not None else httpx.Client()
+    with context as session:
+        while True:
+            attempt += 1
+            path, body = build_request(schema, resolved, content, guidance)
             try:
-                return parse(schema, resolved, _transport.post(resolved, path, body, session))
+                payload = _transport.post(resolved, path, body, session)
+                return parse_response(schema, resolved, payload)
             except _OUTPUT_ERRORS as exc:
                 guidance = _feedback(exc, attempt, resolved, instructions)
-    raise AssertionError("unreachable")  # pragma: no cover
 
 
 @overload
@@ -119,18 +122,20 @@ async def extract_async[T: BaseModel](
 ) -> T | ExtractionResult[T]:
     """Async version of :func:`extract`."""
     resolved = resolve(model)
-    request, parse = _adapter(resolved, include_metadata)
+    build_request, parse_response = _adapter(resolved, include_metadata)
     content = await load_async(source, media_type)
     guidance = instructions
-    async with nullcontext(client) if client is not None else httpx.AsyncClient() as session:
-        for attempt in range(1, resolved.config.validation_retries + 2):
-            path, body = request(schema, resolved, content, guidance)
+    attempt = 0
+    context = nullcontext(client) if client is not None else httpx.AsyncClient()
+    async with context as session:
+        while True:
+            attempt += 1
+            path, body = build_request(schema, resolved, content, guidance)
             try:
                 payload = await _transport.post_async(resolved, path, body, session)
-                return parse(schema, resolved, payload)
+                return parse_response(schema, resolved, payload)
             except _OUTPUT_ERRORS as exc:
                 guidance = _feedback(exc, attempt, resolved, instructions)
-    raise AssertionError("unreachable")  # pragma: no cover
 
 
 def _adapter(model: ResolvedModel, include_metadata: bool) -> _Adapter:
@@ -148,9 +153,12 @@ def _feedback(
     error: Exception, attempt: int, model: ResolvedModel, instructions: str | None
 ) -> str:
     """Return instructions for the next validation attempt, or raise the final failure."""
+    is_decisions = model.api.endswith("-decisions")
     if not isinstance(error, ValidationError):
-        raise SchemaValidationError(invalid_response_message(error)) from error
-    if attempt > model.config.validation_retries:
+        context = "decision answers" if is_decisions else "model response"
+        raise SchemaValidationError(invalid_response_message(error, context=context)) from error
+    retries = 0 if is_decisions else model.config.validation_retries
+    if attempt > retries:
         raise SchemaValidationError(validation_message(error, attempt)) from error
     # The details name the failing fields without echoing the provider's raw output.
     return (

@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field, ValidationError, create_model, field_vali
 
 from openextract import ExtractionError, Model, ModelError, SchemaValidationError, extract
 from openextract._content import PROMPT
-from tests.helpers import configured
+from tests.helpers import Invoice, configured
 
 OPENROUTER = "openrouter:typesafe/jev-1.14"
 OPENAI = "openai-decisions:gpt-6-luna"
@@ -23,10 +23,6 @@ KEY_VARIABLES = {
 PDF_BYTES = b"%PDF-1.7 fake"
 PNG_BYTES = b"\x89PNG...."
 PNG_URI = "data:image/png;base64,iVBORy4uLi4="
-
-
-class Invoice(BaseModel):
-    total: float
 
 
 class Currency(Enum):
@@ -278,44 +274,52 @@ def test_answers_are_validated_by_field_name_not_alias(provider):
     assert extract(Aliased, OPENAI, b"text").is_paid is True
 
 
+@pytest.mark.parametrize("model", [OPENROUTER, GEMINI])
 @pytest.mark.parametrize(
-    "model,payload",
+    "payload",
     [
-        *((model, {}) for model in (OPENROUTER, OPENAI, GEMINI)),
-        *(
-            (model, payload)
-            for model in (OPENROUTER, GEMINI)
-            for payload in (
-                {"answers": []},
-                {"answers": {}},
-                {"answers": {"is_paid": {"type": "noul", "noul": 0.1}}},
-                named(is_paid={"type": "noul", "noul": 1.2}),
-                named(is_paid={"type": "noul", "noul": True}),
-                named(is_paid={"type": "choice", "noul": 0.5}),
-                named(currency={"type": "noul", "choice": "eur"}),
-                named(currency={"type": "choice", "choice": "invalid"}),
-                named(unknown={"type": "noul", "noul": 0.5}),
-            )
-        ),
-        (OPENAI, {"answers": {}}),
-        (OPENAI, {"answers": []}),
-        (OPENAI, {"answers": OPENAI_ANSWERS * 2}),
-        (OPENAI, {"answers": OPENAI_ANSWERS[:2]}),
-        (OPENAI, {"answers": [None]}),
-        (OPENAI, listed(type="refusal", name="is_paid")),
-        (OPENAI, listed(type="predicate", name="is_paid", probability=1.2)),
-        (OPENAI, listed(type="predicate", name="is_paid", probability="yes")),
-        (OPENAI, listed(type="predicate", name="is_paid", probability=True)),
-        (OPENAI, listed(type="choice", name="is_paid", probability=0.5)),
-        (OPENAI, listed(type="predicate", name="currency", probability=0.5)),
-        (OPENAI, listed(type="choice", name="currency", choice="unknown")),
-        (OPENAI, listed(type="choice", name="unknown", choice="eur")),
+        {},
+        {"answers": []},
+        {"answers": {}},
+        {"answers": {"is_paid": {"type": "noul", "noul": 0.1}}},
+        named(is_paid={"type": "noul", "noul": 1.2}),
+        named(is_paid={"type": "noul", "noul": True}),
+        named(is_paid={"type": "choice", "noul": 0.5}),
+        named(currency={"type": "noul", "choice": "eur"}),
+        named(currency={"type": "choice", "choice": "invalid"}),
+        named(unknown={"type": "noul", "noul": 0.5}),
     ],
 )
-async def test_invalid_answers_raise_schema_validation_error(run, provider, model, payload):
+async def test_invalid_named_answers_raise_schema_validation_error(run, provider, model, payload):
     provider.reply(payload)
     with pytest.raises(SchemaValidationError, match="Invalid decision answers"):
         await run(Triage, model, b"text")
+    assert len(provider.requests) == 1
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {},
+        {"answers": {}},
+        {"answers": []},
+        {"answers": OPENAI_ANSWERS * 2},
+        {"answers": OPENAI_ANSWERS[:2]},
+        {"answers": [None]},
+        listed(type="refusal", name="is_paid"),
+        listed(type="predicate", name="is_paid", probability=1.2),
+        listed(type="predicate", name="is_paid", probability="yes"),
+        listed(type="predicate", name="is_paid", probability=True),
+        listed(type="choice", name="is_paid", probability=0.5),
+        listed(type="predicate", name="currency", probability=0.5),
+        listed(type="choice", name="currency", choice="unknown"),
+        listed(type="choice", name="unknown", choice="eur"),
+    ],
+)
+async def test_invalid_openai_answers_raise_schema_validation_error(run, provider, payload):
+    provider.reply(payload)
+    with pytest.raises(SchemaValidationError, match="Invalid decision answers"):
+        await run(Triage, OPENAI, b"text")
     assert len(provider.requests) == 1
 
 

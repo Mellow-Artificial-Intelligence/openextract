@@ -5,8 +5,7 @@ import pytest
 
 from openextract import ExtractionError, Model, extract
 from openextract.models import resolve
-from tests.helpers import configured, custom, output
-from tests.test_extract import Invoice
+from tests.helpers import Invoice, configured, custom, output
 
 OPENAI = "https://api.openai.com/v1"
 GOOGLE = "https://generativelanguage.googleapis.com/v1beta"

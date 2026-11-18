@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from pydantic.fields import FieldInfo
 
 from ._content import Content
-from .models import ResolvedModel
+from .models import ResolvedModel, merge_settings
 
 _SCALAR_TYPES = {
     str: "text",
@@ -32,11 +32,18 @@ _ASSET_FORMATS = {
 _REQUEST_FIELDS = {"model", "state", "assets", "fields"}
 
 
+@dataclass(frozen=True, init=False)
 class OpenRouterField:
     """Set native Extractions field options in a Pydantic `Annotated` field."""
 
+    options: dict[str, Any]
+
     def __init__(self, **options: Any) -> None:
-        self.options = options
+        object.__setattr__(self, "options", options)
+
+    def __repr__(self) -> str:
+        items = ", ".join(f"{key}={value!r}" for key, value in self.options.items())
+        return f"OpenRouterField({items})"
 
 
 @dataclass(frozen=True)
@@ -55,13 +62,11 @@ def request(
         raise TypeError("OpenRouter Extractions requires a Pydantic model with named fields.")
     if not schema.model_fields:
         raise ValueError("OpenRouter Extractions requires at least one schema field.")
-    settings = model.config.settings
-    if reserved := _REQUEST_FIELDS & settings.keys():
-        raise ValueError(f"settings cannot override request fields: {sorted(reserved)}.")
     fields = {
         name: _field_spec(name, field, instructions) for name, field in schema.model_fields.items()
     }
-    body = {**settings, "model": model.model_name, "fields": fields}
+    body: dict[str, Any] = {"model": model.model_name, "fields": fields}
+    merge_settings(body, model.config.settings, _REQUEST_FIELDS)
     if content.is_text:
         body["state"] = content.text
     elif asset := _ASSET_FORMATS.get(content.media_type):
@@ -112,17 +117,15 @@ def _field_spec(name: str, field: FieldInfo, instructions: str | None) -> dict[s
 
 
 def _infer_field(name: str, annotation: Any) -> dict[str, Any]:
-    if get_origin(annotation) in (Union, UnionType):
-        members = [member for member in get_args(annotation) if member is not NoneType]
-        if len(members) == 1:
-            annotation = members[0]
-    annotation = _unannotated(annotation)
+    annotation = _strip_annotated(_unwrap_optional(annotation))
     if spec := _scalar_spec(annotation):
         return spec
-    if get_origin(annotation) is list and len(items := get_args(annotation)) == 1:
-        spec = _scalar_spec(_unannotated(items[0]))
-        if spec and spec["type"] in _LIST_ITEMS:
-            return {**spec, "type": "list", "items": spec["type"]}
+    if get_origin(annotation) is list:
+        item_args = get_args(annotation)
+        if len(item_args) == 1:
+            item_spec = _scalar_spec(_strip_annotated(item_args[0]))
+            if item_spec and item_spec["type"] in _LIST_ITEMS:
+                return {**item_spec, "type": "list", "items": item_spec["type"]}
     raise TypeError(
         f"OpenRouter Extractions cannot infer a field type for {name!r}. "
         "Use a supported scalar or list, set a compatible OpenRouterField(type=...), "
@@ -130,7 +133,15 @@ def _infer_field(name: str, annotation: Any) -> dict[str, Any]:
     )
 
 
-def _unannotated(annotation: Any) -> Any:
+def _unwrap_optional(annotation: Any) -> Any:
+    if get_origin(annotation) in (Union, UnionType):
+        members = [member for member in get_args(annotation) if member is not NoneType]
+        if len(members) == 1:
+            return members[0]
+    return annotation
+
+
+def _strip_annotated(annotation: Any) -> Any:
     return get_args(annotation)[0] if get_origin(annotation) is Annotated else annotation
 
 

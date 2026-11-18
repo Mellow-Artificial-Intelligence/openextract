@@ -7,14 +7,12 @@ answer format; OpenAI uses lists and its own answer types.
 import re
 import typing
 from enum import Enum
-from typing import Any, Literal
+from typing import Any, Literal, TypeGuard
 
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel
 from pydantic.fields import FieldInfo
 
 from ._content import PROMPT, Content
-from ._diagnostics import invalid_response_message, validation_message
-from .exceptions import SchemaValidationError
 from .models import ResolvedModel
 
 _YES_THRESHOLD = 0.5
@@ -33,42 +31,38 @@ def request(
 
 
 def parse[T: BaseModel](schema: type[T], model: ResolvedModel, payload: dict[str, Any]) -> T:
-    """Validate one answer per field. Invalid answers fail without a validation retry."""
+    """Validate one answer per schema field."""
     is_openai = model.api == "openai-decisions"
-    yes_type, probability = ("predicate", "probability") if is_openai else ("noul", "noul")
     fields = schema.model_fields
-    try:
-        answers = payload["answers"]
-        # OpenAI lists named answers; OpenRouter and Gemini key them by field name.
-        pairs = [(answer["name"], answer) for answer in answers] if is_openai else answers.items()
-        values = {
-            name: _value(name, fields[name], answer, yes_type, probability)
-            for name, answer in pairs
-        }
-        if sorted(name for name, _ in pairs) != sorted(fields):
-            raise ValueError("Expected exactly one answer for every schema field.")
-        return schema.model_validate(values, by_name=True)
-    except ValidationError as exc:
-        raise SchemaValidationError(validation_message(exc, 1)) from exc
-    except (LookupError, TypeError, ValueError, AttributeError) as exc:
-        message = invalid_response_message(exc, context="decision answers")
-        raise SchemaValidationError(message) from exc
+    answers = _answer_map(payload["answers"], is_openai=is_openai)
+    if answers.keys() != fields.keys():
+        raise ValueError("Expected exactly one answer for every schema field.")
+    values = {
+        name: _parse_answer(name, fields[name], answer, is_openai=is_openai)
+        for name, answer in answers.items()
+    }
+    return schema.model_validate(values, by_name=True)
 
 
-def _openrouter(
+def _build_openrouter(
     schema: type[BaseModel], content: Content, instructions: str | None
 ) -> dict[str, Any]:
     _require_text_or_image(content)
-    image = {"type": "image_url", "image_url": {"url": content.data_uri}}
-    guidance = [PROMPT, instructions] if instructions else [PROMPT]
+    document: str | dict[str, Any] = (
+        content.text
+        if content.is_text
+        else {"type": "image_url", "image_url": {"url": content.data_uri}}
+    )
     return {
-        "state": [*guidance, content.text if content.is_text else image],
-        "questions": {name: _question(name, field) for name, field in schema.model_fields.items()},
+        "state": [*_guidance(instructions), document],
+        "questions": _named_questions(schema),
     }
 
 
-def _gemini(schema: type[BaseModel], content: Content, instructions: str | None) -> dict[str, Any]:
-    questions = {name: _question(name, field) for name, field in schema.model_fields.items()}
+def _build_gemini(
+    schema: type[BaseModel], content: Content, instructions: str | None
+) -> dict[str, Any]:
+    questions = _named_questions(schema)
     _check_gemini_limits(questions)
     if content.is_text:
         document = {"type": "text", "text": content.text}
@@ -79,27 +73,22 @@ def _gemini(schema: type[BaseModel], content: Content, instructions: str | None)
         raise ValueError(
             f"Gemini Decisions supports text, images and PDF, not {content.media_type}."
         )
-    guidance = [PROMPT, instructions] if instructions else [PROMPT]
-    texts = [{"type": "text", "text": text + "\n"} for text in guidance]
+    texts = [{"type": "text", "text": text + "\n"} for text in _guidance(instructions)]
     return {"input": [*texts, document], "questions": questions}
 
 
-def _openai(schema: type[BaseModel], content: Content, instructions: str | None) -> dict[str, Any]:
+def _build_openai(
+    schema: type[BaseModel], content: Content, instructions: str | None
+) -> dict[str, Any]:
     if not 1 <= len(schema.model_fields) <= 400:
         raise ValueError("OpenAI Decisions requires between 1 and 400 schema fields.")
-    questions = []
-    for name, field in schema.model_fields.items():
-        question = {"name": name, "instructions": _instructions(name, field), "type": "predicate"}
-        if field.annotation is not bool:
-            options = _options(name, field.annotation)
-            question["type"] = "choice"
-            question["choices"] = [{"value": key, "description": key} for key in options]
-        questions.append(question)
+    questions = [_openai_question(name, field) for name, field in schema.model_fields.items()]
     _require_text_or_image(content)
-    if content.is_text:
-        document = {"type": "input_text", "text": content.text}
-    else:
-        document = {"type": "input_image", "image_url": content.data_uri}
+    document = (
+        {"type": "input_text", "text": content.text}
+        if content.is_text
+        else {"type": "input_image", "image_url": content.data_uri}
+    )
     return {
         "input": [
             {"role": "developer", "content": instructions or PROMPT},
@@ -124,15 +113,32 @@ def _check_gemini_limits(questions: dict[str, dict[str, Any]]) -> None:
             raise ValueError("Invalid Gemini Decisions option key.")
 
 
-def _question(name: str, field: FieldInfo) -> dict[str, Any]:
+def _named_questions(schema: type[BaseModel]) -> dict[str, dict[str, Any]]:
+    return {name: _named_question(name, field) for name, field in schema.model_fields.items()}
+
+
+def _guidance(instructions: str | None) -> list[str]:
+    return [PROMPT, instructions] if instructions else [PROMPT]
+
+
+def _named_question(name: str, field: FieldInfo) -> dict[str, Any]:
     """Phrase a field in the named format OpenRouter and Gemini share."""
+    instructions = _field_instructions(name, field)
     if field.annotation is bool:
-        return {"type": "noul", "instructions": _instructions(name, field)}
+        return {"type": "noul", "instructions": instructions}
     criteria = {key: key for key in _options(name, field.annotation)}
-    return {"type": "choice", "instructions": _instructions(name, field), "criteria": criteria}
+    return {"type": "choice", "instructions": instructions, "criteria": criteria}
 
 
-def _instructions(name: str, field: FieldInfo) -> str:
+def _openai_question(name: str, field: FieldInfo) -> dict[str, Any]:
+    instructions = _field_instructions(name, field)
+    if field.annotation is bool:
+        return {"name": name, "type": "predicate", "instructions": instructions}
+    choices = [{"value": key, "description": key} for key in _options(name, field.annotation)]
+    return {"name": name, "type": "choice", "instructions": instructions, "choices": choices}
+
+
+def _field_instructions(name: str, field: FieldInfo) -> str:
     return field.description or name.replace("_", " ")
 
 
@@ -148,11 +154,13 @@ def _options(name: str, annotation: object) -> dict[str, object]:
 
 
 def _is_gemini_option(key: str) -> bool:
-    """Google allows 1–128 trimmed characters in at most 512 bytes, without control characters."""
-    control = any(
-        ord(char) < 32 or ord(char) == 127 or char.isspace() and char != " " for char in key
+    """Google allows 1–128 trimmed printable characters in at most 512 UTF-8 bytes."""
+    return (
+        1 <= len(key) <= 128
+        and len(key.encode()) <= 512
+        and key == key.strip()
+        and key.isprintable()
     )
-    return 1 <= len(key) <= 128 and len(key.encode()) <= 512 and key == key.strip() and not control
 
 
 def _require_text_or_image(content: Content) -> None:
@@ -160,15 +168,30 @@ def _require_text_or_image(content: Content) -> None:
         raise ValueError(f"Decisions models read text and images, not {content.media_type}.")
 
 
-def _value(
-    name: str, field: FieldInfo, answer: dict[str, Any], yes_type: str, probability: str
+def _answer_map(raw_answers: Any, *, is_openai: bool) -> dict[str, dict[str, Any]]:
+    """Normalize OpenAI's answer list or OpenRouter/Gemini's answer map into a field map."""
+    if not is_openai:
+        if not isinstance(raw_answers, dict):
+            raise TypeError("Expected an object of decision answers.")
+        return raw_answers
+    if not isinstance(raw_answers, list):
+        raise TypeError("Expected a list of decision answers.")
+    answers = {item["name"]: item for item in raw_answers}
+    if len(answers) != len(raw_answers):
+        raise ValueError("Expected at most one answer per schema field.")
+    return answers
+
+
+def _parse_answer(
+    name: str, field: FieldInfo, answer: dict[str, Any], *, is_openai: bool
 ) -> object:
     """Turn an answer into the field's value; yes/no is true from a probability of one half."""
     if answer["type"] == "refusal":
         raise ValueError(f"The model refused to answer {name!r}.")
     if field.annotation is bool:
-        chance = answer[probability]
-        if answer["type"] != yes_type or type(chance) not in (int, float) or not 0 <= chance <= 1:
+        yes_type, prob_key = ("predicate", "probability") if is_openai else ("noul", "noul")
+        chance = answer[prob_key]
+        if not (answer["type"] == yes_type and _is_probability(chance)):
             raise ValueError(
                 f"Expected a yes/no answer with a numeric probability from 0 to 1 for {name!r}."
             )
@@ -181,8 +204,12 @@ def _value(
     return options[answer["choice"]]
 
 
+def _is_probability(value: object) -> TypeGuard[int | float]:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and 0 <= value <= 1
+
+
 _BUILDERS = {
-    "openai-decisions": _openai,
-    "gemini-decisions": _gemini,
-    "openrouter-decisions": _openrouter,
+    "openai-decisions": _build_openai,
+    "gemini-decisions": _build_gemini,
+    "openrouter-decisions": _build_openrouter,
 }

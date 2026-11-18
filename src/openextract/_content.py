@@ -7,6 +7,7 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TypeGuard
 
 import httpx
 
@@ -84,7 +85,7 @@ def load(source: Source, media_type: str | None) -> Content:
     """Read text, a URL, bytes, or a path. An explicit ``media_type`` always wins."""
     if _is_url(source):
         with _fetch_errors():
-            response = httpx.get(str(source), follow_redirects=True, timeout=_URL_TIMEOUT_SECONDS)
+            response = httpx.get(source, follow_redirects=True, timeout=_URL_TIMEOUT_SECONDS)
             return _downloaded(response, media_type)
     if isinstance(source, bytes):
         return _content(source, media_type)
@@ -100,10 +101,10 @@ async def load_async(source: Source, media_type: str | None) -> Content:
         return load(source, media_type)
     with _fetch_errors():
         async with httpx.AsyncClient(follow_redirects=True, timeout=_URL_TIMEOUT_SECONDS) as client:
-            return _downloaded(await client.get(str(source)), media_type)
+            return _downloaded(await client.get(source), media_type)
 
 
-def _is_url(source: Source) -> bool:
+def _is_url(source: Source) -> TypeGuard[str]:
     return isinstance(source, str) and source.startswith(("http://", "https://"))
 
 
@@ -122,11 +123,14 @@ def _content(
     data: bytes, media_type: str | None, *, name: str = "", header: str | None = None
 ) -> Content:
     """Prefer the explicit type, then the file extension, the header, and the leading bytes."""
-    extension = _DOCUMENT_TYPES.get(Path(name).suffix.lower()) or mimetypes.guess_type(name)[0]
-    resolved = media_type or extension or header or _sniff(data)
+    resolved = media_type or _type_from_name(name) or header or _sniff(data)
     if resolved is None:
         raise ValueError("Could not infer the media type; pass media_type explicitly.")
     return Content(data, resolved)
+
+
+def _type_from_name(name: str) -> str | None:
+    return _DOCUMENT_TYPES.get(Path(name).suffix.lower()) or mimetypes.guess_type(name)[0]
 
 
 def _sniff(data: bytes) -> str | None:
