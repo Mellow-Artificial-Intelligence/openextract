@@ -8,6 +8,10 @@ timing when that is known.
 
 ## [Unreleased]
 
+### Added
+- Gemini spreadsheet selection through `Model(settings={"spreadsheetMetadata": ...})`
+  for XLSX, XLS, and ODS inputs, without new dependencies or extraction arguments.
+
 ## [2.2.0] - 2026-11-16
 
 ### Added

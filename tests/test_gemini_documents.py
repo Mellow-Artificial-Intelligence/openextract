@@ -71,3 +71,53 @@ async def test_document_url_is_downloaded_before_the_gemini_request(run, provide
 def test_other_binary_documents_remain_unsupported(media_type):
     with pytest.raises(ValueError, match="gemini adapter does not support"):
         extract(Invoice, GEMINI, b"document", media_type=media_type)
+
+
+@pytest.mark.parametrize("extension,media_type", DOCUMENTS[-3:])
+@pytest.mark.parametrize("source_kind", ["path", "bytes", "url"])
+async def test_spreadsheet_selection_is_sent_on_the_document_part(
+    run, provider, tmp_path, extension, media_type, source_kind
+):
+    selection = {"sheetIndex": 2, "visibleCells": "A1:H50", "contentLayers": ["DATA", "FORMULAS"]}
+    settings = {"spreadsheetMetadata": selection, "temperature": 0}
+    model = configured("google:gemini-4-hydrogen", settings=settings)
+    source = DATA
+    provider.reply(output("gemini"))
+    if source_kind == "path":
+        source = tmp_path / f"workbook.{extension}"
+        source.write_bytes(DATA)
+    elif source_kind == "url":
+        source = f"https://example.com/workbook.{extension}"
+        provider.reply(lambda request: httpx.Response(200, content=DATA), output("gemini"))
+    result = await run(Invoice, model, source, "Use the final total.", media_type=media_type)
+    assert result == Invoice(total=42)
+    body = provider.bodies[-1]
+    assert body["contents"][0]["parts"][-1] == {
+        **inline(media_type),
+        "spreadsheetMetadata": selection,
+    }
+    assert body["generationConfig"] == {
+        "responseMimeType": "application/json",
+        "responseJsonSchema": Invoice.model_json_schema(),
+        "temperature": 0,
+    }
+    assert body["systemInstruction"] == {"parts": [{"text": "Use the final total."}]}
+    assert settings == {"spreadsheetMetadata": selection, "temperature": 0}
+
+
+async def test_empty_spreadsheet_selection_is_preserved(run, provider):
+    model = configured("google:gemini-4-hydrogen", settings={"spreadsheetMetadata": {}})
+    provider.reply(output("gemini"))
+    await run(Invoice, model, DATA, media_type=DOCUMENTS[-1][1])
+    assert provider.bodies[0]["contents"][0]["parts"][-1]["spreadsheetMetadata"] == {}
+    assert model.settings == {"spreadsheetMetadata": {}}
+
+
+@pytest.mark.parametrize("media_type", ["text/plain", "application/pdf", DOCUMENTS[0][1]])
+async def test_spreadsheet_selection_rejects_other_inputs(run, provider, media_type):
+    model = configured(
+        "google:gemini-4-hydrogen", settings={"spreadsheetMetadata": {"sheetIndex": 2}}
+    )
+    with pytest.raises(ValueError, match="spreadsheetMetadata requires"):
+        await run(Invoice, model, b"text", media_type=media_type)
+    assert not provider.requests
