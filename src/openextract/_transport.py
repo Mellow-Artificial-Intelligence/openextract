@@ -75,17 +75,21 @@ def _is_final(
 def _delay(attempt: int, response: httpx.Response | None) -> float:
     """Honor ``Retry-After`` up to 30 seconds; otherwise back off exponentially up to 8."""
     retry_after = response.headers.get("retry-after") if response is not None else None
-    if retry_after is not None:
-        try:
-            seconds = float(retry_after)
-        except ValueError:
-            try:
-                seconds = (parsedate_to_datetime(retry_after) - datetime.now(UTC)).total_seconds()
-            except (TypeError, ValueError, OverflowError):
-                seconds = math.nan
-        if math.isfinite(seconds):
-            return min(max(seconds, 0.0), 30.0)
+    if retry_after is not None and (seconds := _parse_retry_after(retry_after)) is not None:
+        return min(max(seconds, 0.0), 30.0)
     return 0.5 * 2 ** min(attempt, 4)
+
+
+def _parse_retry_after(value: str) -> float | None:
+    try:
+        seconds = float(value)
+        return seconds if math.isfinite(seconds) else None
+    except ValueError:
+        pass
+    try:
+        return (parsedate_to_datetime(value) - datetime.now(UTC)).total_seconds()
+    except (TypeError, ValueError, OverflowError):
+        return None
 
 
 def _payload(response: httpx.Response, model: ResolvedModel) -> dict[str, Any]:

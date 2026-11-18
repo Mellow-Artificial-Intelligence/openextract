@@ -5,7 +5,7 @@ import os
 from collections.abc import Mapping
 from collections.abc import Set as AbstractSet
 from dataclasses import dataclass, field
-from typing import Any, Literal, get_args
+from typing import Any, Literal, NamedTuple, get_args
 
 import httpx
 
@@ -67,35 +67,43 @@ class ResolvedModel:
     headers: httpx.Headers = field(repr=False)
 
 
-type _Provider = tuple[API, str, str | None, str]
+class _Provider(NamedTuple):
+    api: API
+    base_url: str
+    key_env: str | None
+    url_env: str
+
 
 _APIS = frozenset(get_args(API.__value__))
 _OPENAI = ("https://api.openai.com/v1", "OPENAI_API_KEY", "OPENAI_BASE_URL")
 _GOOGLE = ("https://generativelanguage.googleapis.com/v1beta", "GOOGLE_API_KEY", "GOOGLE_BASE_URL")
 _OPENROUTER = ("https://openrouter.ai/api/v1", "OPENROUTER_API_KEY", "OPENROUTER_BASE_URL")
-# Model prefix: default API, base URL, API key variable, and base URL variable.
 _PROVIDERS: dict[str, _Provider] = {
-    "openai": ("responses", *_OPENAI),
-    "openai-chat": ("chat", *_OPENAI),
-    "openai-decisions": ("openai-decisions", *_OPENAI),
-    "anthropic": (
+    "openai": _Provider("responses", *_OPENAI),
+    "openai-chat": _Provider("chat", *_OPENAI),
+    "openai-decisions": _Provider("openai-decisions", *_OPENAI),
+    "anthropic": _Provider(
         "anthropic",
         "https://api.anthropic.com/v1",
         "ANTHROPIC_API_KEY",
         "ANTHROPIC_BASE_URL",
     ),
-    "google": ("gemini", *_GOOGLE),
-    "gemini-decisions": ("gemini-decisions", *_GOOGLE),
-    "openrouter": ("chat", *_OPENROUTER),
-    "openrouter-extractions": ("openrouter-extractions", *_OPENROUTER),
-    "ollama": ("ollama", "http://localhost:11434", None, "OLLAMA_BASE_URL"),
-    "groq": ("chat", "https://api.groq.com/openai/v1", "GROQ_API_KEY", "GROQ_BASE_URL"),
-    "mistral": ("chat", "https://api.mistral.ai/v1", "MISTRAL_API_KEY", "MISTRAL_BASE_URL"),
-    "xai": ("chat", "https://api.x.ai/v1", "XAI_API_KEY", "XAI_BASE_URL"),
-    "cerebras": ("chat", "https://api.cerebras.ai/v1", "CEREBRAS_API_KEY", "CEREBRAS_BASE_URL"),
-    "huggingface": ("chat", "https://router.huggingface.co/v1", "HF_TOKEN", "HF_BASE_URL"),
-    "cohere": ("cohere", "https://api.cohere.com/v2", "CO_API_KEY", "COHERE_BASE_URL"),
-    "bedrock": ("bedrock", "", "AWS_BEARER_TOKEN_BEDROCK", "BEDROCK_BASE_URL"),
+    "google": _Provider("gemini", *_GOOGLE),
+    "gemini-decisions": _Provider("gemini-decisions", *_GOOGLE),
+    "openrouter": _Provider("chat", *_OPENROUTER),
+    "openrouter-extractions": _Provider("openrouter-extractions", *_OPENROUTER),
+    "ollama": _Provider("ollama", "http://localhost:11434", None, "OLLAMA_BASE_URL"),
+    "groq": _Provider("chat", "https://api.groq.com/openai/v1", "GROQ_API_KEY", "GROQ_BASE_URL"),
+    "mistral": _Provider(
+        "chat", "https://api.mistral.ai/v1", "MISTRAL_API_KEY", "MISTRAL_BASE_URL"
+    ),
+    "xai": _Provider("chat", "https://api.x.ai/v1", "XAI_API_KEY", "XAI_BASE_URL"),
+    "cerebras": _Provider(
+        "chat", "https://api.cerebras.ai/v1", "CEREBRAS_API_KEY", "CEREBRAS_BASE_URL"
+    ),
+    "huggingface": _Provider("chat", "https://router.huggingface.co/v1", "HF_TOKEN", "HF_BASE_URL"),
+    "cohere": _Provider("cohere", "https://api.cohere.com/v2", "CO_API_KEY", "COHERE_BASE_URL"),
+    "bedrock": _Provider("bedrock", "", "AWS_BEARER_TOKEN_BEDROCK", "BEDROCK_BASE_URL"),
 }
 _ALIASES = {"openai-responses": "openai", "google-gla": "google", "gemini": "google"}
 _OPENROUTER_EXTRACTION_MODELS = {
@@ -130,13 +138,12 @@ def resolve(model: str | Model) -> ResolvedModel:
         return ResolvedModel(
             model, name, api, _checked_url(model.base_url), _headers(model, api, None)
         )
-    default_api, default_url, key_variable, url_variable = provider
-    api = _resolve_api(model, prefix, name, default_api)
+    api = _resolve_api(model, prefix, name, provider.api)
     base_url = model.base_url
     if base_url is None:
-        base_url = _default_url(api, os.environ.get(url_variable) or default_url)
+        base_url = _default_url(api, os.environ.get(provider.url_env) or provider.base_url)
     return ResolvedModel(
-        model, name, api, _checked_url(base_url), _headers(model, api, key_variable)
+        model, name, api, _checked_url(base_url), _headers(model, api, provider.key_env)
     )
 
 
@@ -195,20 +202,24 @@ def _checked_url(base_url: str) -> str:
     return base_url.rstrip("/")
 
 
-def _headers(model: Model, api: API, key_variable: str | None) -> httpx.Headers:
+def _headers(model: Model, api: API, key_env: str | None) -> httpx.Headers:
     headers = httpx.Headers(model.headers)
-    key_header = _KEY_HEADERS.get(api, "authorization")
-    key = model.api_key
-    if key is None and key_variable:
-        key = os.environ.get(key_variable)
-        if not key and key_variable == "GOOGLE_API_KEY":
-            key = os.environ.get("GEMINI_API_KEY")
-        if not key and key_header not in headers:
-            raise ExtractionError(
-                f"Set {key_variable} or configure Model(api_key=..., headers=...)."
-            )
-    if key and key_header not in headers:
-        headers[key_header] = f"Bearer {key}" if key_header == "authorization" else key
     if api == "anthropic":
         headers.setdefault("anthropic-version", "2023-06-01")
+    key_header = _KEY_HEADERS.get(api, "authorization")
+    if key_header in headers:
+        return headers
+    if key := _resolve_api_key(model.api_key, key_env):
+        headers[key_header] = f"Bearer {key}" if key_header == "authorization" else key
     return headers
+
+
+def _resolve_api_key(explicit_key: str | None, key_env: str | None) -> str | None:
+    if explicit_key is not None or key_env is None:
+        return explicit_key
+    key = os.environ.get(key_env)
+    if not key and key_env == "GOOGLE_API_KEY":
+        key = os.environ.get("GEMINI_API_KEY")
+    if not key:
+        raise ExtractionError(f"Set {key_env} or configure Model(api_key=..., headers=...).")
+    return key

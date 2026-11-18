@@ -72,7 +72,8 @@ def extract[T: BaseModel](
     content = load(source, media_type)
     guidance = instructions
     attempt = 0
-    with nullcontext(client) if client is not None else httpx.Client() as session:
+    context = nullcontext(client) if client is not None else httpx.Client()
+    with context as session:
         while True:
             attempt += 1
             path, body = build_request(schema, resolved, content, guidance)
@@ -125,7 +126,8 @@ async def extract_async[T: BaseModel](
     content = await load_async(source, media_type)
     guidance = instructions
     attempt = 0
-    async with nullcontext(client) if client is not None else httpx.AsyncClient() as session:
+    context = nullcontext(client) if client is not None else httpx.AsyncClient()
+    async with context as session:
         while True:
             attempt += 1
             path, body = build_request(schema, resolved, content, guidance)

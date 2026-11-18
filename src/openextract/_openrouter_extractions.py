@@ -110,17 +110,15 @@ def _field_spec(name: str, field: FieldInfo, instructions: str | None) -> dict[s
 
 
 def _infer_field(name: str, annotation: Any) -> dict[str, Any]:
-    if get_origin(annotation) in (Union, UnionType):
-        members = [member for member in get_args(annotation) if member is not NoneType]
-        if len(members) == 1:
-            annotation = members[0]
-    annotation = _unannotated(annotation)
+    annotation = _strip_annotated(_unwrap_optional(annotation))
     if spec := _scalar_spec(annotation):
         return spec
-    if get_origin(annotation) is list and len(items := get_args(annotation)) == 1:
-        spec = _scalar_spec(_unannotated(items[0]))
-        if spec and spec["type"] in _LIST_ITEMS:
-            return {**spec, "type": "list", "items": spec["type"]}
+    if get_origin(annotation) is list:
+        item_args = get_args(annotation)
+        if len(item_args) == 1:
+            item_spec = _scalar_spec(_strip_annotated(item_args[0]))
+            if item_spec and item_spec["type"] in _LIST_ITEMS:
+                return {**item_spec, "type": "list", "items": item_spec["type"]}
     raise TypeError(
         f"OpenRouter Extractions cannot infer a field type for {name!r}. "
         "Use a supported scalar or list, set a compatible OpenRouterField(type=...), "
@@ -128,7 +126,15 @@ def _infer_field(name: str, annotation: Any) -> dict[str, Any]:
     )
 
 
-def _unannotated(annotation: Any) -> Any:
+def _unwrap_optional(annotation: Any) -> Any:
+    if get_origin(annotation) in (Union, UnionType):
+        members = [member for member in get_args(annotation) if member is not NoneType]
+        if len(members) == 1:
+            return members[0]
+    return annotation
+
+
+def _strip_annotated(annotation: Any) -> Any:
     return get_args(annotation)[0] if get_origin(annotation) is Annotated else annotation
 
 

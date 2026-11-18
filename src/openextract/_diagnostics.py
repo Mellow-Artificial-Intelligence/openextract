@@ -2,7 +2,7 @@
 
 import json
 from collections.abc import Iterable
-from typing import Any
+from typing import Any, NamedTuple
 
 import httpx
 from pydantic import ValidationError
@@ -85,6 +85,14 @@ def request_error(error: httpx.RequestError, attempts: int) -> ModelError:
     )
 
 
+class _ErrorDetails(NamedTuple):
+    provider: str | None
+    code: str | int | None
+    finish_reason: str | None
+    native_finish_reason: str | None
+    message: str | None
+
+
 def has_error_envelope(payload: dict[str, Any]) -> bool:
     """Whether a 2xx response body carries a provider or generation error."""
     if payload.get("error") is not None:
@@ -97,48 +105,61 @@ def provider_error(
     payload: dict[str, Any], status_code: int, secrets: Iterable[str] = ()
 ) -> ModelError:
     """Format an HTTP failure or an error envelope with redacted credentials."""
-    choice = _first_choice(payload)
-    error = payload.get("error")
-    if error is None:
-        error = choice.get("error")
-    finish = _text(choice.get("finish_reason"))
-    native = _text(choice.get("native_finish_reason"))
-    succeeded = 200 <= status_code < 300
+    raw = _extract_error_details(payload)
+    next_step = _next_step(status_code, raw.code, raw.native_finish_reason)
+    ordered_secrets = sorted({secret for secret in secrets if secret}, key=len, reverse=True)
 
-    fields = _object(error)
-    metadata = _object(fields.get("metadata"))
-    provider = _text(metadata.get("provider_name")) or _text(payload.get("provider"))
-    code = fields.get("code", fields.get("type"))
-    if type(code) not in (str, int):
-        code = None
-    message = _text(fields.get("message")) or _text(error) or _text(payload.get("message"))
-    if upstream := _upstream_message(metadata.get("raw")):
-        message = f"{message}: {upstream}" if message else upstream
+    provider = _redact(raw.provider, ordered_secrets)
+    code = _redact(raw.code, ordered_secrets) if isinstance(raw.code, str) else raw.code
+    finish_reason = _redact(raw.finish_reason, ordered_secrets)
+    native_finish_reason = _redact(raw.native_finish_reason, ordered_secrets)
+    details = _redact(raw.message, ordered_secrets)
 
-    secrets = sorted({secret for secret in secrets if secret}, key=len, reverse=True)
     facts = {
         "Provider": provider,
         "Code": code,
-        "Finish reason": finish,
-        "Native finish reason": native,
-        "Details": message,
+        "Finish reason": finish_reason,
+        "Native finish reason": native_finish_reason,
+        "Details": details,
     }
+    succeeded = 200 <= status_code < 300
+    heading = (
+        "Model provider failed." if succeeded else f"Model provider returned HTTP {status_code}."
+    )
     lines = [
-        "Model provider failed." if succeeded else f"Model provider returned HTTP {status_code}.",
-        *(
-            f"{label}: {_redact(str(fact), secrets)}"
-            for label, fact in facts.items()
-            if fact is not None
-        ),
-        "Next step: " + _next_step(status_code, code, native),
+        heading,
+        *(f"{label}: {value}" for label, value in facts.items() if value is not None),
+        f"Next step: {next_step}",
     ]
     return ModelError(
         "\n".join(lines),
         status_code=status_code,
-        code=_redact(code, secrets) if isinstance(code, str) else code,
-        provider=_redact(provider, secrets),
-        finish_reason=_redact(finish, secrets),
-        native_finish_reason=_redact(native, secrets),
+        code=code,
+        provider=provider,
+        finish_reason=finish_reason,
+        native_finish_reason=native_finish_reason,
+    )
+
+
+def _extract_error_details(payload: dict[str, Any]) -> _ErrorDetails:
+    choice = _first_choice(payload)
+    error = payload.get("error")
+    if error is None:
+        error = choice.get("error")
+    fields = _object(error)
+    metadata = _object(fields.get("metadata"))
+    provider = _text(metadata.get("provider_name")) or _text(payload.get("provider"))
+    raw_code = fields.get("code", fields.get("type"))
+    code = raw_code if isinstance(raw_code, (str, int)) and not isinstance(raw_code, bool) else None
+    message = _text(fields.get("message")) or _text(error) or _text(payload.get("message"))
+    if upstream := _upstream_message(metadata.get("raw")):
+        message = f"{message}: {upstream}" if message else upstream
+    return _ErrorDetails(
+        provider=provider,
+        code=code,
+        finish_reason=_text(choice.get("finish_reason")),
+        native_finish_reason=_text(choice.get("native_finish_reason")),
+        message=message,
     )
 
 

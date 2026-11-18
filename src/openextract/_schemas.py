@@ -110,7 +110,11 @@ def _reject_recursion(root: Schema, node: Schema, followed: tuple[str, ...]) -> 
             continue
         if not ref.startswith("#/") or ref in followed:
             raise ValueError("Anthropic JSON output does not support external or recursive refs.")
-        target = root
-        for key in ref[2:].split("/"):
-            target = target[key.replace("~1", "/").replace("~0", "~")]
-        _reject_recursion(root, target, (*followed, ref))
+        _reject_recursion(root, _resolve_ref(root, ref), (*followed, ref))
+
+
+def _resolve_ref(root: Schema, ref: str) -> Schema:
+    target = root
+    for key in ref[2:].split("/"):
+        target = target[key.replace("~1", "/").replace("~0", "~")]
+    return target
