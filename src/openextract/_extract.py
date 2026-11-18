@@ -153,9 +153,12 @@ def _feedback(
     error: Exception, attempt: int, model: ResolvedModel, instructions: str | None
 ) -> str:
     """Return instructions for the next validation attempt, or raise the final failure."""
+    is_decisions = model.api.endswith("-decisions")
     if not isinstance(error, ValidationError):
-        raise SchemaValidationError(invalid_response_message(error)) from error
-    if attempt > model.config.validation_retries:
+        context = "decision answers" if is_decisions else "model response"
+        raise SchemaValidationError(invalid_response_message(error, context=context)) from error
+    retries = 0 if is_decisions else model.config.validation_retries
+    if attempt > retries:
         raise SchemaValidationError(validation_message(error, attempt)) from error
     # The details name the failing fields without echoing the provider's raw output.
     return (

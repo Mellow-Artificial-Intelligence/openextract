@@ -32,11 +32,18 @@ _ASSET_FORMATS = {
 _REQUEST_FIELDS = {"model", "state", "assets", "fields"}
 
 
+@dataclass(frozen=True, init=False)
 class OpenRouterField:
     """Set native Extractions field options in a Pydantic `Annotated` field."""
 
+    options: dict[str, Any]
+
     def __init__(self, **options: Any) -> None:
-        self.options = options
+        object.__setattr__(self, "options", options)
+
+    def __repr__(self) -> str:
+        items = ", ".join(f"{key}={value!r}" for key, value in self.options.items())
+        return f"OpenRouterField({items})"
 
 
 @dataclass(frozen=True)

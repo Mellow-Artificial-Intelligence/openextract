@@ -221,65 +221,74 @@ def test_settings_cannot_replace_request_structure(provider, api, settings):
     assert provider.requests == []
 
 
+class StrictInvoice(BaseModel):
+    model_config = ConfigDict(strict=True)
+
+    issued: date
+    total: Decimal
+    quantity: int
+
+
+class Card(BaseModel):
+    kind: Literal["card"]
+    last_four: str
+
+
+class Cash(BaseModel):
+    kind: Literal["cash"]
+    currency: str
+
+
+class TaggedReceipt(BaseModel):
+    payments: list[Annotated[Card | Cash, Field(discriminator="kind")]]
+
+
+STRICT_JSON_APIS = [
+    ("responses", None, "responses", "text.format.schema"),
+    ("chat", "json_schema", "chat-json", "response_format.json_schema.schema"),
+]
+
+
 @pytest.mark.parametrize("api", APIS)
-@pytest.mark.parametrize("quantity", [2, "2"], ids=["valid", "invalid"])
-async def test_strict_types_keep_json_validation_semantics(run, provider, api, quantity):
-    class StrictInvoice(BaseModel):
-        model_config = ConfigDict(strict=True)
+async def test_strict_types_accept_json_encoded_dates_and_decimals(run, provider, api):
+    provider.reply(output(api, {"issued": "2026-11-10", "total": "12.50", "quantity": 2}))
+    expected = StrictInvoice(issued=date(2026, 11, 10), total=Decimal("12.50"), quantity=2)
+    assert await run(StrictInvoice, custom(api), b"Invoice") == expected
 
-        issued: date
-        total: Decimal
-        quantity: int
 
-    provider.reply(output(api, {"issued": "2026-11-10", "total": "12.50", "quantity": quantity}))
-    if quantity == 2:
-        expected = StrictInvoice(issued=date(2026, 11, 10), total=Decimal("12.50"), quantity=2)
-        assert await run(StrictInvoice, custom(api), b"Invoice") == expected
-        return
+@pytest.mark.parametrize("api", APIS)
+async def test_strict_types_reject_coerced_primitives(run, provider, api):
+    provider.reply(output(api, {"issued": "2026-11-10", "total": "12.50", "quantity": "2"}))
     with pytest.raises(SchemaValidationError) as error:
         await run(StrictInvoice, custom(api), b"Invoice")
     assert isinstance(error.value.__cause__, ValidationError)
     assert [detail["loc"] for detail in error.value.__cause__.errors()] == [("quantity",)]
 
 
-@pytest.mark.parametrize("api", ["responses", "chat"])
-@pytest.mark.parametrize("kind", ["card", "unknown"], ids=["valid", "invalid"])
-async def test_tagged_unions_in_strict_output(run, provider, api, kind):
-    class Card(BaseModel):
-        kind: Literal["card"]
-        last_four: str
-
-    class Cash(BaseModel):
-        kind: Literal["cash"]
-        currency: str
-
-    class Receipt(BaseModel):
-        payments: list[Annotated[Card | Cash, Field(discriminator="kind")]]
-
-    original = Receipt.model_json_schema()
-    value = {"payments": [{"kind": kind, "last_four": "1234"}]}
-    if api == "chat":
-        model, reply, field = (
-            custom(api, output_mode="json_schema"),
-            output("chat-json", value),
-            "response_format.json_schema.schema",
-        )
-    else:
-        model, reply, field = custom(api), output(api, value), "text.format.schema"
-    provider.reply(reply)
-    if kind == "card":
-        expected = Receipt(payments=[Card(kind="card", last_four="1234")])
-        assert await run(Receipt, model, b"Receipt") == expected
-    else:
-        with pytest.raises(SchemaValidationError) as error:
-            await run(Receipt, model, b"Receipt")
-        assert error.value.__cause__.errors()[0]["type"] == "union_tag_invalid"
-    schema = dig(provider.bodies[0], field)
+@pytest.mark.parametrize("api,output_mode,reply_api,schema_path", STRICT_JSON_APIS)
+async def test_strict_output_adapts_and_validates_tagged_unions(
+    run, provider, api, output_mode, reply_api, schema_path
+):
+    original = TaggedReceipt.model_json_schema()
+    provider.reply(output(reply_api, {"payments": [{"kind": "card", "last_four": "1234"}]}))
+    result = await run(TaggedReceipt, custom(api, output_mode=output_mode), b"Receipt")
+    assert result == TaggedReceipt(payments=[Card(kind="card", last_four="1234")])
+    schema = dig(provider.bodies[0], schema_path)
     union = schema["properties"]["payments"]["items"]
     assert "discriminator" not in union and "oneOf" not in union
     assert union["anyOf"] == original["properties"]["payments"]["items"]["oneOf"]
     assert all(child["additionalProperties"] is False for child in schema["$defs"].values())
-    assert Receipt.model_json_schema() == original
+    assert TaggedReceipt.model_json_schema() == original
+
+
+@pytest.mark.parametrize("api,output_mode,reply_api,_", STRICT_JSON_APIS)
+async def test_strict_output_rejects_invalid_union_tags(
+    run, provider, api, output_mode, reply_api, _
+):
+    provider.reply(output(reply_api, {"payments": [{"kind": "unknown", "last_four": "1234"}]}))
+    with pytest.raises(SchemaValidationError) as error:
+        await run(TaggedReceipt, custom(api, output_mode=output_mode), b"Receipt")
+    assert error.value.__cause__.errors()[0]["type"] == "union_tag_invalid"
 
 
 def test_strict_schema_requires_every_field_and_keeps_the_original():

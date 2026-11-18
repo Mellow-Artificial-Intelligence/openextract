@@ -106,6 +106,20 @@ def _build_responses(
     return "/responses", body
 
 
+def _read_responses(payload: dict[str, Any]) -> Any:
+    if payload.get("status") != "completed":
+        raise ValueError(_INCOMPLETE)
+    parts = [
+        part
+        for message in payload["output"]
+        if message["type"] == "message"
+        for part in message["content"]
+    ]
+    if any(part["type"] == "refusal" for part in parts):
+        raise ValueError("The model refused to extract the document.")
+    return "".join(part["text"] for part in parts if part["type"] == "output_text")
+
+
 def _build_chat(
     model: ResolvedModel, schema: Schema, content: Content, instructions: str | None
 ) -> Request:
@@ -122,6 +136,26 @@ def _build_chat(
     return "/chat/completions", body
 
 
+def _read_chat(payload: dict[str, Any]) -> Any:
+    choice = payload["choices"][0]
+    message = choice["message"]
+    # A forced function call can report a natural stop even with complete tool arguments.
+    if choice["finish_reason"] not in ("tool_calls", "stop") or message.get("refusal"):
+        raise ValueError(_INCOMPLETE_TOOL_CALL)
+    calls = [call["function"] for call in message.get("tool_calls", [])]
+    return _extract_tool_arguments(calls, "arguments")
+
+
+def _read_chat_json(payload: dict[str, Any]) -> Any:
+    choice = payload["choices"][0]
+    message = choice["message"]
+    if choice["finish_reason"] != "stop" or message.get("refusal") or message.get("tool_calls"):
+        raise ValueError("The model did not complete a JSON Schema response.")
+    if not isinstance(message["content"], str):
+        raise ValueError("Expected JSON text in the model response.")
+    return message["content"]
+
+
 def _build_cohere(
     model: ResolvedModel, schema: Schema, content: Content, instructions: str | None
 ) -> Request:
@@ -130,6 +164,12 @@ def _build_cohere(
     messages = [*_system_messages(instructions), _user_message(prompt, document)]
     output = {"type": "json_object", "schema": schema}
     return "/chat", {"model": model.model_name, "messages": messages, "response_format": output}
+
+
+def _read_cohere(payload: dict[str, Any]) -> Any:
+    if payload["finish_reason"].lower() != "complete":
+        raise ValueError(_INCOMPLETE)
+    return "".join(part["text"] for part in payload["message"]["content"] if part["type"] == "text")
 
 
 def _build_anthropic(
@@ -159,6 +199,25 @@ def _build_anthropic(
     return "/messages", body
 
 
+def _read_anthropic(payload: dict[str, Any]) -> Any:
+    if payload["stop_reason"] != "tool_use":
+        raise ValueError(_INCOMPLETE_TOOL_CALL)
+    calls = [part for part in payload["content"] if part["type"] == "tool_use"]
+    return _extract_tool_arguments(calls, "input")
+
+
+def _read_anthropic_json(payload: dict[str, Any]) -> Any:
+    if payload["stop_reason"] != "end_turn":
+        raise ValueError("The model refused or did not complete a JSON Schema response.")
+    parts = payload["content"]
+    if any(part["type"] == "tool_use" for part in parts):
+        raise ValueError("Unexpected tool call in a JSON Schema response.")
+    texts = [part["text"] for part in parts if part["type"] == "text"]
+    if len(texts) != 1 or not isinstance(texts[0], str):
+        raise ValueError("Expected one JSON text block in the model response.")
+    return texts[0]
+
+
 def _build_gemini(
     model: ResolvedModel, schema: Schema, content: Content, instructions: str | None
 ) -> Request:
@@ -185,6 +244,14 @@ def _build_gemini(
     return f"/models/{quote(model.model_name, safe='')}:generateContent", body
 
 
+def _read_gemini(payload: dict[str, Any]) -> Any:
+    candidate = payload["candidates"][0]
+    if candidate["finishReason"] != "STOP":
+        raise ValueError("The model response was blocked or incomplete.")
+    parts = candidate["content"]["parts"]
+    return "".join(part["text"] for part in parts if "text" in part and not part.get("thought"))
+
+
 def _build_ollama(
     model: ResolvedModel, schema: Schema, content: Content, instructions: str | None
 ) -> Request:
@@ -198,6 +265,12 @@ def _build_ollama(
     messages = [*_system_messages(instructions), message]
     body = {"model": model.model_name, "messages": messages, "format": schema, "stream": False}
     return "/api/chat", body
+
+
+def _read_ollama(payload: dict[str, Any]) -> Any:
+    if payload.get("done") is not True or payload.get("done_reason", "stop") != "stop":
+        raise ValueError(_INCOMPLETE)
+    return payload["message"]["content"]
 
 
 def _build_mistral_ocr(
@@ -214,6 +287,10 @@ def _build_mistral_ocr(
         "bbox_annotation_format": None,
         "include_image_base64": False,
     }
+
+
+def _read_mistral_ocr(payload: dict[str, Any]) -> Any:
+    return payload["document_annotation"]
 
 
 def _build_bedrock(
@@ -238,6 +315,14 @@ def _build_bedrock(
     if instructions:
         body["system"] = [{"text": instructions}]
     return f"/model/{quote(model.model_name, safe='')}/converse", body
+
+
+def _read_bedrock(payload: dict[str, Any]) -> Any:
+    if payload["stopReason"] != "tool_use":
+        raise ValueError(_INCOMPLETE_TOOL_CALL)
+    parts = payload["output"]["message"]["content"]
+    calls = [part["toolUse"] for part in parts if "toolUse" in part]
+    return _extract_tool_arguments(calls, "input")
 
 
 def _chat_document(content: Content, api: str) -> dict[str, Any]:
@@ -269,91 +354,6 @@ def _system_messages(instructions: str | None) -> list[dict[str, Any]]:
 
 def _unsupported_media_error(api: str, content: Content) -> ValueError:
     return ValueError(f"The {api} adapter does not support {content.media_type} inputs.")
-
-
-def _read_responses(payload: dict[str, Any]) -> Any:
-    if payload.get("status") != "completed":
-        raise ValueError(_INCOMPLETE)
-    parts = [
-        part
-        for message in payload["output"]
-        if message["type"] == "message"
-        for part in message["content"]
-    ]
-    if any(part["type"] == "refusal" for part in parts):
-        raise ValueError("The model refused to extract the document.")
-    return "".join(part["text"] for part in parts if part["type"] == "output_text")
-
-
-def _read_chat(payload: dict[str, Any]) -> Any:
-    choice = payload["choices"][0]
-    message = choice["message"]
-    # A forced function call can report a natural stop even with complete tool arguments.
-    if choice["finish_reason"] not in ("tool_calls", "stop") or message.get("refusal"):
-        raise ValueError(_INCOMPLETE_TOOL_CALL)
-    calls = [call["function"] for call in message.get("tool_calls", [])]
-    return _extract_tool_arguments(calls, "arguments")
-
-
-def _read_chat_json(payload: dict[str, Any]) -> Any:
-    choice = payload["choices"][0]
-    message = choice["message"]
-    if choice["finish_reason"] != "stop" or message.get("refusal") or message.get("tool_calls"):
-        raise ValueError("The model did not complete a JSON Schema response.")
-    if not isinstance(message["content"], str):
-        raise ValueError("Expected JSON text in the model response.")
-    return message["content"]
-
-
-def _read_anthropic(payload: dict[str, Any]) -> Any:
-    if payload["stop_reason"] != "tool_use":
-        raise ValueError(_INCOMPLETE_TOOL_CALL)
-    calls = [part for part in payload["content"] if part["type"] == "tool_use"]
-    return _extract_tool_arguments(calls, "input")
-
-
-def _read_anthropic_json(payload: dict[str, Any]) -> Any:
-    if payload["stop_reason"] != "end_turn":
-        raise ValueError("The model refused or did not complete a JSON Schema response.")
-    parts = payload["content"]
-    if any(part["type"] == "tool_use" for part in parts):
-        raise ValueError("Unexpected tool call in a JSON Schema response.")
-    texts = [part["text"] for part in parts if part["type"] == "text"]
-    if len(texts) != 1 or not isinstance(texts[0], str):
-        raise ValueError("Expected one JSON text block in the model response.")
-    return texts[0]
-
-
-def _read_gemini(payload: dict[str, Any]) -> Any:
-    candidate = payload["candidates"][0]
-    if candidate["finishReason"] != "STOP":
-        raise ValueError("The model response was blocked or incomplete.")
-    parts = candidate["content"]["parts"]
-    return "".join(part["text"] for part in parts if "text" in part and not part.get("thought"))
-
-
-def _read_ollama(payload: dict[str, Any]) -> Any:
-    if payload.get("done") is not True or payload.get("done_reason", "stop") != "stop":
-        raise ValueError(_INCOMPLETE)
-    return payload["message"]["content"]
-
-
-def _read_cohere(payload: dict[str, Any]) -> Any:
-    if payload["finish_reason"].lower() != "complete":
-        raise ValueError(_INCOMPLETE)
-    return "".join(part["text"] for part in payload["message"]["content"] if part["type"] == "text")
-
-
-def _read_bedrock(payload: dict[str, Any]) -> Any:
-    if payload["stopReason"] != "tool_use":
-        raise ValueError(_INCOMPLETE_TOOL_CALL)
-    parts = payload["output"]["message"]["content"]
-    calls = [part["toolUse"] for part in parts if "toolUse" in part]
-    return _extract_tool_arguments(calls, "input")
-
-
-def _read_mistral_ocr(payload: dict[str, Any]) -> Any:
-    return payload["document_annotation"]
 
 
 def _extract_tool_arguments(calls: list[dict[str, Any]], arguments_key: str) -> Any:

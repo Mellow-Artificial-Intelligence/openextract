@@ -205,6 +205,13 @@ def test_invalid_answer_envelopes_raise_schema_error(provider, answers):
         extract(Receipt, configured(CLAIRIC), "text")
 
 
+def test_openrouter_field_has_value_equality_and_readable_repr():
+    field = OpenRouterField(decimals=2, unit="USD")
+    assert field == OpenRouterField(decimals=2, unit="USD")
+    assert field != OpenRouterField(decimals=0, unit="USD")
+    assert repr(field) == "OpenRouterField(decimals=2, unit='USD')"
+
+
 def test_truncated_input_requires_metadata_opt_in(provider):
     provider.reply({"truncated": True, "answers": {"vendor": {"value": "Acme"}}})
     with pytest.raises(SchemaValidationError, match="read only part of the source"):

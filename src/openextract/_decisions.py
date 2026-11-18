@@ -9,12 +9,10 @@ import typing
 from enum import Enum
 from typing import Any, Literal, TypeGuard
 
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel
 from pydantic.fields import FieldInfo
 
 from ._content import PROMPT, Content
-from ._diagnostics import invalid_response_message, validation_message
-from .exceptions import SchemaValidationError
 from .models import ResolvedModel
 
 _YES_THRESHOLD = 0.5
@@ -33,23 +31,17 @@ def request(
 
 
 def parse[T: BaseModel](schema: type[T], model: ResolvedModel, payload: dict[str, Any]) -> T:
-    """Validate one answer per field. Invalid answers fail without a validation retry."""
+    """Validate one answer per schema field."""
     is_openai = model.api == "openai-decisions"
     fields = schema.model_fields
-    try:
-        answers = _answer_map(payload["answers"], is_openai=is_openai)
-        if answers.keys() != fields.keys():
-            raise ValueError("Expected exactly one answer for every schema field.")
-        values = {
-            name: _parse_answer(name, fields[name], answer, is_openai=is_openai)
-            for name, answer in answers.items()
-        }
-        return schema.model_validate(values, by_name=True)
-    except ValidationError as exc:
-        raise SchemaValidationError(validation_message(exc, 1)) from exc
-    except (LookupError, TypeError, ValueError, AttributeError) as exc:
-        message = invalid_response_message(exc, context="decision answers")
-        raise SchemaValidationError(message) from exc
+    answers = _answer_map(payload["answers"], is_openai=is_openai)
+    if answers.keys() != fields.keys():
+        raise ValueError("Expected exactly one answer for every schema field.")
+    values = {
+        name: _parse_answer(name, fields[name], answer, is_openai=is_openai)
+        for name, answer in answers.items()
+    }
+    return schema.model_validate(values, by_name=True)
 
 
 def _build_openrouter(
