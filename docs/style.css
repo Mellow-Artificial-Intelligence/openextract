@@ -1,0 +1,104 @@
+:root {
+  color-scheme: dark;
+  --bg: #060607;
+  --ink: #ecebe8;
+  --muted: #7d8089;
+  --faint: #26282d;
+  --accent: #b9a4ff;
+  --serif: "Instrument Serif", "Iowan Old Style", Georgia, serif;
+  --mono: "Geist Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+  --gutter: clamp(20px, 3.4vw, 64px);
+  --edge: clamp(18px, 3.2dvh, 34px);
+}
+* { box-sizing: border-box; }
+body { position: relative; margin: 0; color: var(--ink); background: var(--bg); font: 13px/1.6 var(--mono); }
+[hidden] { display: none !important; }
+a { color: inherit; text-decoration: none; transition: color .2s; }
+button { color: inherit; font: inherit; cursor: pointer; background: none; border: 0; padding: 0; }
+:focus-visible { outline: 1px solid var(--ink); outline-offset: 4px; }
+/* Whole-page scroll regions take focus for keyboard scrolling; their controls keep the ring. */
+main:focus, .quickstart:focus { outline: none; }
+::selection { background: #3d3270; color: white; }
+.wrap { width: min(100% - 2 * var(--gutter), 1600px); margin-inline: auto; }
+.sr-only, .skip:not(:focus) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.skip:focus { position: fixed; top: 10px; left: 10px; background: var(--ink); color: var(--bg); padding: 8px; z-index: 10; }
+
+/* Labels share one voice: small, spaced, uppercase mono. */
+.label, nav, .phases button, .file-head, .links { font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; }
+.label { margin: 0; color: var(--muted); }
+h1, h2 { margin: 0; font: 400 clamp(46px, 5.6vw, 104px)/.92 var(--serif); letter-spacing: -.015em; }
+em { font-style: italic; color: var(--accent); }
+
+.mast { position: absolute; z-index: 2; top: var(--edge); right: var(--gutter); }
+nav { display: flex; gap: clamp(18px, 2.4vw, 36px); color: var(--muted); }
+nav a:hover, nav a[aria-current], .links a:hover { color: var(--ink); }
+
+/* The document and the stage stay still. Native scrolling supplies distance,
+   momentum, and touch gestures inside the walkthrough. */
+.exhibit { overflow: hidden; overscroll-behavior: none; }
+.exhibit body { height: 100dvh; overflow: hidden; }
+.exhibit main { height: 100%; overflow: auto; scrollbar-width: none; overscroll-behavior: contain; }
+.exhibit main::-webkit-scrollbar { display: none; }
+.exhibit main::after { content: ""; display: block; height: 240%; }
+.exhibit .stage { position: sticky; top: 0; height: 100%; display: grid; grid-template-rows: minmax(0, 1fr) auto; }
+
+.figure { margin: 0; height: 60vh; background: url(source-field.webp) center / contain no-repeat; }
+.exhibit .figure { position: absolute; inset: 0; height: auto; background: radial-gradient(closest-side, #ffffff08, transparent);
+  transition: opacity 1.2s, transform 1.6s cubic-bezier(.2, .7, .2, 1); }
+.exhibit .figure.resting { opacity: .16; transform: scale(1.12); }
+#field { display: block; width: 100%; height: 100%; }
+
+.scene, .quickstart, .rail { position: relative; z-index: 1; }
+.scene { display: flex; align-items: flex-end; justify-content: space-between; gap: 32px; padding-bottom: var(--edge); pointer-events: none; }
+.scene > * { pointer-events: auto; }
+.intro .label { margin-bottom: 18px; }
+.lede { max-width: 34ch; margin: 18px 0 0; color: var(--muted); }
+.specimen { min-width: 15em; padding-top: 12px; border-top: 1px solid var(--faint); }
+.specimen samp { display: block; margin-top: 6px; font-size: 14px; }
+
+.rail { padding-bottom: max(var(--edge), env(safe-area-inset-bottom)); }
+progress { appearance: none; display: block; width: 100%; height: 1px; border: 0; background: var(--faint); color: var(--ink); }
+progress::-webkit-progress-bar { background: var(--faint); }
+progress::-webkit-progress-value { background: var(--ink); }
+progress::-moz-progress-bar { background: var(--ink); }
+.phases { display: flex; justify-content: space-between; }
+.phases button { padding: 12px 0 0; color: var(--muted); transition: color .2s; }
+.phases button small { margin-right: 6px; font-size: inherit; opacity: .55; }
+.phases button[aria-current], .phases button:hover { color: var(--ink); }
+
+.quickstart { min-height: 0; overflow: auto; display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1fr); gap: 32px 8%;
+  align-content: safe center; align-items: center; padding-block: calc(var(--edge) + 40px) 24px; }
+.quickstart p:not(.label) { max-width: 40ch; margin: 18px 0 0; color: var(--muted); }
+.quickstart h2 { margin-top: 18px; }
+.quickstart code { color: var(--ink); }
+.command { display: flex; align-items: baseline; gap: 14px; width: fit-content; margin-top: 32px; padding-bottom: 10px; border-bottom: 1px solid var(--faint); font-size: 14px; }
+.command > span { color: var(--muted); }
+.command button { color: var(--muted); font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; }
+.command button:hover { color: var(--ink); }
+.links { display: flex; flex-wrap: wrap; gap: 10px 26px; margin-top: 26px; color: var(--muted); }
+.example { min-width: 0; border-block: 1px solid var(--faint); }
+.file-head, .output { display: flex; justify-content: space-between; gap: 16px; padding-block: 12px; }
+.file-head { color: var(--muted); border-bottom: 1px solid var(--faint); }
+pre { overflow: auto; margin: 0; padding-block: 20px; font: clamp(12.5px, .95vw, 14.5px)/1.75 var(--mono); color: #a9acb4; tab-size: 4; }
+pre .k { color: var(--muted); }
+pre .t, pre .f { color: var(--ink); }
+pre .s { color: var(--accent); }
+.output { border-top: 1px solid var(--faint); justify-content: flex-start; color: var(--muted); }
+.output samp { color: var(--ink); }
+
+@media (max-width: 760px) and (orientation: portrait) {
+  .exhibit .figure { inset: 4% 0 36%; }
+  .scene { flex-direction: column; align-items: stretch; justify-content: flex-end; gap: 20px; }
+  h1, h2 { font-size: clamp(42px, 13vw, 64px); }
+  .intro .label { margin-bottom: 12px; }
+  .lede { margin-top: 12px; }
+  .specimen { min-width: 0; }
+  .quickstart { display: block; padding-top: calc(var(--edge) + 36px); }
+  .example { margin-top: 36px; }
+  .phases small { display: none; }
+}
+@media (max-height: 520px) and (orientation: landscape) {
+  h1 { font-size: 40px; }
+  .intro .label { margin-bottom: 8px; }
+  .lede { margin-top: 8px; }
+}
