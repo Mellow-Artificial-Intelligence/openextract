@@ -4,7 +4,7 @@
   --ink: #ecebe8;
   --muted: #7d8089;
   --faint: #26282d;
-  --blue: #9db1ff;
+  --accent: #b9a4ff;
   --serif: "Instrument Serif", "Iowan Old Style", Georgia, serif;
   --mono: "Geist Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
   --gutter: clamp(20px, 3.4vw, 64px);
@@ -18,7 +18,7 @@ button { color: inherit; font: inherit; cursor: pointer; background: none; borde
 :focus-visible { outline: 1px solid var(--ink); outline-offset: 4px; }
 /* Whole-page scroll regions take focus for keyboard scrolling; their controls keep the ring. */
 main:focus, .quickstart:focus { outline: none; }
-::selection { background: #33407a; color: white; }
+::selection { background: #3d3270; color: white; }
 .wrap { width: min(100% - 2 * var(--gutter), 1600px); margin-inline: auto; }
 .sr-only, .skip:not(:focus) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 .skip:focus { position: fixed; top: 10px; left: 10px; background: var(--ink); color: var(--bg); padding: 8px; z-index: 10; }
@@ -27,7 +27,7 @@ main:focus, .quickstart:focus { outline: none; }
 .label, nav, .phases button, .file-head, .links { font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; }
 .label { margin: 0; color: var(--muted); }
 h1, h2 { margin: 0; font: 400 clamp(46px, 5.6vw, 104px)/.92 var(--serif); letter-spacing: -.015em; }
-em { font-style: italic; color: var(--blue); }
+em { font-style: italic; color: var(--accent); }
 
 .mast { position: absolute; z-index: 2; top: var(--edge); right: var(--gutter); }
 nav { display: flex; gap: clamp(18px, 2.4vw, 36px); color: var(--muted); }
@@ -43,7 +43,7 @@ nav a:hover, nav a[aria-current], .links a:hover { color: var(--ink); }
 .exhibit .stage { position: sticky; top: 0; height: 100%; display: grid; grid-template-rows: minmax(0, 1fr) auto; }
 
 .figure { margin: 0; height: 60vh; background: url(source-field.webp) center / contain no-repeat; }
-.exhibit .figure { position: absolute; inset: 0; height: auto; background: radial-gradient(closest-side, #1a234033, transparent);
+.exhibit .figure { position: absolute; inset: 0; height: auto; background: radial-gradient(closest-side, #ffffff08, transparent);
   transition: opacity 1.2s, transform 1.6s cubic-bezier(.2, .7, .2, 1); }
 .exhibit .figure.resting { opacity: .16; transform: scale(1.12); }
 #field { display: block; width: 100%; height: 100%; }
@@ -82,7 +82,7 @@ progress::-moz-progress-bar { background: var(--ink); }
 pre { overflow: auto; margin: 0; padding-block: 20px; font: clamp(12.5px, .95vw, 14.5px)/1.75 var(--mono); color: #a9acb4; tab-size: 4; }
 pre .k { color: var(--muted); }
 pre .t, pre .f { color: var(--ink); }
-pre .s { color: var(--blue); }
+pre .s { color: var(--accent); }
 .output { border-top: 1px solid var(--faint); justify-content: flex-start; color: var(--muted); }
 .output samp { color: var(--ink); }
 

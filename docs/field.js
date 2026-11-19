@@ -138,10 +138,16 @@ function setupField() {
   const lastScene = scenes.length;
   const reduce = matchMedia("(prefers-reduced-motion: reduce)");
   const points = makeField();
+  // Particles ramp from a deep shade of the page accent, through the accent, to near white.
+  const accent = getComputedStyle(canvas).getPropertyValue("--accent").trim().match(/\w\w/g).map(hex => parseInt(hex, 16));
   const palette = Array.from({length: 64}, (_, i) => {
     const t = i / 63;
-    return "rgb(" + Math.round(18 + 222 * t ** 2.6) + "," +
-      Math.round(36 + 206 * t ** 1.5) + "," + Math.round(92 + 163 * t ** .8) + ")";
+    const toAccent = Math.min(1, t / .7) ** 1.3;
+    const toWhite = Math.max(0, (t - .7) / .3) ** 1.4;
+    return "rgb(" + accent.map(c => {
+      const deep = c * .12;
+      return Math.round(deep + (c - deep) * toAccent + (246 - c) * toWhite);
+    }) + ")";
   });
   const glow = document.createElement("canvas");
   const glowCtx = glow.getContext("2d");
