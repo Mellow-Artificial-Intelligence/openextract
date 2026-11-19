@@ -16,13 +16,13 @@ ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "examples/fixtures/invoice.txt"
 EXPECTED = {"vendor": "Acme Paper Co.", "total": "120.00", "currency": "USD"}
 README_EXAMPLES = re.findall(r"```python\n(.*?)```", (ROOT / "README.md").read_text(), re.S)
-LANDING_EXAMPLE = html.unescape(
-    re.search(
-        r'aria-label="Python extraction example"><code>(.*?)</code>',
-        (ROOT / "docs/index.html").read_text(),
-        re.S,
-    )[1]
-)
+LANDING_SNIPPET = re.search(
+    r'aria-label="Python extraction example"><code>(.*?)</code>',
+    (ROOT / "docs/index.html").read_text(),
+    re.S,
+)[1]
+# The landing page wraps tokens in highlighting spans; strip them to get runnable code.
+LANDING_EXAMPLE = html.unescape(re.sub(r"<[^>]+>", "", LANDING_SNIPPET))
 
 
 @pytest.mark.parametrize("entry", ["readme", "landing", "script", "script_path", "script_url"])
