@@ -8,6 +8,12 @@ timing when that is known.
 
 ## [Unreleased]
 
+## [2.4.0] - 2026-11-18
+
+### Changed
+- Redesigned the landing page around a 3D walkthrough of a single extraction, from
+  source document through schema to typed result.
+
 ## [2.3.0] - 2026-11-18
 
 ### Added
@@ -616,7 +622,8 @@ timing when that is known.
 ## [0.1.1] - 2025-09-10
 - Merge pull request #12 from Mellow-Artificial-Intelligence/new-release.
 
-[Unreleased]: https://github.com/Mellow-Artificial-Intelligence/openextract/compare/v2.3.0...HEAD
+[Unreleased]: https://github.com/Mellow-Artificial-Intelligence/openextract/compare/v2.4.0...HEAD
+[2.4.0]: https://github.com/Mellow-Artificial-Intelligence/openextract/compare/v2.3.0...v2.4.0
 [2.3.0]: https://github.com/Mellow-Artificial-Intelligence/openextract/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/Mellow-Artificial-Intelligence/openextract/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/Mellow-Artificial-Intelligence/openextract/compare/v2.0.0...v2.1.0
