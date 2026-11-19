@@ -40,7 +40,7 @@ nav a:hover, nav a[aria-current], .links a:hover { color: var(--ink); }
 .exhibit main { height: 100%; overflow: auto; scrollbar-width: none; overscroll-behavior: contain; }
 .exhibit main::-webkit-scrollbar { display: none; }
 .exhibit main::after { content: ""; display: block; height: 240%; }
-.exhibit .stage { position: sticky; top: 0; height: 100%; display: grid; grid-template-rows: minmax(0, 1fr) auto; }
+.exhibit .stage { position: sticky; top: 0; height: 100%; overflow: hidden; display: grid; grid-template-rows: minmax(0, 1fr) auto; }
 
 .figure { margin: 0; height: 60vh; background: url(source-field.webp) center / contain no-repeat; }
 .exhibit .figure { position: absolute; inset: 0; height: auto; background: radial-gradient(closest-side, #ffffff08, transparent);
