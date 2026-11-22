@@ -8,6 +8,11 @@ timing when that is known.
 
 ## [Unreleased]
 
+### Added
+- Gemini document page and content-layer selection through
+  `Model(settings={"documentMetadata": ...})` for PDFs, Word, ODT, and presentations,
+  without new dependencies or extraction arguments.
+
 ## [2.4.0] - 2026-11-18
 
 ### Changed

@@ -229,6 +229,10 @@ def _build_gemini(
     else:
         raise _unsupported_media_error("gemini", content)
     settings = dict(model.config.settings)
+    if "documentMetadata" in settings:
+        if media not in _GEMINI_DOCUMENTS - _GEMINI_SPREADSHEETS:
+            raise ValueError("documentMetadata requires a PDF, document, or presentation input.")
+        document["documentMetadata"] = settings.pop("documentMetadata")
     if "spreadsheetMetadata" in settings:
         if media not in _GEMINI_SPREADSHEETS:
             raise ValueError("spreadsheetMetadata requires an XLSX, XLS, or ODS input.")

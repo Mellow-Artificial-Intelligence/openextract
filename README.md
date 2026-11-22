@@ -156,7 +156,7 @@ invoice = extract(Invoice, model, Path("invoice.pdf"))
 | `api` | `responses`, `chat`, `anthropic`, `gemini`, `ollama`, `cohere`, `bedrock`, `mistral-ocr`, `openai-decisions`, `gemini-decisions`, `openrouter-decisions`, or `openrouter-extractions`. |
 | `base_url` | Includes the API version, such as `https://host/v1`. Built-in providers also read `OPENAI_BASE_URL`, `ANTHROPIC_BASE_URL`, `GOOGLE_BASE_URL`, `OPENROUTER_BASE_URL`, `GROQ_BASE_URL`, `MISTRAL_BASE_URL`, `XAI_BASE_URL`, `CEREBRAS_BASE_URL`, `HF_BASE_URL`, `COHERE_BASE_URL`, `BEDROCK_BASE_URL`, and `OLLAMA_BASE_URL`. |
 | `api_key`, `headers` | Credentials belong here, never in the URL. Explicit values win over the environment, and your headers win over generated ones. Omit `api_key` for keyless endpoints. |
-| `settings` | Generation parameters in the provider's own names. They go to the top level of the request, except Gemini (`generationConfig`, with `spreadsheetMetadata` on the input part), Ollama sampling (`settings["options"]`), and Bedrock inference (`settings["inferenceConfig"]`). Anthropic's `max_tokens` defaults to 4096. Request structure and schema fields cannot be replaced, streaming is not supported, and Decisions accept no settings. |
+| `settings` | Generation parameters in the provider's own names. They go to the top level of the request, except Gemini (`generationConfig`, with `documentMetadata` and `spreadsheetMetadata` on the input part), Ollama sampling (`settings["options"]`), and Bedrock inference (`settings["inferenceConfig"]`). Anthropic's `max_tokens` defaults to 4096. Request structure and schema fields cannot be replaced, streaming is not supported, and Decisions accept no settings. |
 | `timeout` | Seconds allowed for each model request. Defaults to 60. |
 | `max_retries` | Retries for transport failures and HTTP 408, 409, 429, 500, 502, 503, and 504, with exponential backoff or `Retry-After` capped at 30 seconds. Defaults to 2. Other errors and redirects fail immediately. |
 | `validation_retries` | Retries after output that fails your schema, with feedback that omits raw values. Defaults to 1. Each attempt has its own HTTP retry budget. Refusals, truncated output, and malformed responses fail immediately. |
@@ -183,6 +183,37 @@ lengths and patterns, unsupported formats, and array limits move into field
 descriptions and are still enforced by your schema. Open-ended dictionaries,
 recursive references, tuples, and `allOf` raise `ValueError` before any request:
 use tool mode for those.
+
+## Gemini document page selection
+
+For PDFs, Word (DOCX, DOC, DOTX), ODT, and presentations (PPTX, PPT, ODP)
+on Gemini 3 and 4+ models, select pages and content layers through `documentMetadata`:
+
+```python
+model = Model(
+    "google:gemini-4-hydrogen",
+    settings={
+        "documentMetadata": {
+            "startPage": 3,
+            "endPage": 7,
+            "contentLayers": ["PAGE_TEXT"],
+        },
+    },
+)
+invoice = extract(Invoice, model, Path("invoices.pdf"))
+```
+
+The selector goes on the file part; other settings still go to `generationConfig`.
+Page numbers are 1-based and inclusive. Omit `startPage` to start at page 1 or
+`endPage` to end at the last page. `contentLayers` accepts `"PAGE_IMAGE"`,
+`"PAGE_TEXT"`, or both; when `documentMetadata` is present, Google defaults to
+`["PAGE_IMAGE"]`. An empty selector is forwarded unchanged. Other input types
+raise `ValueError` locally; Google validates selector values and model support.
+
+The entire file is still uploaded and full-file limits apply. Google processes
+and bills the selected slice. This does not add local parsing, upload management,
+media-resolution controls, or audio/video clipping. See Google's
+[document page options](https://aistudio.google.com/docs/document-processing?generate-content=true#page-options).
 
 ## Gemini spreadsheet selection
 
