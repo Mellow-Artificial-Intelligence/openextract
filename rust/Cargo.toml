@@ -1,0 +1,55 @@
+[package]
+name = "openextract"
+version = "2.4.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Extract structured data from documents, images, audio, and video using LLMs"
+license = "MIT"
+repository = "https://github.com/Mellow-Artificial-Intelligence/openextract"
+homepage = "https://mellow-artificial-intelligence.github.io/openextract/"
+readme = "README.md"
+keywords = ["llm", "extraction", "json-schema", "ai", "structured-data"]
+categories = ["api-bindings", "command-line-utilities", "parsing"]
+
+[features]
+default = ["cli"]
+cli = ["dep:clap"]
+
+[[bin]]
+name = "openextract"
+path = "src/main.rs"
+required-features = ["cli"]
+
+[dependencies]
+base64 = "0.22"
+clap = { version = "4", features = ["derive", "env"], optional = true }
+httpdate = "1"
+jsonschema = { version = "0.29", default-features = false }
+mime_guess = "2"
+percent-encoding = "2"
+reqwest = { version = "0.12", default-features = false, features = [
+    "json",
+    "rustls-tls",
+    "gzip",
+    "deflate",
+    "brotli",
+    "http2",
+    "charset",
+] }
+schemars = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+thiserror = "2"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "io-std"] }
+url = "2"
+
+[dev-dependencies]
+assert_cmd = "2"
+predicates = "3"
+tempfile = "3"
+wiremock = "0.6"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
