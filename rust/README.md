@@ -1,6 +1,6 @@
 # openextract (Rust)
 
-A Rust port and standalone single-binary CLI of [openextract](../README.md) (`v2.4.0`), built so AI agents and Rust programs can download one self-contained binary and extract validated structured JSON from documents, images, audio, video, URLs, and text using LLMs.
+A Rust port and standalone single-binary CLI of [openextract](../README.md) (`v2.5.0`), built so AI agents and Rust programs can download one self-contained binary and extract validated structured JSON from documents, images, audio, video, URLs, and text using LLMs.
 
 Every provider is called over plain HTTP (using `rustls`, with zero provider SDKs or OpenSSL system dependencies) with full 1:1 parity across all 12 provider APIs, bounded retries, local JSON Schema validation, and credential redaction.
 

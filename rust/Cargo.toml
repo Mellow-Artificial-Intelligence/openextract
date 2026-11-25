@@ -1,6 +1,6 @@
 [package]
 name = "openextract"
-version = "2.4.0"
+version = "2.5.0"
 edition = "2024"
 rust-version = "1.88"
 description = "Extract structured data from documents, images, audio, and video using LLMs"

@@ -8,6 +8,21 @@ timing when that is known.
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-11-25
+
+### Added
+- Rust port under `rust/`: an async library crate and a standalone `openextract` CLI.
+  The CLI prints JSON on stdout and diagnostics on stderr, and calls every provider
+  over plain HTTP with rustls. Rust CI pins the toolchain, checks the 1.88 MSRV,
+  and keeps the crate version in lockstep with this package.
+
+### Changed
+- Rust source-URL downloads are capped at 50 MiB. `Content-Length` is checked
+  before the body is read, and the body is streamed so a missing or short header
+  cannot exceed the cap. Redirects are limited to three and must stay on the
+  original host and port, including a rejection of credentialed targets,
+  `file:` URLs, and redirect loops.
+
 ## [2.4.0] - 2026-11-18
 
 ### Changed
@@ -622,7 +637,8 @@ timing when that is known.
 ## [0.1.1] - 2025-09-10
 - Merge pull request #12 from Mellow-Artificial-Intelligence/new-release.
 
-[Unreleased]: https://github.com/Mellow-Artificial-Intelligence/openextract/compare/v2.4.0...HEAD
+[Unreleased]: https://github.com/Mellow-Artificial-Intelligence/openextract/compare/v2.5.0...HEAD
+[2.5.0]: https://github.com/Mellow-Artificial-Intelligence/openextract/compare/v2.4.0...v2.5.0
 [2.4.0]: https://github.com/Mellow-Artificial-Intelligence/openextract/compare/v2.3.0...v2.4.0
 [2.3.0]: https://github.com/Mellow-Artificial-Intelligence/openextract/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/Mellow-Artificial-Intelligence/openextract/compare/v2.1.0...v2.2.0
