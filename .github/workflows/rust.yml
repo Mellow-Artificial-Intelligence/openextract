@@ -1,16 +1,16 @@
 name: Rust CI
 
+# Path filters live inside the jobs, not on this workflow. A path-filtered
+# workflow is skipped entirely, and a skipped required check blocks merge.
+# Each job below reports success when the pull request does not touch Rust,
+# so "Rust CI" (and the compile jobs) can be required without blocking
+# Python-only pull requests.
+
 on:
   push:
     branches: [main]
-    paths:
-      - "rust/**"
-      - ".github/workflows/rust.yml"
   pull_request:
     branches: [main]
-    paths:
-      - "rust/**"
-      - ".github/workflows/rust.yml"
   merge_group:
   workflow_dispatch:
 
@@ -25,28 +25,194 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  changes:
+    name: Detect Rust changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      rust: ${{ steps.filter.outputs.rust }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - id: filter
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mark() { echo "rust=$1" >> "$GITHUB_OUTPUT"; }
+
+          case "$EVENT_NAME" in
+            pull_request)
+              if [ -z "$BASE_SHA" ] || ! git fetch --no-tags origin "$BASE_SHA"; then
+                mark true
+                exit 0
+              fi
+              range="${BASE_SHA}...HEAD"
+              ;;
+            push)
+              zero=0000000000000000000000000000000000000000
+              if [ -z "$BEFORE_SHA" ] || [ "$BEFORE_SHA" = "$zero" ] || ! git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
+                mark true
+                exit 0
+              fi
+              range="${BEFORE_SHA}...HEAD"
+              ;;
+            *)
+              mark true
+              exit 0
+              ;;
+          esac
+
+          if git diff --name-only "$range" | grep -Eq '^(rust/|\.github/workflows/rust\.yml$)'; then
+            mark true
+          else
+            mark false
+          fi
+
+  version:
+    name: Crate version matches Python package
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Compare pyproject.toml and rust/Cargo.toml
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import tomllib
+          from pathlib import Path
+
+          python_version = tomllib.loads(Path("pyproject.toml").read_text())["project"]["version"]
+          crate_version = tomllib.loads(Path("rust/Cargo.toml").read_text())["package"]["version"]
+          print(f"Python {python_version}, Rust crate {crate_version}")
+          if python_version != crate_version:
+              raise SystemExit(
+                  f"version mismatch: pyproject.toml {python_version} != rust/Cargo.toml {crate_version}"
+              )
+          PY
+
   check:
     name: Format, clippy, and tests (${{ matrix.os }})
+    needs: changes
+    if: always() && needs.changes.result == 'success'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-    defaults:
-      run:
-        working-directory: rust
     steps:
+      - name: No Rust changes
+        if: needs.changes.outputs.rust != 'true'
+        run: echo "No Rust files changed. Reporting success so this check can be required."
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        if: needs.changes.outputs.rust == 'true'
         with:
           persist-credentials: false
-      - name: Ensure rustfmt and clippy components
-        run: rustup component add rustfmt clippy
+
+      - name: Read pinned toolchain
+        id: toolchain
+        if: needs.changes.outputs.rust == 'true'
+        shell: bash
+        run: |
+          channel=$(awk -F'"' '/^channel /{print $2; exit}' rust/rust-toolchain.toml)
+          test -n "$channel"
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+          echo "Pinned toolchain $channel"
+
+      - name: Install pinned Rust toolchain
+        if: needs.changes.outputs.rust == 'true'
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc
+        with:
+          toolchain: ${{ steps.toolchain.outputs.channel }}
+          components: rustfmt, clippy
+
       - name: Check formatting
-        run: cargo fmt --check
+        if: needs.changes.outputs.rust == 'true'
+        working-directory: rust
+        run: |
+          rustc --version
+          cargo fmt --check
+
       - name: Run clippy
+        if: needs.changes.outputs.rust == 'true'
+        working-directory: rust
         run: cargo clippy --locked --all-targets -- -D warnings
+
       - name: Check library build without CLI feature
+        if: needs.changes.outputs.rust == 'true'
+        working-directory: rust
         run: cargo check --locked --no-default-features
+
       - name: Run test suite
+        if: needs.changes.outputs.rust == 'true'
+        working-directory: rust
         run: cargo test --locked
+
+  msrv:
+    name: MSRV
+    needs: changes
+    if: always() && needs.changes.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: No Rust changes
+        if: needs.changes.outputs.rust != 'true'
+        run: echo "No Rust files changed. Reporting success so this check can be required."
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        if: needs.changes.outputs.rust == 'true'
+        with:
+          persist-credentials: false
+
+      - name: Read minimum supported Rust version
+        id: msrv
+        if: needs.changes.outputs.rust == 'true'
+        shell: bash
+        run: |
+          version=$(python3 -c "import tomllib; print(tomllib.load(open('rust/Cargo.toml','rb'))['package']['rust-version'])")
+          test -n "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "MSRV $version"
+
+      - name: Install MSRV toolchain
+        if: needs.changes.outputs.rust == 'true'
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc
+        with:
+          toolchain: ${{ steps.msrv.outputs.version }}
+
+      - name: Test on the minimum supported Rust version
+        if: needs.changes.outputs.rust == 'true'
+        working-directory: rust
+        env:
+          # rust/rust-toolchain.toml pins a newer toolchain. Override it so this
+          # job actually compiles with the declared rust-version.
+          RUSTUP_TOOLCHAIN: ${{ steps.msrv.outputs.version }}
+        run: |
+          rustc --version
+          cargo test --locked
+          cargo check --locked --no-default-features
+
+  rust:
+    name: Rust CI
+    needs: [changes, version, check, msrv]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Check required jobs
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "job results: $RESULTS"
+          for result in $RESULTS; do
+            [ "$result" = "success" ] || exit 1
+          done

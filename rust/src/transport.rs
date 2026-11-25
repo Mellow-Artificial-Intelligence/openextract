@@ -60,26 +60,25 @@ where
             .send()
             .await;
 
-        let retry_after: Option<String>;
-        match result {
+        let retry_after = match result {
             Err(err) => {
                 if attempt == model.config.max_retries || !is_transient_error(&err) {
                     return Err(request_error(err, (attempt + 1) as usize));
                 }
-                retry_after = None;
+                None
             }
             Ok(response) => {
                 let status = response.status().as_u16();
                 if attempt == model.config.max_retries || !RETRY_STATUSES.contains(&status) {
                     return read_payload(response, model, &url).await;
                 }
-                retry_after = response
+                response
                     .headers()
                     .get("retry-after")
                     .and_then(|v| v.to_str().ok())
-                    .map(str::to_string);
+                    .map(str::to_string)
             }
-        }
+        };
 
         let wait = compute_delay(attempt, retry_after.as_deref(), SystemTime::now());
         sleep_fn(wait).await;

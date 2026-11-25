@@ -257,3 +257,149 @@ async fn test_url_fetching_precedence_redirects_and_no_credentials() {
     assert!(msg.contains("Next step:"));
     assert!(!msg.contains("private-token"));
 }
+
+fn host_and_port(uri: &str) -> (String, u16) {
+    let (host, port) = uri.trim_start_matches("http://").split_once(':').unwrap();
+    (host.to_string(), port.parse().unwrap())
+}
+
+#[tokio::test]
+async fn test_url_same_host_redirect_chain_is_capped() {
+    let server = MockServer::start().await;
+    let base = server.uri();
+
+    // Three same-host hops are followed.
+    for (from, to) in [("/s0", "/s1"), ("/s1", "/s2"), ("/s2", "/s3.txt")] {
+        Mock::given(method("GET"))
+            .and(path(from))
+            .respond_with(
+                ResponseTemplate::new(302).insert_header("location", format!("{base}{to}")),
+            )
+            .mount(&server)
+            .await;
+    }
+    Mock::given(method("GET"))
+        .and(path("/s3.txt"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(b"Total due: 120.00"))
+        .mount(&server)
+        .await;
+    let content = load(Source::Url(format!("{base}/s0")), None).await.unwrap();
+    assert_eq!(content.text(), "Total due: 120.00");
+
+    // A fourth redirect is rejected and the final target is not requested.
+    for (from, to) in [
+        ("/f0", "/f1"),
+        ("/f1", "/f2"),
+        ("/f2", "/f3"),
+        ("/f3", "/f4.txt"),
+    ] {
+        Mock::given(method("GET"))
+            .and(path(from))
+            .respond_with(
+                ResponseTemplate::new(302).insert_header("location", format!("{base}{to}")),
+            )
+            .mount(&server)
+            .await;
+    }
+    let err = load(Source::Url(format!("{base}/f0")), None)
+        .await
+        .unwrap_err();
+    let msg = err.to_string();
+    assert!(msg.contains("too many redirects"), "{msg}");
+    assert!(msg.contains("Next step:"));
+    assert!(matches!(err, Error::Extraction { .. }));
+    let requested: Vec<String> = server
+        .received_requests()
+        .await
+        .unwrap()
+        .iter()
+        .map(|request| request.url.path().to_string())
+        .collect();
+    assert!(requested.contains(&"/f3".to_string()));
+    assert!(!requested.iter().any(|path| path == "/f4.txt"));
+}
+
+#[tokio::test]
+async fn test_url_redirects_reject_other_hosts_ports_credentials_and_loops() {
+    let server = MockServer::start().await;
+    let base = server.uri();
+    let (host, port) = host_and_port(&base);
+
+    let cases = [
+        (
+            "/cross",
+            "http://example.invalid/private-redirect-token".to_string(),
+            "original host",
+        ),
+        (
+            "/creds",
+            format!("http://user:super-secret@{host}:{port}/creds.txt"),
+            "credentials",
+        ),
+        (
+            "/port",
+            format!("http://{host}:1/other-port"),
+            "original port",
+        ),
+        ("/file", "file:///etc/passwd".to_string(), "http or https"),
+        ("/loop", format!("{base}/loop"), "redirect loop"),
+    ];
+    for (route, location, needle) in cases {
+        Mock::given(method("GET"))
+            .and(path(route))
+            .respond_with(ResponseTemplate::new(302).insert_header("location", location))
+            .mount(&server)
+            .await;
+        let err = load(
+            Source::Url(format!("{base}{route}?token=private-token")),
+            None,
+        )
+        .await
+        .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains(needle), "{route}: {msg}");
+        assert!(!msg.contains("private-token"), "{route}: {msg}");
+        assert!(!msg.contains("super-secret"), "{route}: {msg}");
+        assert!(!msg.contains("private-redirect-token"), "{route}: {msg}");
+        assert!(!msg.contains("passwd"), "{route}: {msg}");
+    }
+}
+
+#[tokio::test]
+async fn test_url_content_length_over_the_download_limit_is_rejected_immediately() {
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::time::Duration;
+
+    use openextract::content::MAX_DOWNLOAD_BYTES;
+
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let advertised = MAX_DOWNLOAD_BYTES + 1;
+    std::thread::spawn(move || {
+        let (mut sock, _) = listener.accept().unwrap();
+        sock.set_read_timeout(Some(Duration::from_secs(5))).ok();
+        let mut buf = [0u8; 2048];
+        let _ = sock.read(&mut buf);
+        let header = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\n\
+             Content-Length: {advertised}\r\nConnection: close\r\n\r\n"
+        );
+        let _ = sock.write_all(header.as_bytes());
+        // Hold the connection. A client that buffers the body waits here.
+        let _ = sock.read(&mut buf);
+    });
+
+    let result = tokio::time::timeout(
+        Duration::from_secs(2),
+        load(Source::Url(format!("http://{addr}/huge.bin")), None),
+    )
+    .await;
+    let err = result
+        .expect("Content-Length above the cap was not rejected before the body")
+        .unwrap_err();
+    let msg = err.to_string();
+    assert!(msg.contains("50 MiB download limit"), "{msg}");
+    assert!(msg.contains("Next step:"));
+    assert!(matches!(err, Error::Extraction { .. }));
+}

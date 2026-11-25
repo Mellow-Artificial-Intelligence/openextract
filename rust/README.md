@@ -4,6 +4,10 @@ A Rust port and standalone single-binary CLI of [openextract](../README.md) (`v2
 
 Every provider is called over plain HTTP (using `rustls`, with zero provider SDKs or OpenSSL system dependencies) with full 1:1 parity across all 12 provider APIs, bounded retries, local JSON Schema validation, and credential redaction.
 
+Source URLs are fetched by a separate client that does not send model credentials. It follows at most three redirects, and only to the same host and port (an `http` to `https` upgrade on the default ports is allowed). Downloads are capped at 50 MiB: `Content-Length` is checked before the body is read, and the body is streamed so a missing or short header cannot bypass the cap.
+
+The crate version in `Cargo.toml` tracks the Python package version in `pyproject.toml`. CI compares them and fails when they differ. The minimum supported Rust version is 1.88 (`let` chains; 1.85 does not compile this crate or its `wiremock` dev-dependency). `rust-toolchain.toml` pins the toolchain used for formatting and Clippy.
+
 ## Build & Install
 
 ```bash

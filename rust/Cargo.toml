@@ -2,7 +2,7 @@
 name = "openextract"
 version = "2.4.0"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.88"
 description = "Extract structured data from documents, images, audio, and video using LLMs"
 license = "MIT"
 repository = "https://github.com/Mellow-Artificial-Intelligence/openextract"
