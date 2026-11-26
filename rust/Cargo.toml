@@ -10,6 +10,15 @@ homepage = "https://mellow-artificial-intelligence.github.io/openextract/"
 readme = "README.md"
 keywords = ["llm", "extraction", "json-schema", "ai", "structured-data"]
 categories = ["api-bindings", "command-line-utilities", "parsing"]
+# Allowlist for `cargo publish`. rust-toolchain.toml pins a newer compiler than
+# rust-version and must not ship in the crate.
+include = [
+    "/src",
+    "/tests",
+    "/README.md",
+    "/LICENSE",
+    "/Cargo.lock",
+]
 
 [features]
 default = ["cli"]

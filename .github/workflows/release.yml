@@ -24,6 +24,10 @@ jobs:
     permissions:
       contents: write
       id-token: write
+    outputs:
+      publish: ${{ steps.check_release.outputs.publish }}
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -44,6 +48,7 @@ jobs:
         run: |
           if git ls-remote --exit-code --tags origin "refs/tags/v${VERSION}"; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
             echo "Tag v${VERSION} already exists"
             exit 0
           fi
@@ -51,9 +56,11 @@ jobs:
             "https://pypi.org/pypi/openextract/${VERSION}/json")
           if [ "$http_code" = "200" ]; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
             echo "Version ${VERSION} already exists on PyPI"
           elif [ "$http_code" = "404" ]; then
             echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "publish=true" >> "$GITHUB_OUTPUT"
           else
             echo "PyPI lookup failed with HTTP ${http_code}"
             exit 1
@@ -80,3 +87,227 @@ jobs:
           name: ${{ steps.version.outputs.tag }}
           generate_release_notes: true
           target_commitish: ${{ github.event.workflow_run.head_sha }}
+
+  rust-ci:
+    name: Wait for Rust CI
+    needs: release
+    if: ${{ needs.release.result == 'success' && needs.release.outputs.publish == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Wait until Rust CI passes for this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          # Python CI triggers this workflow. Crate publish and binary upload wait
+          # until the Rust workflow for the same commit has actually passed.
+          for attempt in $(seq 1 60); do
+            line=$(gh run list \
+              --repo "$GITHUB_REPOSITORY" \
+              --workflow rust.yml \
+              --commit "$SHA" \
+              --limit 1 \
+              --json status,conclusion,url \
+              --jq '.[0] | "\(.status // "missing")\t\(.conclusion // "-")\t\(.url // "-")"')
+            IFS=$'\t' read -r status conclusion url <<< "$line"
+            echo "Rust CI attempt ${attempt}: status=${status} conclusion=${conclusion} ${url}"
+            case "$status" in
+              completed)
+                if [ "$conclusion" = "success" ]; then
+                  exit 0
+                fi
+                echo "::error title=Rust CI ${conclusion}::The crate was not published and CLI binaries were not uploaded because Rust CI finished with ${conclusion} for ${SHA}. ${url}"
+                exit 1
+                ;;
+            esac
+            sleep 30
+          done
+          echo "::error title=Timed out waiting for Rust CI::No successful Rust CI run appeared for ${SHA} within 30 minutes."
+          exit 1
+
+  crates:
+    name: Publish crate
+    needs: [release, rust-ci]
+    if: ${{ needs.release.result == 'success' && needs.rust-ci.result == 'success' && needs.release.outputs.publish == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Require crates.io token
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CARGO_REGISTRY_TOKEN:-}" ]; then
+            echo "::error title=Missing CARGO_REGISTRY_TOKEN::The openextract crate was not published. Add a crates.io API token that can publish a new crate as the CARGO_REGISTRY_TOKEN repository secret, then re-run the failed jobs. Re-running the whole workflow will not retry this publish, because the version is already on PyPI. The PyPI publish and GitHub release were not blocked."
+            exit 1
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+
+      - name: Read pinned toolchain
+        id: toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          channel=$(awk -F'"' '/^channel /{print $2; exit}' rust/rust-toolchain.toml)
+          test -n "$channel"
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc
+        with:
+          toolchain: ${{ steps.toolchain.outputs.channel }}
+
+      - name: Publish to crates.io
+        working-directory: rust
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          RUSTUP_TOOLCHAIN: ${{ steps.toolchain.outputs.channel }}
+          VERSION: ${{ needs.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          set +e
+          output=$(cargo publish --locked 2>&1)
+          status=$?
+          set -e
+          printf '%s\n' "$output"
+          if [ "$status" -eq 0 ]; then
+            exit 0
+          fi
+          if printf '%s\n' "$output" | grep -Eq 'already exists on crates.io|already uploaded'; then
+            echo "openextract ${VERSION} is already on crates.io."
+            exit 0
+          fi
+          echo "::error title=crates.io publish failed::cargo publish failed for openextract ${VERSION}. The first publish needs a token that can create the crate, not only update an existing one."
+          exit "$status"
+
+  binaries:
+    name: CLI (${{ matrix.target }})
+    needs: release
+    if: ${{ needs.release.result == 'success' && needs.release.outputs.publish == 'true' }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            rustflags: ""
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+            rustflags: ""
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            rustflags: ""
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            rustflags: ""
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            rustflags: "-C target-feature=+crt-static"
+    defaults:
+      run:
+        shell: bash
+    env:
+      TARGET: ${{ matrix.target }}
+      VERSION: ${{ needs.release.outputs.version }}
+      RUSTFLAGS: ${{ matrix.rustflags }}
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+
+      - name: Read pinned toolchain
+        id: toolchain
+        run: |
+          set -euo pipefail
+          channel=$(awk -F'"' '/^channel /{print $2; exit}' rust/rust-toolchain.toml)
+          test -n "$channel"
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc
+        with:
+          toolchain: ${{ steps.toolchain.outputs.channel }}
+          targets: ${{ matrix.target }}
+
+      - name: Install musl linker
+        if: contains(matrix.target, 'linux-musl')
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y musl-tools file
+
+      - name: Build and package CLI
+        env:
+          RUSTUP_TOOLCHAIN: ${{ steps.toolchain.outputs.channel }}
+        run: bash .github/scripts/package-cli.sh
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: cli-${{ matrix.target }}
+          path: dist/openextract-*
+          if-no-files-found: error
+          compression-level: 0
+          overwrite: true
+
+  attach:
+    name: Attach CLI binaries
+    needs: [release, rust-ci, binaries]
+    if: ${{ needs.release.result == 'success' && needs.rust-ci.result == 'success' && needs.binaries.result == 'success' && needs.release.outputs.publish == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          pattern: cli-*
+          path: dist
+          merge-multiple: true
+
+      - name: Checksum and upload release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.release.outputs.tag }}
+          VERSION: ${{ needs.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          flat="${RUNNER_TEMP}/cli-assets"
+          mkdir -p "$flat"
+          find dist -type f \( -name 'openextract-*.tar.gz' -o -name 'openextract-*.zip' \) -exec cp {} "$flat/" \;
+          cd "$flat"
+          expected=(
+            "openextract-${VERSION}-x86_64-unknown-linux-musl.tar.gz"
+            "openextract-${VERSION}-aarch64-unknown-linux-musl.tar.gz"
+            "openextract-${VERSION}-x86_64-apple-darwin.tar.gz"
+            "openextract-${VERSION}-aarch64-apple-darwin.tar.gz"
+            "openextract-${VERSION}-x86_64-pc-windows-msvc.zip"
+          )
+          for name in "${expected[@]}"; do
+            if [ ! -f "$name" ]; then
+              echo "missing release archive: ${name}" >&2
+              ls -la >&2
+              exit 1
+            fi
+          done
+          extra=$(find . -maxdepth 1 -type f ! -name 'SHA256SUMS' | wc -l)
+          if [ "$extra" -ne "${#expected[@]}" ]; then
+            echo "expected ${#expected[@]} archives" >&2
+            ls -la >&2
+            exit 1
+          fi
+          sha256sum openextract-* | LC_ALL=C sort -k2 > SHA256SUMS
+          sha256sum -c SHA256SUMS
+          gh release upload "$TAG" openextract-* SHA256SUMS --repo "$GITHUB_REPOSITORY" --clobber
