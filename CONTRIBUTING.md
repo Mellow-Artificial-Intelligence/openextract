@@ -87,10 +87,32 @@ a missing key fails the selected case and names the variable to set.
 
 ## Releases
 
-Bump `version` in `pyproject.toml`, run `uv lock`, and move the `[Unreleased]` notes
-in `CHANGELOG.md` into a dated section. After CI passes on `main`,
-`.github/workflows/release.yml` publishes to PyPI and creates the GitHub release,
-but only when that version is new.
+Bump `version` in `pyproject.toml` and `rust/Cargo.toml` to the same value. Rust CI
+fails when they differ. Run `uv lock`, then from `rust/` run `cargo check` and commit
+`Cargo.lock` if the crate's own version in the lockfile changed. Move the
+`[Unreleased]` notes in `CHANGELOG.md` into a dated section.
+
+After CI passes on `main`, `.github/workflows/release.yml` runs only when that
+version is new: there is no `v<version>` tag and PyPI does not have that version.
+It publishes the Python package to PyPI and creates the GitHub release. After Rust
+CI has passed for that commit, it publishes the `openextract` crate with
+`cargo publish --locked` and attaches prebuilt CLI archives and `SHA256SUMS`. The
+targets are `x86_64-unknown-linux-musl`, `aarch64-unknown-linux-musl`,
+`x86_64-apple-darwin`, `aarch64-apple-darwin`, and `x86_64-pc-windows-msvc`. Linux
+archives are static musl binaries. The Windows archive is built with the static CRT.
+
+Publishing the crate reads the `CARGO_REGISTRY_TOKEN` repository secret. Create a
+crates.io API token that is allowed to publish a new crate (the first release
+creates `openextract`) and add the secret before merging a version bump. If the
+secret is missing, the crate job fails and names the secret. The PyPI publish and
+the GitHub release still finish. Add the secret, then re-run the failed jobs so
+they retry against the same commit. A fresh run of the whole workflow sees the
+version on PyPI and does not publish again.
+
+Check the finished release on PyPI, at
+`https://crates.io/crates/openextract/<version>`, and on the GitHub release
+`v<version>` (five archives and `SHA256SUMS`). `sha256sum --ignore-missing -c SHA256SUMS`
+checks the archives you downloaded.
 
 ## Dependencies
 

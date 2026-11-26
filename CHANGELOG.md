@@ -8,6 +8,13 @@ timing when that is known.
 
 ## [Unreleased]
 
+### Added
+- Tagged releases publish the Rust crate to crates.io and attach prebuilt
+  `openextract` CLI binaries (Linux x86_64 and aarch64, macOS x86_64 and
+  arm64, Windows x86_64) plus `SHA256SUMS` to the GitHub release. Publishing
+  the crate uses the `CARGO_REGISTRY_TOKEN` repository secret. A missing
+  secret fails that job only; the PyPI publish still completes.
+
 ## [2.5.0] - 2026-11-25
 
 ### Added

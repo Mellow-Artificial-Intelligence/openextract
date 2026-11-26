@@ -84,10 +84,20 @@ async fn test_cli_end_to_end_file_stdin_url_and_text() {
     let extracted = json!({"vendor": "Acme Paper Co.", "total": 120.0, "currency": "USD"});
     mount_json(&server, 200, output("responses", Some(extracted.clone()))).await;
 
-    // 1. Local PDF fixture shared with Python test suite
-    let pdf_fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../tests/fixtures/invoices/invoice.pdf");
-    assert!(pdf_fixture.exists(), "shared invoice fixture missing");
+    // 1. Local PDF fixture shared with the Python suite. The published crate
+    // does not contain that tree, so a packaged `cargo test` uses a tiny PDF.
+    let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let shared = repo_root.join("tests/fixtures/invoices/invoice.pdf");
+    let scratch = tempdir().unwrap();
+    let pdf_fixture = if shared.is_file() {
+        shared
+    } else if repo_root.join("pyproject.toml").is_file() {
+        panic!("shared invoice fixture missing");
+    } else {
+        let path = scratch.path().join("invoice.pdf");
+        std::fs::write(&path, b"%PDF-1.1\n").unwrap();
+        path
+    };
 
     let out = bin()
         .args([

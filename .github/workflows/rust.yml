@@ -98,12 +98,22 @@ jobs:
               )
           PY
 
+      - name: Crate license matches the repository license
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! cmp -s LICENSE rust/LICENSE; then
+            echo "rust/LICENSE is packaged with the crate and must match LICENSE."
+            diff -u LICENSE rust/LICENSE || true
+            exit 1
+          fi
+
   check:
     name: Format, clippy, and tests (${{ matrix.os }})
     needs: changes
     if: always() && needs.changes.result == 'success'
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -156,6 +166,11 @@ jobs:
         if: needs.changes.outputs.rust == 'true'
         working-directory: rust
         run: cargo test --locked
+
+      - name: Package the crate
+        if: needs.changes.outputs.rust == 'true' && matrix.os == 'ubuntu-latest'
+        working-directory: rust
+        run: cargo package --locked
 
   msrv:
     name: MSRV

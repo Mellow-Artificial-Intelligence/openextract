@@ -1,6 +1,6 @@
 # openextract (Rust)
 
-A Rust port and standalone single-binary CLI of [openextract](../README.md) (`v2.5.0`), built so AI agents and Rust programs can download one self-contained binary and extract validated structured JSON from documents, images, audio, video, URLs, and text using LLMs.
+A Rust port and standalone CLI of [openextract](https://github.com/Mellow-Artificial-Intelligence/openextract). It extracts validated structured JSON from documents, images, audio, video, URLs, and text using LLMs.
 
 Every provider is called over plain HTTP (using `rustls`, with zero provider SDKs or OpenSSL system dependencies) with full 1:1 parity across all 12 provider APIs, bounded retries, local JSON Schema validation, and credential redaction.
 
@@ -8,18 +8,63 @@ Source URLs are fetched by a separate client that does not send model credential
 
 The crate version in `Cargo.toml` tracks the Python package version in `pyproject.toml`. CI compares them and fails when they differ. The minimum supported Rust version is 1.88 (`let` chains; 1.85 does not compile this crate or its `wiremock` dev-dependency). `rust-toolchain.toml` pins the toolchain used for formatting and Clippy.
 
-## Build & Install
+## Install
 
-```bash
-cd rust
-cargo build --release
-# Binary is at: rust/target/release/openextract
-```
+The crate version matches the Python package. v2.5.0 was tagged before crate and binary publishing existed, so that GitHub release has neither. Later tags publish the `openextract` crate to crates.io and attach the archives below.
 
-Or install locally into `~/.cargo/bin`:
+### From this repository
 
 ```bash
 cargo install --path rust
+```
+
+`cargo build --release` in `rust/` writes `target/release/openextract` (`openextract.exe` on Windows).
+
+From the repository root, depend on the crate in this tree with:
+
+```toml
+[dependencies]
+openextract = { path = "rust", default-features = false }
+```
+
+The default `cli` feature pulls in `clap`. Turn it off when you only need the library.
+
+### crates.io
+
+```bash
+cargo install openextract --locked
+```
+
+```toml
+[dependencies]
+openextract = { version = "2", default-features = false }
+```
+
+`cargo install --locked` builds the dependency versions recorded in the published `Cargo.lock`.
+
+### Prebuilt binaries
+
+Each later tag attaches one archive per target and a `SHA256SUMS` file:
+
+| Target | Archive |
+| --- | --- |
+| Linux x86_64 | `openextract-<version>-x86_64-unknown-linux-musl.tar.gz` |
+| Linux aarch64 | `openextract-<version>-aarch64-unknown-linux-musl.tar.gz` |
+| macOS Intel | `openextract-<version>-x86_64-apple-darwin.tar.gz` |
+| macOS Apple silicon | `openextract-<version>-aarch64-apple-darwin.tar.gz` |
+| Windows x86_64 | `openextract-<version>-x86_64-pc-windows-msvc.zip` |
+
+Linux binaries are statically linked with musl. The Windows binary uses the static CRT. macOS binaries target macOS 11 or newer. Each archive contains the `openextract` binary (`openextract.exe` on Windows) and the MIT `LICENSE`. macOS may block the unsigned binary until it is allowed under Privacy & Security.
+
+```bash
+TAG=vX.Y.Z
+VER="${TAG#v}"
+ASSET="openextract-${VER}-x86_64-unknown-linux-musl.tar.gz"
+BASE="https://github.com/Mellow-Artificial-Intelligence/openextract/releases/download/${TAG}"
+curl -fsSLO "${BASE}/SHA256SUMS"
+curl -fsSLO "${BASE}/${ASSET}"
+sha256sum --ignore-missing -c SHA256SUMS
+tar -xzf "${ASSET}"
 ```
 
 ## CLI Usage (for AI Agents & Shell Workflows)
@@ -113,12 +158,7 @@ openextract -m mistral:mistral-ocr-latest \
 
 ## Rust Library Usage
 
-Add `openextract` to your `Cargo.toml` (disable default features to omit `clap` if you only need the library):
-
-```toml
-[dependencies]
-openextract = { path = "./rust", default-features = false }
-```
+See [Install](#install) for the dependency line. Examples below use the library API.
 
 ### Strongly-typed extraction (`schemars` + `serde`)
 
@@ -175,4 +215,5 @@ cd rust
 cargo test
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
+cargo package --locked
 ```
